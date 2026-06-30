@@ -28,6 +28,7 @@ targets:
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
+        NSCameraUsageDescription: 教科書ページを撮影してOCR・翻訳するためにカメラを使用します。
 
   ESLLearningAssistantTests:
     type: bundle.unit-test

@@ -3,9 +3,9 @@ import SwiftUI
 struct ContentView: View {
     var body: some View {
         TabView {
-            CaptureView()
+            HomeView()
                 .tabItem {
-                    Label("撮影", systemImage: "camera")
+                    Label("ホーム", systemImage: "house")
                 }
 
             VocabularyView()
