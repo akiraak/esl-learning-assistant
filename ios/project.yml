@@ -8,7 +8,7 @@ options:
 settings:
   base:
     SWIFT_VERSION: 6.0
-    DEVELOPMENT_TEAM: ""
+    DEVELOPMENT_TEAM: N38G4DGA67
     CODE_SIGN_STYLE: Automatic
 
 targets:
