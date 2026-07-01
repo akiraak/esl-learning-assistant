@@ -3,6 +3,7 @@ import SwiftData
 
 struct LessonsView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(AppRouter.self) private var router
     @Query(sort: \Class.createdAt) private var classes: [Class]
 
     @AppStorage("currentClassID") private var currentClassIDString: String?
@@ -176,11 +177,20 @@ struct LessonsView: View {
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(words) { word in
-                    NavigationLink {
-                        WordDetailView(word: word)
+                    // 単語詳細はWordsタブに集約するため、タブを切り替えて表示する
+                    Button {
+                        router.showWord(word)
                     } label: {
-                        WordRow(word: word)
+                        HStack {
+                            WordRow(word: word)
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                        }
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
                 }
             }
         }
@@ -308,5 +318,6 @@ private struct PhotoRow: View {
 
 #Preview {
     LessonsView()
+        .environment(AppRouter())
         .modelContainer(for: [Class.self, Lesson.self, Photo.self, Word.self, WordOccurrence.self], inMemory: true)
 }

@@ -21,7 +21,12 @@ struct LessonAddView: View {
                     .focused($isTitleFocused)
                     .accessibilityIdentifier("lessonTitleField")
             } footer: {
-                Text("\(schoolClass.name) に追加します。")
+                if isDuplicateTitle {
+                    Text("\(schoolClass.name) に同じ名前のレッスンが既にあります。")
+                        .foregroundStyle(.red)
+                } else {
+                    Text("\(schoolClass.name) に追加します。")
+                }
             }
         }
         .navigationTitle("レッスンを追加")
@@ -29,7 +34,7 @@ struct LessonAddView: View {
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button("追加", action: addLesson)
-                    .disabled(trimmedTitle.isEmpty)
+                    .disabled(trimmedTitle.isEmpty || isDuplicateTitle)
             }
         }
         .onAppear { isTitleFocused = true }
@@ -39,7 +44,17 @@ struct LessonAddView: View {
         title.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// 同じクラス内に同名（大文字小文字を区別しない）のレッスンが既にあるか
+    private var isDuplicateTitle: Bool {
+        let candidate = trimmedTitle
+        guard !candidate.isEmpty else { return false }
+        return schoolClass.lessons.contains {
+            $0.title.compare(candidate, options: [.caseInsensitive]) == .orderedSame
+        }
+    }
+
     private func addLesson() {
+        guard !trimmedTitle.isEmpty, !isDuplicateTitle else { return }
         let lesson = Lesson(schoolClass: schoolClass, title: trimmedTitle)
         modelContext.insert(lesson)
         currentClassID = schoolClass.id

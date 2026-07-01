@@ -83,6 +83,59 @@ final class ESLLearningAssistantUITests: XCTestCase {
         attach(app, "07-photo-detail")
     }
 
+    func testDuplicateLessonTitleBlocked() throws {
+        let app = XCUIApplication()
+        app.launch()
+
+        // クラス・レッスンを用意する（未作成の場合のみ）
+        let addClassButton = app.buttons["lessonAddClassButton"]
+        if addClassButton.waitForExistence(timeout: 5) {
+            addClassButton.tap()
+            app.buttons["switcherAddClassButton"].tap()
+            let classNameField = app.textFields["classNameField"]
+            XCTAssertTrue(classNameField.waitForExistence(timeout: 5))
+            classNameField.tap()
+            classNameField.typeText("ESL Beginner A")
+            app.navigationBars.buttons["追加"].tap()
+            let addLessonButton = app.buttons["switcherAddLessonButton"]
+            XCTAssertTrue(addLessonButton.waitForExistence(timeout: 5))
+            addLessonButton.tap()
+            let lessonTitleField = app.textFields["lessonTitleField"]
+            XCTAssertTrue(lessonTitleField.waitForExistence(timeout: 5))
+            lessonTitleField.tap()
+            lessonTitleField.typeText("Unit 1 Greetings")
+            app.navigationBars.buttons["追加"].tap()
+        }
+
+        // 切り替えシートを開き、既存と同名のレッスンを追加しようとする
+        let switcherButton = app.buttons["classLessonSwitcherButton"]
+        XCTAssertTrue(switcherButton.waitForExistence(timeout: 5))
+        switcherButton.tap()
+        let addLessonButton = app.buttons["switcherAddLessonButton"].firstMatch
+        XCTAssertTrue(addLessonButton.waitForExistence(timeout: 5))
+        addLessonButton.tap()
+
+        let lessonTitleField = app.textFields["lessonTitleField"]
+        XCTAssertTrue(lessonTitleField.waitForExistence(timeout: 5))
+        lessonTitleField.tap()
+        lessonTitleField.typeText("Unit 1 Greetings")
+
+        // 追加ボタンが無効になり、重複メッセージが表示される
+        let addButton = app.navigationBars.buttons["追加"]
+        XCTAssertTrue(addButton.waitForExistence(timeout: 5))
+        XCTAssertFalse(addButton.isEnabled)
+        XCTAssertTrue(
+            app.staticTexts["ESL Beginner A に同じ名前のレッスンが既にあります。"]
+                .waitForExistence(timeout: 5)
+        )
+        attach(app, "17-duplicate-lesson-blocked")
+
+        // 別名にすれば追加できる
+        lessonTitleField.typeText(" 2")
+        XCTAssertTrue(addButton.isEnabled)
+        attach(app, "18-unique-lesson-allowed")
+    }
+
     func testWordAddFlow() throws {
         let app = XCUIApplication()
         app.launch()
@@ -150,6 +203,22 @@ final class ESLLearningAssistantUITests: XCTestCase {
         app.tabBars.buttons["Lessons"].tap()
         XCTAssertTrue(app.staticTexts["apple"].waitForExistence(timeout: 5))
         attach(app, "14-lesson-with-word")
+
+        // レッスンの単語タップ → Wordsタブに切り替わり詳細が表示される
+        app.staticTexts["apple"].tap()
+        XCTAssertTrue(app.navigationBars["apple"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.tabBars.buttons["Words"].isSelected)
+        attach(app, "15-word-detail-via-lesson-tap")
+        app.navigationBars.buttons.firstMatch.tap()
+
+        // 単語タブ: 検索で絞り込める
+        let searchField = app.searchFields.firstMatch
+        XCTAssertTrue(searchField.waitForExistence(timeout: 5))
+        searchField.tap()
+        searchField.typeText("app")
+        XCTAssertTrue(app.staticTexts["apple"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["book"].exists)
+        attach(app, "16-words-search")
     }
 
     private func attach(_ app: XCUIApplication, _ name: String) {

@@ -3,18 +3,23 @@ import SwiftData
 
 struct WordsView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(AppRouter.self) private var router
     @Query(sort: \Word.registeredAt, order: .reverse) private var words: [Word]
 
     @State private var isShowingAdd = false
+    @State private var searchText = ""
+    @State private var pushedWord: Word?
 
     var body: some View {
         NavigationStack {
             Group {
                 if words.isEmpty {
                     emptyState
+                } else if filteredWords.isEmpty {
+                    ContentUnavailableView.search(text: searchText)
                 } else {
                     List {
-                        ForEach(words) { word in
+                        ForEach(filteredWords) { word in
                             NavigationLink {
                                 WordDetailView(word: word)
                             } label: {
@@ -26,6 +31,7 @@ struct WordsView: View {
                 }
             }
             .navigationTitle("単語")
+            .searchable(text: $searchText, prompt: "単語・訳語を検索")
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
@@ -39,7 +45,31 @@ struct WordsView: View {
             .sheet(isPresented: $isShowingAdd) {
                 WordAddView()
             }
+            .navigationDestination(item: $pushedWord) { word in
+                WordDetailView(word: word)
+            }
+            .onAppear(perform: consumePendingWord)
+            .onChange(of: router.pendingWord) { _, _ in
+                consumePendingWord()
+            }
         }
+    }
+
+    /// 検索文字列で見出し語・訳語を絞り込んだ一覧
+    private var filteredWords: [Word] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return words }
+        return words.filter {
+            $0.text.localizedCaseInsensitiveContains(query)
+                || $0.translation.localizedCaseInsensitiveContains(query)
+        }
+    }
+
+    /// 他タブから指定された単語があれば詳細をプッシュする
+    private func consumePendingWord() {
+        guard let word = router.pendingWord else { return }
+        router.pendingWord = nil
+        pushedWord = word
     }
 
     private var emptyState: some View {
@@ -65,8 +95,9 @@ struct WordsView: View {
     }
 
     private func deleteWords(at offsets: IndexSet) {
+        let targets = filteredWords
         for index in offsets {
-            modelContext.delete(words[index])
+            modelContext.delete(targets[index])
         }
     }
 }
@@ -87,5 +118,6 @@ struct WordRow: View {
 
 #Preview {
     WordsView()
+        .environment(AppRouter())
         .modelContainer(for: [Class.self, Lesson.self, Photo.self, Word.self, WordOccurrence.self], inMemory: true)
 }
