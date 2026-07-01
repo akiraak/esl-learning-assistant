@@ -9,6 +9,7 @@ import { adminRouter } from "./admin";
 import { ocrAndTranslate } from "./ocrTranslate";
 import { estimateCostUsd } from "./pricing";
 import { logger } from "./logger";
+import { synthesizeSpeech, VOICE_PRESETS, MODEL_PRESETS, type VoiceKey, type ModelKey } from "./tts";
 
 process.on("uncaughtException", (error) => {
   logger.error(`uncaughtException: ${error.stack ?? error.message}`);
@@ -120,11 +121,56 @@ app.post("/api/ocr-translate", async (req, res) => {
   }
 });
 
+const TTS_TEXT_MAX_LENGTH = 2000;
+
+app.post("/api/tts", async (req, res) => {
+  const { text, voice, model } = req.body ?? {};
+
+  if (typeof text !== "string" || !text.trim()) {
+    logger.warn("tts: rejected (text is required)");
+    res.status(400).json({ error: "text is required" });
+    return;
+  }
+  if (text.length > TTS_TEXT_MAX_LENGTH) {
+    logger.warn(`tts: rejected (text too long: ${text.length})`);
+    res.status(400).json({ error: `text must be ${TTS_TEXT_MAX_LENGTH} characters or fewer` });
+    return;
+  }
+  if (voice !== "chobi" && voice !== "naruko") {
+    logger.warn(`tts: rejected (invalid voice: ${String(voice)})`);
+    res.status(400).json({ error: `voice must be one of: ${Object.keys(VOICE_PRESETS).join(", ")}` });
+    return;
+  }
+  if (model !== "flash" && model !== "pro") {
+    logger.warn(`tts: rejected (invalid model: ${String(model)})`);
+    res.status(400).json({ error: `model must be one of: ${Object.keys(MODEL_PRESETS).join(", ")}` });
+    return;
+  }
+
+  const startedAt = Date.now();
+  logger.info(`tts: start voice=${voice} model=${model} textLength=${text.length}`);
+  try {
+    const wav = await synthesizeSpeech(text, voice as VoiceKey, model as ModelKey);
+    logger.info(`tts: success voice=${voice} model=${model} latencyMs=${Date.now() - startedAt}`);
+    res.set("Content-Type", "audio/wav");
+    res.send(wav);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(
+      `tts: failed voice=${voice} model=${model} latencyMs=${Date.now() - startedAt} error=${errorMessage}`
+    );
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
 app.use("/admin", adminRouter);
 
 app.listen(config.port, () => {
   if (!config.anthropicApiKey) {
     logger.warn("ANTHROPIC_API_KEY is not set. /api/ocr-translate will fail.");
+  }
+  if (!config.geminiApiKey) {
+    logger.warn("GEMINI_API_KEY is not set. /api/tts will fail.");
   }
   logger.info(`ESL Learning Assistant backend listening on http://localhost:${config.port}`);
   logger.info(`Admin dashboard: http://localhost:${config.port}/admin`);

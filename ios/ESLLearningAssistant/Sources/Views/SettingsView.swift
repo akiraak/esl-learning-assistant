@@ -3,6 +3,12 @@ import SwiftUI
 struct SettingsView: View {
     @AppStorage(AppSettingsKeys.backendBaseURL)
     private var backendBaseURL = AppSettingsKeys.defaultBackendBaseURL
+    @AppStorage(AppSettingsKeys.ttsEngine)
+    private var ttsEngine = AppSettingsKeys.defaultTTSEngine
+    @AppStorage(AppSettingsKeys.ttsVoice)
+    private var ttsVoice = AppSettingsKeys.defaultTTSVoice
+    @AppStorage(AppSettingsKeys.ttsModel)
+    private var ttsModel = AppSettingsKeys.defaultTTSModel
 
     var body: some View {
         NavigationStack {
@@ -30,6 +36,31 @@ struct SettingsView: View {
                     Text("翻訳先の母語")
                 } footer: {
                     Text("母語を選択できる設定は今後実装予定です。")
+                }
+
+                Section {
+                    Picker("音声エンジン", selection: $ttsEngine) {
+                        Text("端末内蔵").tag("local")
+                        Text("Gemini").tag("gemini")
+                    }
+                    Picker("声のタイプ", selection: $ttsVoice) {
+                        Text("ちょビ").tag("chobi")
+                        Text("なるこ").tag("naruko")
+                    }
+                    .disabled(ttsEngine != "gemini")
+                    Picker("TTSモデル", selection: $ttsModel) {
+                        Text("高速").tag("flash")
+                        Text("高品質").tag("pro")
+                    }
+                    .disabled(ttsEngine != "gemini")
+                } header: {
+                    Text("音声読み上げ")
+                } footer: {
+                    Text(
+                        "OCR結果（英語）の読み上げに使う音声。端末内蔵は追加の通信なしですぐ再生、"
+                            + "Geminiはバックエンド経由でより自然な音声を生成します（声のタイプ・モデルを選択可能）。"
+                            + "「高品質」は生成に時間がかかる場合があります。"
+                    )
                 }
             }
             .navigationTitle("設定")

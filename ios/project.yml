@@ -11,6 +11,11 @@ settings:
     DEVELOPMENT_TEAM: N38G4DGA67
     CODE_SIGN_STYLE: Automatic
 
+packages:
+  MarkdownUI:
+    url: https://github.com/gonzalezreal/swift-markdown-ui
+    from: 2.4.1
+
 targets:
   ESLLearningAssistant:
     type: application
@@ -18,6 +23,8 @@ targets:
     sources:
       - path: ESLLearningAssistant/Sources
       - path: ESLLearningAssistant/Resources
+    dependencies:
+      - package: MarkdownUI
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.akiraak.esllearningassistant
