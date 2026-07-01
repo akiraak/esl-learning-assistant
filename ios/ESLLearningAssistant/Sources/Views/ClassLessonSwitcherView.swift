@@ -2,17 +2,14 @@ import SwiftUI
 import SwiftData
 
 struct ClassLessonSwitcherView: View {
-    @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @Query(sort: \Class.createdAt) private var classes: [Class]
 
     @Binding var currentClassID: UUID?
     @Binding var currentLessonID: UUID?
 
-    @State private var isShowingNewClassAlert = false
-    @State private var newClassName = ""
+    @State private var isAddingClass = false
     @State private var classAddingLesson: Class?
-    @State private var newLessonTitle = ""
 
     var body: some View {
         NavigationStack {
@@ -46,18 +43,17 @@ struct ClassLessonSwitcherView: View {
                             Spacer()
                             Button {
                                 classAddingLesson = schoolClass
-                                newLessonTitle = ""
                             } label: {
                                 Image(systemName: "plus.circle")
                             }
+                            .accessibilityIdentifier("switcherAddLessonButton")
                         }
                     }
                 }
 
                 Section {
                     Button {
-                        newClassName = ""
-                        isShowingNewClassAlert = true
+                        isAddingClass = true
                     } label: {
                         Label("クラスを追加", systemImage: "plus")
                     }
@@ -71,23 +67,21 @@ struct ClassLessonSwitcherView: View {
                     Button("閉じる") { dismiss() }
                 }
             }
-            .alert("クラスを追加", isPresented: $isShowingNewClassAlert) {
-                TextField("クラス名", text: $newClassName)
-                Button("追加", action: addClass)
-                Button("キャンセル", role: .cancel) {}
-            }
-            .alert(
-                "レッスンを追加",
-                isPresented: Binding(
-                    get: { classAddingLesson != nil },
-                    set: { isPresented in
-                        if !isPresented { classAddingLesson = nil }
-                    }
+            .navigationDestination(isPresented: $isAddingClass) {
+                ClassAddView(
+                    currentClassID: $currentClassID,
+                    currentLessonID: $currentLessonID
                 )
-            ) {
-                TextField("レッスン名", text: $newLessonTitle)
-                Button("追加", action: addLesson)
-                Button("キャンセル", role: .cancel) { classAddingLesson = nil }
+            }
+            .navigationDestination(item: $classAddingLesson) { schoolClass in
+                LessonAddView(
+                    schoolClass: schoolClass,
+                    currentClassID: $currentClassID,
+                    currentLessonID: $currentLessonID
+                ) {
+                    // 作成したレッスンをすぐ使えるよう、シートごと閉じてレッスン画面へ戻る
+                    dismiss()
+                }
             }
         }
     }
@@ -96,28 +90,5 @@ struct ClassLessonSwitcherView: View {
         currentClassID = schoolClass.id
         currentLessonID = lesson.id
         dismiss()
-    }
-
-    private func addClass() {
-        let trimmed = newClassName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        let newClass = Class(name: trimmed)
-        modelContext.insert(newClass)
-        currentClassID = newClass.id
-        currentLessonID = nil
-    }
-
-    private func addLesson() {
-        guard let schoolClass = classAddingLesson else { return }
-        let trimmed = newLessonTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            classAddingLesson = nil
-            return
-        }
-        let lesson = Lesson(schoolClass: schoolClass, title: trimmed)
-        modelContext.insert(lesson)
-        currentClassID = schoolClass.id
-        currentLessonID = lesson.id
-        classAddingLesson = nil
     }
 }

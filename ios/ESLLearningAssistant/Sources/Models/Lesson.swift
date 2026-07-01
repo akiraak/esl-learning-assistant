@@ -11,6 +11,9 @@ final class Lesson {
     @Relationship(deleteRule: .cascade, inverse: \Photo.lesson)
     var photos: [Photo] = []
 
+    @Relationship(deleteRule: .cascade, inverse: \WordOccurrence.lesson)
+    var wordOccurrences: [WordOccurrence] = []
+
     init(id: UUID = UUID(), schoolClass: Class, title: String, createdAt: Date = .now) {
         self.id = id
         self.schoolClass = schoolClass

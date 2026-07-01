@@ -3,24 +3,19 @@ import SwiftUI
 struct ContentView: View {
     var body: some View {
         TabView {
-            HomeView()
+            LessonsView()
                 .tabItem {
-                    Label("ホーム", systemImage: "house")
+                    Label("Lessons", systemImage: "graduationcap")
                 }
 
-            VocabularyView()
+            WordsView()
                 .tabItem {
-                    Label("単語帳", systemImage: "book")
-                }
-
-            QuizView()
-                .tabItem {
-                    Label("問題", systemImage: "checkmark.circle")
+                    Label("Words", systemImage: "book")
                 }
 
             SettingsView()
                 .tabItem {
-                    Label("設定", systemImage: "gearshape")
+                    Label("Settings", systemImage: "gearshape")
                 }
         }
     }

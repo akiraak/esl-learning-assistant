@@ -6,6 +6,6 @@ struct ESLLearningAssistantApp: App {
         WindowGroup {
             ContentView()
         }
-        .modelContainer(for: [Class.self, Lesson.self, Photo.self])
+        .modelContainer(for: [Class.self, Lesson.self, Photo.self, Word.self, WordOccurrence.self])
     }
 }

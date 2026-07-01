@@ -1,5 +1,31 @@
 # DONE
 
+- [x] Lesson画面の作り直し（レイアウト案4つを作成し案A ヘッダーカード型を採用。選択中の
+      クラス名＋レッスン名をリスト先頭のカードで常時表示しタップで切り替えシート。クラス/
+      レッスンの作成はアラート入力をやめ、シートから遷移する専用フォーム画面（ClassAddView/
+      LessonAddView）に分離。レッスン作成後はシートごと閉じてレッスン画面へ。「写真」
+      セクションは「コンテンツ」に改名。コンテンツ・単語・問題の表示はレッスン単位。
+      UIテストを新フローに追随させシミュレータで確認済み）
+      [plan](docs/plans/archive/lesson-screen-redesign.md) (2026-07-01)
+- [x] タブバーの表示名を英語化（Lessons / Words / Settings。画面内の文言は日本語のまま。
+      UIテストも追随し、シミュレータで表示・単語追加フローを再確認済み）
+      [plan](docs/plans/archive/tab-labels-english.md) (2026-07-01)
+- [x] 画面レイアウト3タブ化（レッスン/単語/設定）。ホームタブをレッスンタブに改名し、
+      単語・問題セクションを追加。問題タブは廃止（レッスンタブへ統合予定）。単語タブを新規実装
+      （Word/WordOccurrenceのSwiftDataモデル追加、一覧・詳細・追加（レッスン任意指定）・
+      スワイプ削除、同一見出し語は出現記録のみ追加）。project.ymlにswift-markdown-uiの
+      packages定義を追加しxcodegen再生成で消えないようにした。シミュレータのUIテスト
+      （3タブ表示・単語追加フロー）で動作確認済み
+      [plan](docs/plans/archive/tab-navigation-redesign.md) (2026-07-01)
+- [x] iOS: OCR・翻訳本文中のMarkdown見出し（`#`〜`###`）に背景色付きラベルを適用し、
+      地の文と見分けやすくする（`markdownBlockStyle`でレベルごとに背景色の濃さ・フォントサイズを変更）
+      [plan](docs/plans/archive/ios-markdown-heading-background.md) (2026-06-30)
+- [x] iOS: OCR結果・翻訳結果のMarkdownを見出し・箇条書きが分かるように表示する
+      （最初はPresentationIntentベースの自前`MarkdownContentView`を実装したが、
+      テーブル・コードブロック等への将来対応も見据えてSPM依存の`swift-markdown-ui`
+      （`Markdown(_:)`）に置き換え）
+      [plan](docs/plans/archive/ios-markdown-block-rendering.md)
+      [plan](docs/plans/archive/ios-markdownui-adoption.md) (2026-06-30)
 - [x] アプリの仕様を決める (2026-06-30)
 - [x] iPhoneアプリ スケルトン作成 [plan](docs/plans/archive/ios-app-skeleton.md) (2026-06-30)
 - [x] データ構造資料の作成（Lesson / Photo / Word / Question / QuizResult 等のスキーマ、spec 9章対応） [spec](docs/specs/data-model.md) (2026-06-30)
@@ -57,3 +83,22 @@
       非対応なため呼び出し側で自動的に省略。adminでは統合呼び出し時に翻訳欄を「OCR呼び出しに統合
       （追加コストなし）」と表示し誤解を防止。実画像でOCR=翻訳=Sonnet 5（統合・1回呼び出し）と
       OCR=Sonnet/翻訳=Haiku（分割・2回呼び出し）の両方を確認済み） [plan](docs/plans/archive/combined-call-when-same-model.md) (2026-07-01)
+- [x] OCR結果（英語）のTTS読み上げ機能（`SpeechService`（AVSpeechSynthesizerラッパー）を新設し、
+      `PhotoDetailView`のOCR結果セクションに再生/停止ボタンを追加。Markdown記号を読み上げないよう
+      プレーンテキスト化してから発話、画面遷移時は自動停止。バックエンド・SwiftDataモデルの変更なし。
+      xcodebuildでのシミュレータ向けビルド成功を確認済み（実機での音声再生確認は未実施）） [plan](docs/plans/archive/tts-ocr-text-playback.md) (2026-06-30)
+- [x] Gemini TTS版の音声読み上げ（声のタイプ選択つき）（backend/src/tts.tsを新設し`POST /api/tts`を追加。
+      声のタイプ（ちょビ=Leda / なるこ=Aoede、スタイル文言含む）は~/Projects/claude-code-manager/の
+      voice-persona.jsonの設定を移植。iOS側は設定画面に「音声エンジン: 端末内蔵/Gemini」
+      「声のタイプ: ちょビ/なるこ」のPickerを追加し、GeminiSpeechService（AVAudioPlayerで
+      バックエンドから受け取ったWAVを再生）を新設。PhotoDetailViewの再生ボタンはボタン1つのまま
+      設定に応じて端末内蔵/Gemini TTSを切り替える。バックエンドはtsc、iOSはxcodebuildでの
+      ビルド成功を確認済み（GEMINI_API_KEYの設定・実機での動作確認はユーザー側で実施）） [plan](docs/plans/archive/gemini-tts-voice-selection.md) (2026-06-30)
+- [x] Gemini TTSのスタイル指示を日本語→英語に修正（読み上げるOCR本文は英語なのにスタイル指示だけ
+      日本語だったため発音が日本語寄りになっていた不具合。ちょビ/なるこのスタイル文言を英訳し、
+      curlで生成した音声をafplayで実際に聴いて改善を確認済み） (2026-07-01)
+- [x] Gemini TTSモデル（Flash/Pro）の選択機能（`gemini-2.5-flash-preview-tts`（高速）と
+      `gemini-2.5-pro-preview-tts`（高品質）をMODEL_PRESETSとして追加し、`POST /api/tts`の
+      リクエストで`model`を指定可能に。環境変数`GEMINI_TTS_MODEL`はリクエスト単位選択に統一する
+      ため廃止。iOS設定画面に「TTSモデル: 高速/高品質」Pickerを追加。バックエンドはtsc、iOSは
+      xcodebuildでのビルド成功、curlでflash/pro両方の200応答と不正値の400拒否を確認済み） [plan](docs/plans/archive/gemini-tts-model-selection.md) (2026-07-01)
