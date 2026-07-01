@@ -13,7 +13,7 @@ struct CaptureView: View {
     @State private var isShowingCamera = false
     @State private var isProcessing = false
 
-    private let ocrTranslationService: OCRTranslationService = MockOCRTranslationService()
+    private let ocrTranslationService: OCRTranslationService = RemoteOCRTranslationService()
 
     var body: some View {
         NavigationStack {

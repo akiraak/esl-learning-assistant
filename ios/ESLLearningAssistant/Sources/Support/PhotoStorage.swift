@@ -26,4 +26,9 @@ enum PhotoStorage {
         let fileURL = directoryURL.appendingPathComponent(fileName)
         return UIImage(contentsOfFile: fileURL.path)
     }
+
+    static func loadData(fileName: String) -> Data? {
+        let fileURL = directoryURL.appendingPathComponent(fileName)
+        return try? Data(contentsOf: fileURL)
+    }
 }

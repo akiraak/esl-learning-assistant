@@ -6,3 +6,9 @@ ios/*.xcodeproj
 ios/.build/
 ios/DerivedData/
 .DS_Store
+
+# backend (ローカル開発用サーバー)
+backend/node_modules/
+backend/dist/
+backend/.env
+backend/data/

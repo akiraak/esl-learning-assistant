@@ -13,6 +13,11 @@ struct HomeView: View {
     @State private var newLessonTitle = ""
     @State private var isShowingCapture = false
     @State private var selectedPhoto: Photo?
+    @State private var isBulkTranslating = false
+    @State private var bulkTranslateDone = 0
+    @State private var bulkTranslateTotal = 0
+
+    private let ocrTranslationService: OCRTranslationService = RemoteOCRTranslationService()
 
     var body: some View {
         NavigationStack {
@@ -127,10 +132,26 @@ struct HomeView: View {
 
             Section("写真 (\(lesson.photos.count))") {
                 let photos = lesson.photos.sorted { $0.capturedAt > $1.capturedAt }
+                let untranslatedCount = photos.filter { $0.processingStatus == .pending || $0.processingStatus == .failed }.count
                 if photos.isEmpty {
                     Text("まだ写真がありません")
                         .foregroundStyle(.secondary)
                 } else {
+                    if untranslatedCount > 0 {
+                        Button {
+                            Task { await translateAllPending(in: lesson) }
+                        } label: {
+                            if isBulkTranslating {
+                                HStack {
+                                    ProgressView()
+                                    Text("翻訳中… (\(bulkTranslateDone)/\(bulkTranslateTotal))")
+                                }
+                            } else {
+                                Label("未翻訳の写真をまとめて翻訳 (\(untranslatedCount)件)", systemImage: "translate")
+                            }
+                        }
+                        .disabled(isBulkTranslating)
+                    }
                     ForEach(photos) { photo in
                         Button {
                             selectedPhoto = photo
@@ -200,6 +221,19 @@ struct HomeView: View {
         modelContext.insert(lesson)
         currentClassIDString = schoolClass.id.uuidString
         currentLessonIDString = lesson.id.uuidString
+    }
+
+    private func translateAllPending(in lesson: Lesson) async {
+        let targets = lesson.photos.filter { $0.processingStatus == .pending || $0.processingStatus == .failed }
+        guard !targets.isEmpty else { return }
+        isBulkTranslating = true
+        bulkTranslateDone = 0
+        bulkTranslateTotal = targets.count
+        for photo in targets {
+            await ocrTranslationService.process(photo)
+            bulkTranslateDone += 1
+        }
+        isBulkTranslating = false
     }
 }
 

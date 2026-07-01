@@ -1,7 +1,9 @@
 # TODO
 
 - [ ] ESLアプリ実装 [spec](docs/specs/app-spec.md)
-  - [ ] Phase 1: 撮影 → OCR・翻訳（画面実装は完了、バックエンド連携が残課題）
-  - [ ] バックエンド実装・Claude API連携（OCR・翻訳のモックサービスを置き換え）
   - [ ] Phase 2: 単語帳（登録・翻訳・復習）
   - [ ] Phase 3: 問題作成
+  - [ ] シミュレータ/実機のGUI操作で撮影→OCR・翻訳フルフロー（クラス/レッスン作成→撮影→
+        結果表示→失敗時の再試行）を動作確認する（ANTHROPIC_API_KEYは設定済みで、backend側の
+        `/api/ocr-translate`実キー呼び出しはcurlで複数回成功確認済み。iOS側のGUI操作は
+        シミュレータ/実機操作権限が無いこのセッションでは未確認）

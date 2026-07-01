@@ -22,6 +22,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.akiraak.esllearningassistant
         ASSETSCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # シミュレータ/通常ビルドの既定値。実機向けは run-ios-device.sh がMacのIPで上書きする。
+        BACKEND_BASE_URL: http://localhost:8801
     info:
       path: ESLLearningAssistant/Resources/Info.plist
       properties:
@@ -29,6 +31,10 @@ targets:
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         NSCameraUsageDescription: 教科書ページを撮影してOCR・翻訳するためにカメラを使用します。
+        # ローカル開発用バックエンド（HTTP/非TLS）に接続するため。クラウド化する際に見直す。
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+        BackendBaseURL: $(BACKEND_BASE_URL)
 
   ESLLearningAssistantTests:
     type: bundle.unit-test
