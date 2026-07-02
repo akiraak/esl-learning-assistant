@@ -1,5 +1,11 @@
 # DONE
 
+- [x] クラス名とレッスン名を編集可能に（`ClassEditView` / `LessonEditView` を新設し、
+      クラス・レッスン切り替えシートに編集導線を追加（クラスはセクションヘッダー、
+      レッスンは各行右端の鉛筆アイコン）。レッスン名は追加時と同じ大文字小文字を区別しない
+      同名重複チェックを編集対象自身を除外して適用。SwiftDataのautosaveで永続化、
+      バックエンド変更なし。シミュレータ向けビルド成功・ユニットテスト10件全成功を確認済み）
+      [plan](docs/plans/archive/edit-class-lesson-names.md) (2026-07-01)
 - [x] 各タブ画面トップのナビゲーションタイトル（Lessons / Words / Settings）を削除
       （`LessonsView` / `WordsView` / `SettingsView` の `.navigationTitle` を削除。
       シミュレータ向けビルド成功を確認済み）

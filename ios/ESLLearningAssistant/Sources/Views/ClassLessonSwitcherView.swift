@@ -10,6 +10,8 @@ struct ClassLessonSwitcherView: View {
 
     @State private var isAddingClass = false
     @State private var classAddingLesson: Class?
+    @State private var editingClass: Class?
+    @State private var editingLesson: Lesson?
 
     var body: some View {
         NavigationStack {
@@ -22,25 +24,43 @@ struct ClassLessonSwitcherView: View {
                                 .foregroundStyle(.secondary)
                         } else {
                             ForEach(lessons) { lesson in
-                                Button {
-                                    select(lesson: lesson, in: schoolClass)
-                                } label: {
-                                    HStack {
-                                        Text(lesson.title)
-                                        Spacer()
-                                        if lesson.id == currentLessonID {
-                                            Image(systemName: "checkmark")
-                                                .foregroundStyle(.tint)
+                                HStack {
+                                    Button {
+                                        select(lesson: lesson, in: schoolClass)
+                                    } label: {
+                                        HStack {
+                                            Text(lesson.title)
+                                            Spacer()
+                                            if lesson.id == currentLessonID {
+                                                Image(systemName: "checkmark")
+                                                    .foregroundStyle(.tint)
+                                            }
                                         }
+                                        .contentShape(Rectangle())
                                     }
+                                    .buttonStyle(.plain)
+
+                                    Button {
+                                        editingLesson = lesson
+                                    } label: {
+                                        Image(systemName: "pencil.circle")
+                                            .foregroundStyle(.tint)
+                                    }
+                                    .buttonStyle(.borderless)
+                                    .accessibilityIdentifier("switcherEditLessonButton")
                                 }
-                                .buttonStyle(.plain)
                             }
                         }
                     } header: {
                         HStack {
                             Text(schoolClass.name)
                             Spacer()
+                            Button {
+                                editingClass = schoolClass
+                            } label: {
+                                Image(systemName: "pencil.circle")
+                            }
+                            .accessibilityIdentifier("switcherEditClassButton")
                             Button {
                                 classAddingLesson = schoolClass
                             } label: {
@@ -82,6 +102,12 @@ struct ClassLessonSwitcherView: View {
                     // 作成したレッスンをすぐ使えるよう、シートごと閉じてレッスン画面へ戻る
                     dismiss()
                 }
+            }
+            .navigationDestination(item: $editingClass) { schoolClass in
+                ClassEditView(schoolClass: schoolClass)
+            }
+            .navigationDestination(item: $editingLesson) { lesson in
+                LessonEditView(lesson: lesson)
             }
         }
     }
