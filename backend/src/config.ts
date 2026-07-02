@@ -10,5 +10,6 @@ export const config = {
   apiSecret: process.env.API_SECRET ?? "",
   dataDir: path.resolve(__dirname, "..", "data"),
   imagesDir: path.resolve(__dirname, "..", "data", "images"),
+  ttsDir: path.resolve(__dirname, "..", "data", "tts"),
   dbPath: path.resolve(__dirname, "..", "data", "db.sqlite"),
 };

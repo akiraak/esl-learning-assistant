@@ -11,6 +11,8 @@ struct WordDetailView: View {
     @State private var isConfirmingDelete = false
     @StateObject private var speechService = SpeechService()
     @State private var speakingText: String?
+    @StateObject private var ttsPlayback = TTSPlaybackService()
+    @State private var ttsErrorMessage: String?
 
     var body: some View {
         List {
@@ -108,6 +110,18 @@ struct WordDetailView: View {
         .navigationTitle(word.text)
         .onDisappear {
             speechService.stop()
+            ttsPlayback.stop()
+        }
+        .alert(
+            "Audio Generation Failed",
+            isPresented: Binding(
+                get: { ttsErrorMessage != nil },
+                set: { if !$0 { ttsErrorMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(ttsErrorMessage ?? "")
         }
         .confirmationDialog(
             "Regenerate AI info?",
@@ -186,7 +200,9 @@ struct WordDetailView: View {
                     info: info,
                     wordText: word.text,
                     speechService: speechService,
-                    speakingText: $speakingText
+                    speakingText: $speakingText,
+                    ttsPlayback: ttsPlayback,
+                    ttsErrorMessage: $ttsErrorMessage
                 )
             }
         }
@@ -199,6 +215,8 @@ private struct WordAIInfoSections: View {
     let wordText: String
     @ObservedObject var speechService: SpeechService
     @Binding var speakingText: String?
+    @ObservedObject var ttsPlayback: TTSPlaybackService
+    @Binding var ttsErrorMessage: String?
 
     var body: some View {
         Section("Pronunciation") {
@@ -212,7 +230,7 @@ private struct WordAIInfoSections: View {
                     }
                 }
                 Spacer()
-                SpeechButton(text: wordText, speechService: speechService, speakingText: $speakingText)
+                TTSButton(text: wordText, playback: ttsPlayback, errorMessage: $ttsErrorMessage)
             }
             badgeRow
         }
@@ -239,7 +257,7 @@ private struct WordAIInfoSections: View {
                                         .font(.subheadline)
                                         .foregroundStyle(.secondary)
                                     Spacer()
-                                    SpeechButton(text: sense.englishDefinition, speechService: speechService, speakingText: $speakingText)
+                                    TTSButton(text: sense.englishDefinition, playback: ttsPlayback, errorMessage: $ttsErrorMessage)
                                 }
                                 if let note = sense.note, !note.isEmpty {
                                     Text(note)
@@ -273,7 +291,7 @@ private struct WordAIInfoSections: View {
                                 .foregroundStyle(.secondary)
                         }
                         Spacer()
-                        SpeechButton(text: example.english, speechService: speechService, speakingText: $speakingText)
+                        TTSButton(text: example.english, playback: ttsPlayback, errorMessage: $ttsErrorMessage)
                     }
                     .padding(.vertical, 2)
                 }
@@ -366,6 +384,75 @@ private struct WordAIInfoSections: View {
             Text(text)
         }
         .padding(.vertical, 2)
+    }
+}
+
+/// サーバTTS（Gemini）の生成→再生ボタン。ttsEngine 設定には従わないサーバTTS専用ボタン。
+/// 未生成（端末ローカルにファイルなし）なら生成ボタン、生成中はスピナー、
+/// 生成済みなら再生/停止ボタンになる。生成した音声はサーバと端末ローカルの両方に保存され、
+/// 2回目以降の生成はサーバキャッシュ、再訪時の再生は端末ローカルから行われる。
+private struct TTSButton: View {
+    let text: String
+    @ObservedObject var playback: TTSPlaybackService
+    @Binding var errorMessage: String?
+
+    @AppStorage(AppSettingsKeys.ttsVoice) private var voice = AppSettingsKeys.defaultTTSVoice
+    @AppStorage(AppSettingsKeys.ttsModel) private var model = AppSettingsKeys.defaultTTSModel
+    @State private var isGenerating = false
+
+    private struct RequestBody: Encodable {
+        let text: String
+        let voice: String
+        let model: String
+    }
+
+    var body: some View {
+        // 存在チェックのみで軽量。voice / model 設定を変えるとキーが変わり「未生成」に戻る
+        let localURL = TTSAudioStore.localURL(text: text, voice: voice, model: model)
+        if isGenerating {
+            ProgressView()
+        } else if let localURL {
+            let isPlaying = playback.playingURL == localURL
+            Button {
+                if isPlaying {
+                    playback.stop()
+                } else {
+                    playback.play(url: localURL)
+                }
+            } label: {
+                Image(systemName: isPlaying ? "stop.fill" : "speaker.wave.2.fill")
+                    .foregroundStyle(.tint)
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel(isPlaying ? "Stop" : "Play AI Audio")
+        } else {
+            Button {
+                generate()
+            } label: {
+                Image(systemName: "waveform.badge.plus")
+                    .foregroundStyle(.tint)
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Generate AI Audio")
+        }
+    }
+
+    /// サーバで合成（保存済みならサーバキャッシュ返却）した音声を端末ローカルに保存する
+    private func generate() {
+        guard !isGenerating else { return }
+        isGenerating = true
+        Task {
+            defer { isGenerating = false }
+            do {
+                let data = try await BackendAPI.post(
+                    path: "api/tts",
+                    body: RequestBody(text: text, voice: voice, model: model)
+                )
+                try TTSAudioStore.save(data: data, text: text, voice: voice, model: model)
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
     }
 }
 

@@ -1,4 +1,4 @@
-# TTSデータのサーバ保存（単語詳細 Meanings / Examples のサーバTTS再生）
+# TTSデータのサーバ保存（単語詳細 Pronunciation / Meanings / Examples のサーバTTS再生）
 
 ## 目的・背景
 
@@ -13,8 +13,9 @@
 
 1. サーバで合成したTTS音声を**ファイル＋DBに保存**し、同一テキストの2回目以降は
    保存済みデータを返す（Gemini再呼び出しなし）
-2. 単語詳細の **Meanings（`senses[].englishDefinition`）と Examples（`examples[].english`）**の
-   英文をサーバTTSで生成・保存し、アプリで聞けるようにする
+2. 単語詳細の **Pronunciation（見出し語 `word.text`）・Meanings（`senses[].englishDefinition`）・
+   Examples（`examples[].english`）**の英文をサーバTTSで生成・保存し、アプリで聞けるようにする
+   （Pronunciation は 2026-07-02 ユーザー指定で追加）
 
 ### 方針の決定事項
 
@@ -27,9 +28,9 @@
 - **生成した音声は端末ローカルにも保存する**。「生成済み＝再生ボタン」の状態を画面再訪や
   オフライン時にも維持するため。サーバ保存はコスト削減（再インストール・別端末での再生成が
   Gemini再呼び出しなしで済む）とデータ管理（管理画面）を担う
-- Meanings / Examples の既存の端末TTSスピーカーボタンは本ボタンに**置き換える**。
-  見出し語・コロケーション等の他の読み上げボタンは端末TTSのまま（TODO のスコープ外。
-  同じ仕組みで後から拡張可能）
+- Pronunciation（見出し語）/ Meanings / Examples の既存の端末TTSスピーカーボタンは
+  本ボタンに**置き換える**。コロケーション・類義語等の他の読み上げボタンは端末TTSのまま
+  （TODO のスコープ外。同じ仕組みで後から拡張可能）
 
 ## 対応方針
 
@@ -82,8 +83,9 @@ CREATE TABLE IF NOT EXISTS tts_audio (
   - `localURL(text:voice:model:) -> URL?`（存在チェック）、`save(data:text:voice:model:) -> URL`
 - **`TTSPlaybackService` を新設**（`GeminiSpeechService` と同様の `AVAudioPlayer` ラッパー。
   ローカルファイルURLから再生する。`isSpeaking` / `stop()` / delegate で終了検知）
-- **`TTSButton` を新設**し、Meanings（`sense.englishDefinition`）と Examples
-  （`example.english`）の既存 `SpeechButton` を置き換える。状態は3つ:
+- **`TTSButton` を新設**し、Pronunciation（見出し語 `word.text`）・Meanings
+  （`sense.englishDefinition`）・Examples（`example.english`）の既存 `SpeechButton` を
+  置き換える。状態は3つ:
   1. **未生成**（`TTSAudioStore` にファイルなし）: 生成ボタン
      （例: `waveform.badge.plus` アイコン）。タップで生成開始
   2. **生成中**: `ProgressView`（スピナー）。多重タップは無視

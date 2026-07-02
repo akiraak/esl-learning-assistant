@@ -4,7 +4,14 @@ import path from "path";
 import crypto from "crypto";
 import express from "express";
 import { config } from "./config";
-import { getStoredWord, insertRequestLog, insertWordInfoLog, upsertStoredWord } from "./db";
+import {
+  getStoredWord,
+  getTtsAudioByHash,
+  insertRequestLog,
+  insertWordInfoLog,
+  upsertStoredWord,
+  upsertTtsAudio,
+} from "./db";
 import { adminRouter } from "./admin";
 import { ocrAndTranslate } from "./ocrTranslate";
 import { generateWordInfo } from "./wordInfo";
@@ -325,9 +332,28 @@ app.post("/api/tts", async (req, res) => {
   }
 
   const startedAt = Date.now();
+
+  // 同一 (voice, model, text) は保存済みWAVを返す（Gemini再呼び出しなし）。
+  // ファイルが欠損していた場合は再合成して自己修復する。
+  const textHash = crypto.createHash("sha256").update(`${voice}|${model}|${text}`).digest("hex");
+  const cached = getTtsAudioByHash(textHash);
+  if (cached) {
+    const cachedPath = path.join(config.ttsDir, cached.filename);
+    if (fs.existsSync(cachedPath)) {
+      logger.info(`tts: cache hit hash=${textHash.slice(0, 12)} latencyMs=${Date.now() - startedAt}`);
+      res.set("Content-Type", "audio/wav");
+      res.send(fs.readFileSync(cachedPath));
+      return;
+    }
+    logger.warn(`tts: cached file missing, re-synthesizing hash=${textHash.slice(0, 12)}`);
+  }
+
   logger.info(`tts: start voice=${voice} model=${model} textLength=${text.length}`);
   try {
     const wav = await synthesizeSpeech(text, voice as VoiceKey, model as ModelKey);
+    const filename = `${textHash}.wav`;
+    fs.writeFileSync(path.join(config.ttsDir, filename), wav);
+    upsertTtsAudio({ text, voice, model, textHash, filename, byteSize: wav.length });
     logger.info(`tts: success voice=${voice} model=${model} latencyMs=${Date.now() - startedAt}`);
     res.set("Content-Type", "audio/wav");
     res.send(wav);

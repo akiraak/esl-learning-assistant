@@ -1,15 +1,19 @@
 import path from "path";
 import { Router } from "express";
 import { marked } from "marked";
+import fs from "fs";
 import {
   deleteStoredWord,
+  deleteTtsAudio,
   getRequestLog,
   getStoredWordById,
+  getTtsAudioById,
   getWordInfoLog,
   insertWordInfoLog,
   listRecentRequestLogs,
   listRecentWordInfoLogs,
   listStoredWords,
+  listTtsAudio,
   RequestLogRow,
   StoredWordRow,
   upsertStoredWord,
@@ -71,12 +75,13 @@ function statusLabel(log: { status: string }): string {
   return `<span class="${cls}">${escapeHtml(log.status)}</span>`;
 }
 
-function navLinks(active: "ocr" | "word-info" | "words"): string {
+function navLinks(active: "ocr" | "word-info" | "words" | "tts"): string {
   const ocr = active === "ocr" ? "<strong>OCR・翻訳ログ</strong>" : `<a href="/admin">OCR・翻訳ログ</a>`;
   const wordInfo =
     active === "word-info" ? "<strong>単語情報ログ</strong>" : `<a href="/admin/word-info">単語情報ログ</a>`;
   const words = active === "words" ? "<strong>単語一覧</strong>" : `<a href="/admin/words">単語一覧</a>`;
-  return `<p>${ocr} | ${wordInfo} | ${words}</p>`;
+  const tts = active === "tts" ? "<strong>TTS一覧</strong>" : `<a href="/admin/tts">TTS一覧</a>`;
+  return `<p>${ocr} | ${wordInfo} | ${words} | ${tts}</p>`;
 }
 
 // OCRモデルと翻訳モデルが同じ場合は1回の統合呼び出しにまとめており、
@@ -630,4 +635,78 @@ adminRouter.post("/words/:id/regenerate", async (req, res) => {
       )
     );
   }
+});
+
+adminRouter.get("/tts", (_req, res) => {
+  const rows = listTtsAudio();
+
+  const tableRows = rows
+    .map((row) => {
+      const preview = row.text.length > 80 ? `${row.text.slice(0, 80)}…` : row.text;
+      return `
+        <tr class="log-row">
+          <td>${row.id}</td>
+          <td>${escapeHtml(row.created_at)}</td>
+          <td>${escapeHtml(preview)}</td>
+          <td>${escapeHtml(row.voice)}</td>
+          <td>${escapeHtml(row.model)}</td>
+          <td>${(row.byte_size / 1024).toFixed(0)} KB</td>
+          <td><audio controls preload="none" src="/admin/tts/${row.id}/audio" style="width:220px;height:32px;"></audio></td>
+          <td>
+            <form method="post" action="/admin/tts/${row.id}/delete"
+                  onsubmit="return confirm('このTTS音声を削除します。よろしいですか？（同じテキストが再生されれば再合成されます）')">
+              <button type="submit" style="color:#c33;cursor:pointer;">削除</button>
+            </form>
+          </td>
+        </tr>
+      `;
+    })
+    .join("\n");
+
+  res.type("html").send(
+    renderPage(
+      "ESL Learning Assistant - TTS一覧",
+      "",
+      `
+        <h1>保存済みTTS音声一覧</h1>
+        ${navLinks("tts")}
+        <p>全${rows.length}件</p>
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th><th>作成日時</th><th>テキスト</th><th>声</th><th>モデル</th>
+              <th>サイズ</th><th>試聴</th><th></th>
+            </tr>
+          </thead>
+          <tbody>${tableRows}</tbody>
+        </table>
+      `
+    )
+  );
+});
+
+adminRouter.get("/tts/:id/audio", (req, res) => {
+  const id = Number(req.params.id);
+  const row = getTtsAudioById(id);
+  if (!row) {
+    res.status(404).end();
+    return;
+  }
+  res.sendFile(path.join(config.ttsDir, row.filename));
+});
+
+adminRouter.post("/tts/:id/delete", (req, res) => {
+  const id = Number(req.params.id);
+  const row = getTtsAudioById(id);
+  if (!row) {
+    res.status(404).type("html").send(
+      renderPage("TTS音声が見つかりません", "", '<p>指定されたTTS音声は存在しません。</p><p><a href="/admin/tts">← 一覧に戻る</a></p>')
+    );
+    return;
+  }
+  // 行を消してもファイルが残るとディスクを食い続けるため、ファイル→行の順に削除する
+  fs.rmSync(path.join(config.ttsDir, row.filename), { force: true });
+  deleteTtsAudio(id);
+  logger.info(`admin: deleted tts audio #${id} (${row.voice}/${row.model}, ${row.byte_size} bytes)`);
+  res.redirect("/admin/tts");
 });

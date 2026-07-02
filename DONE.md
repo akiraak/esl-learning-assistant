@@ -1,5 +1,15 @@
 # DONE
 
+- [x] TTSデータをサーバで保存する機能を入れる。backend に `tts_audio` テーブルと `data/tts/` を
+      新設し、`/api/tts` は同一 (voice, model, text)（sha256キー）ならGemini再呼び出しなしで
+      保存済みWAVを返す（ファイル欠損時は再合成して自己修復）。管理画面に「TTS一覧」タブを
+      追加し、`<audio>` での試聴と削除（ファイルごと）が可能。iOS は単語詳細の
+      Pronunciation（見出し語）/ Meanings / Examples の読み上げボタンをサーバTTSの
+      「生成→スピナー→再生」ボタン（TTSButton）に置き換え。生成した音声は
+      Application Support/tts/ に端末保存し、再訪時は最初から再生ボタンになる。
+      失敗時は alert 表示。TTSAudioStore のユニットテスト3件を追加
+      [plan](docs/plans/archive/tts-server-storage.md)（2026-07-02）
+
 - [x] レッスン画面で単語を追加した直後にWordsセクションへ即時反映されない問題を修正。
       `WordAddView` が出現記録を to-one 側（occurrence.lesson）だけ設定して insert していたため、
       逆側 `lesson.wordOccurrences` への反映と変更通知が次の autosave まで遅れていた。

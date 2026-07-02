@@ -3,6 +3,7 @@ import Database from "better-sqlite3";
 import { config } from "./config";
 
 fs.mkdirSync(config.imagesDir, { recursive: true });
+fs.mkdirSync(config.ttsDir, { recursive: true });
 
 export const db = new Database(config.dbPath);
 db.pragma("journal_mode = WAL");
@@ -78,6 +79,21 @@ const wordInfoColumns = new Set(
 if (!wordInfoColumns.has("cache_hit")) {
   db.exec("ALTER TABLE word_info_requests ADD COLUMN cache_hit INTEGER NOT NULL DEFAULT 0");
 }
+
+// サーバ合成したTTS音声の保存（実体は data/tts/<text_hash>.wav、ここはメタデータ）。
+// キャッシュキーは sha256("voice|model|text")。
+db.exec(`
+  CREATE TABLE IF NOT EXISTS tts_audio (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    text TEXT NOT NULL,
+    voice TEXT NOT NULL,
+    model TEXT NOT NULL,
+    text_hash TEXT NOT NULL UNIQUE,
+    filename TEXT NOT NULL,
+    byte_size INTEGER NOT NULL
+  )
+`);
 
 // 単語情報の正式な保存先（word_info_requests は通信ログとして温存し役割を分ける）。
 // キャッシュキーは (trim + 小文字化した word, target_language)。
@@ -333,4 +349,59 @@ export function upsertStoredWord(input: StoredWordInput): void {
 
 export function deleteStoredWord(id: number): void {
   db.prepare("DELETE FROM words WHERE id = ?").run(id);
+}
+
+export interface TtsAudioRow {
+  id: number;
+  created_at: string;
+  text: string;
+  voice: string;
+  model: string;
+  text_hash: string;
+  filename: string;
+  byte_size: number;
+}
+
+export function getTtsAudioByHash(textHash: string): TtsAudioRow | undefined {
+  return db.prepare("SELECT * FROM tts_audio WHERE text_hash = ?").get(textHash) as TtsAudioRow | undefined;
+}
+
+export function getTtsAudioById(id: number): TtsAudioRow | undefined {
+  return db.prepare("SELECT * FROM tts_audio WHERE id = ?").get(id) as TtsAudioRow | undefined;
+}
+
+export function listTtsAudio(): TtsAudioRow[] {
+  return db.prepare("SELECT * FROM tts_audio ORDER BY id DESC").all() as TtsAudioRow[];
+}
+
+const upsertTtsAudioStmt = db.prepare(`
+  INSERT INTO tts_audio (created_at, text, voice, model, text_hash, filename, byte_size)
+  VALUES (@createdAt, @text, @voice, @model, @textHash, @filename, @byteSize)
+  ON CONFLICT(text_hash) DO UPDATE SET
+    created_at = excluded.created_at,
+    byte_size = excluded.byte_size
+`);
+
+/// 合成結果のメタデータを保存する。ファイル欠損からの自己修復（再合成）時は既存行を更新する。
+export function upsertTtsAudio(input: {
+  text: string;
+  voice: string;
+  model: string;
+  textHash: string;
+  filename: string;
+  byteSize: number;
+}): void {
+  upsertTtsAudioStmt.run({
+    createdAt: new Date().toISOString(),
+    text: input.text,
+    voice: input.voice,
+    model: input.model,
+    textHash: input.textHash,
+    filename: input.filename,
+    byteSize: input.byteSize,
+  });
+}
+
+export function deleteTtsAudio(id: number): void {
+  db.prepare("DELETE FROM tts_audio WHERE id = ?").run(id);
 }
