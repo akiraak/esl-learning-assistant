@@ -59,6 +59,11 @@ app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
 });
 
+// クライアントの接続テスト用（/api 配下なので X-API-Secret の一致確認になる）
+app.get("/api/ping", (_req, res) => {
+  res.json({ ok: true });
+});
+
 app.post("/api/ocr-translate", async (req, res) => {
   const { imageBase64, mediaType, targetLanguage } = req.body ?? {};
 
