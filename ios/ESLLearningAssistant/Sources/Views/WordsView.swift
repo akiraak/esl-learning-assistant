@@ -23,6 +23,7 @@ struct WordsView: View {
                     ContentUnavailableView.search(text: searchText)
                 } else {
                     List {
+                        // 単語本体の削除は詳細画面の Delete Word ボタンに集約する（スワイプ削除なし）
                         ForEach(filteredWords) { word in
                             NavigationLink {
                                 WordDetailView(word: word)
@@ -30,7 +31,6 @@ struct WordsView: View {
                                 WordRow(word: word)
                             }
                         }
-                        .onDelete(perform: deleteWords)
                     }
                 }
             }
@@ -157,12 +157,6 @@ struct WordsView: View {
         }
     }
 
-    private func deleteWords(at offsets: IndexSet) {
-        let targets = filteredWords
-        for index in offsets {
-            modelContext.delete(targets[index])
-        }
-    }
 }
 
 struct WordRow: View {

@@ -202,6 +202,14 @@ struct LessonsView: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    // レッスンとのリンク（WordOccurrence）を外すのみ。Word本体はWordsタブに残る
+                    .swipeActions(edge: .trailing) {
+                        Button(role: .destructive) {
+                            removeWordFromLesson(word, in: lesson)
+                        } label: {
+                            Label("Remove", systemImage: "minus.circle")
+                        }
+                    }
                 }
             }
         } header: {
@@ -306,6 +314,15 @@ struct LessonsView: View {
     }
 
     // MARK: - アクション
+
+    /// レッスンとのリンク（WordOccurrence）だけを削除する。Word本体は単語一覧に残す
+    private func removeWordFromLesson(_ word: Word, in lesson: Lesson) {
+        for occurrence in lesson.wordOccurrences where occurrence.word.id == word.id {
+            modelContext.delete(occurrence)
+        }
+        // autosave任せだと直後にアプリが強制終了された場合に失われるため明示的に保存する
+        try? modelContext.save()
+    }
 
     private func translateAllPending(in lesson: Lesson) async {
         let targets = lesson.photos.filter { $0.processingStatus == .pending || $0.processingStatus == .failed }
