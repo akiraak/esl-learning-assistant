@@ -7,6 +7,7 @@ struct WordsView: View {
     @Query(sort: \Word.registeredAt, order: .reverse) private var words: [Word]
 
     @State private var isShowingAdd = false
+    @State private var fixedLessonForAdd: Lesson?
     @State private var searchText = ""
     @State private var pushedWord: Word?
     @State private var isBulkGenerating = false
@@ -66,8 +67,8 @@ struct WordsView: View {
                     .padding(.bottom, 8)
                 }
             }
-            .sheet(isPresented: $isShowingAdd) {
-                WordAddView()
+            .sheet(isPresented: $isShowingAdd, onDismiss: { fixedLessonForAdd = nil }) {
+                WordAddView(fixedLesson: fixedLessonForAdd)
             }
             .navigationDestination(item: $pushedWord) { word in
                 WordDetailView(word: word)
@@ -75,6 +76,10 @@ struct WordsView: View {
             .onAppear(perform: consumePendingWord)
             .onChange(of: router.pendingWord) { _, _ in
                 consumePendingWord()
+            }
+            .onAppear(perform: consumePendingAddWordLesson)
+            .onChange(of: router.pendingAddWordLesson) { _, _ in
+                consumePendingAddWordLesson()
             }
         }
     }
@@ -120,6 +125,14 @@ struct WordsView: View {
         guard let word = router.pendingWord else { return }
         router.pendingWord = nil
         pushedWord = word
+    }
+
+    /// 他タブから指定されたレッスンがあれば、レッスン固定の単語追加画面を開く
+    private func consumePendingAddWordLesson() {
+        guard let lesson = router.pendingAddWordLesson else { return }
+        router.pendingAddWordLesson = nil
+        fixedLessonForAdd = lesson
+        isShowingAdd = true
     }
 
     private var emptyState: some View {

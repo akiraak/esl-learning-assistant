@@ -6,7 +6,6 @@
         結果表示→失敗時の再試行）を動作確認する（ANTHROPIC_API_KEYは設定済みで、backend側の
         `/api/ocr-translate`実キー呼び出しはcurlで複数回成功確認済み。iOS側のGUI操作は
         シミュレータ/実機操作権限が無いこのセッションでは未確認）
-  - [ ] Lessonページの Wordsに単語追加ボタン。タップでWordsタブの追加画面に遷移させLessonは設定されて変更できない状態にする
   - [ ] Lessonページの Add photo を Contentの中に置く
 
 - [ ] 管理画面のログ時間をシアトルのタイムゾーンにする

@@ -10,6 +10,14 @@ struct WordAddView: View {
     @State private var text = ""
     @State private var selectedLessonID: UUID?
 
+    /// レッスンを固定して開く場合に指定する。指定時はレッスンを変更できない。
+    private let fixedLesson: Lesson?
+
+    init(fixedLesson: Lesson? = nil) {
+        self.fixedLesson = fixedLesson
+        _selectedLessonID = State(initialValue: fixedLesson?.id)
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -23,18 +31,29 @@ struct WordAddView: View {
                 }
 
                 Section {
-                    Picker("Lesson", selection: $selectedLessonID) {
-                        Text("None").tag(UUID?.none)
-                        ForEach(classes) { schoolClass in
-                            ForEach(schoolClass.lessons.sorted { $0.createdAt > $1.createdAt }) { lesson in
-                                Text("\(schoolClass.name) / \(lesson.title)")
-                                    .tag(Optional(lesson.id))
+                    if let fixedLesson {
+                        LabeledContent("Lesson") {
+                            Text("\(fixedLesson.schoolClass.name) / \(fixedLesson.title)")
+                        }
+                        .accessibilityIdentifier("wordLessonFixedLabel")
+                    } else {
+                        Picker("Lesson", selection: $selectedLessonID) {
+                            Text("None").tag(UUID?.none)
+                            ForEach(classes) { schoolClass in
+                                ForEach(schoolClass.lessons.sorted { $0.createdAt > $1.createdAt }) { lesson in
+                                    Text("\(schoolClass.name) / \(lesson.title)")
+                                        .tag(Optional(lesson.id))
+                                }
                             }
                         }
+                        .accessibilityIdentifier("wordLessonPicker")
                     }
-                    .accessibilityIdentifier("wordLessonPicker")
                 } footer: {
-                    Text("If you select a lesson, this word will be linked to it. You can also add it without a lesson.")
+                    if fixedLesson != nil {
+                        Text("This word will be linked to this lesson.")
+                    } else {
+                        Text("If you select a lesson, this word will be linked to it. You can also add it without a lesson.")
+                    }
                 }
             }
             .navigationTitle("Add Word")
@@ -68,8 +87,10 @@ struct WordAddView: View {
             modelContext.insert(word)
         }
 
-        if let lessonID = selectedLessonID,
-           let lesson = classes.flatMap(\.lessons).first(where: { $0.id == lessonID }) {
+        if let lesson = fixedLesson {
+            modelContext.insert(WordOccurrence(word: word, lesson: lesson))
+        } else if let lessonID = selectedLessonID,
+                  let lesson = classes.flatMap(\.lessons).first(where: { $0.id == lessonID }) {
             modelContext.insert(WordOccurrence(word: word, lesson: lesson))
         }
 

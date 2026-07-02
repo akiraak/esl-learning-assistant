@@ -1,5 +1,15 @@
 # DONE
 
+- [x] Lessonページの Wordsに単語追加ボタン。タップでWordsタブの追加画面に遷移させLessonは
+      設定されて変更できない状態にする（`AppRouter` に `pendingAddWordLesson` と
+      `showAddWord(for:)` を追加し、既存の `pendingWord` と同じ「routerに積んでWordsタブ側が
+      消費する」方式でタブ横断遷移を実装。`WordAddView` に `fixedLesson` 引数を追加し、
+      固定時は Picker の代わりに固定表示行（クラス名 / レッスン名）とし変更不可に。
+      `LessonsView` の Words セクション先頭に Add Word ボタンを追加。UIテスト
+      （レッスンから追加→固定表示確認→追加後のレッスンWords反映→Wordsタブ通常追加の
+      Picker回帰確認、スクリーンショット付き）を追加しシミュレータで全成功）
+      [plan](docs/plans/archive/lesson-words-add-button.md) (2026-07-01)
+
 - [x] レッスンページにメモ機能を追加（`Lesson` に `memo: String?` を追加（オプショナルのため
       ライトウェイトマイグレーションで自動移行）。`LessonsView` の Words と Questions の間に
       Memo セクションを追加し、タップで新設の `LessonMemoEditView`（TextEditor）へ遷移。

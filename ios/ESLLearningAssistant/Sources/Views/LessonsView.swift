@@ -179,6 +179,13 @@ struct LessonsView: View {
     private func wordsSection(_ lesson: Lesson) -> some View {
         let words = lessonWords(lesson)
         Section("Words (\(words.count))") {
+            // 単語追加はWordsタブの追加画面に集約し、このレッスンを固定した状態で開く
+            Button {
+                router.showAddWord(for: lesson)
+            } label: {
+                Label("Add Word", systemImage: "plus")
+            }
+            .accessibilityIdentifier("lessonWordAddButton")
             if words.isEmpty {
                 Text("No words yet")
                     .foregroundStyle(.secondary)
