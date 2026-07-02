@@ -18,7 +18,7 @@ struct ClassLessonSwitcherView: View {
                     Section {
                         let lessons = schoolClass.lessons.sorted { $0.createdAt > $1.createdAt }
                         if lessons.isEmpty {
-                            Text("レッスンがありません")
+                            Text("No lessons yet")
                                 .foregroundStyle(.secondary)
                         } else {
                             ForEach(lessons) { lesson in
@@ -55,16 +55,16 @@ struct ClassLessonSwitcherView: View {
                     Button {
                         isAddingClass = true
                     } label: {
-                        Label("クラスを追加", systemImage: "plus")
+                        Label("Add Class", systemImage: "plus")
                     }
                     .accessibilityIdentifier("switcherAddClassButton")
                 }
             }
-            .navigationTitle("クラス・レッスン")
+            .navigationTitle("Classes & Lessons")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("閉じる") { dismiss() }
+                    Button("Close") { dismiss() }
                 }
             }
             .navigationDestination(isPresented: $isAddingClass) {

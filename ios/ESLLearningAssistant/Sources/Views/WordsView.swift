@@ -9,6 +9,9 @@ struct WordsView: View {
     @State private var isShowingAdd = false
     @State private var searchText = ""
     @State private var pushedWord: Word?
+    @State private var isBulkGenerating = false
+    @State private var bulkDone = 0
+    @State private var bulkTotal = 0
 
     var body: some View {
         NavigationStack {
@@ -30,16 +33,38 @@ struct WordsView: View {
                     }
                 }
             }
-            .navigationTitle("単語")
-            .searchable(text: $searchText, prompt: "単語・訳語を検索")
+            .navigationTitle("Words")
+            .searchable(text: $searchText, prompt: "Search words")
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
                         isShowingAdd = true
                     } label: {
-                        Label("単語を追加", systemImage: "plus")
+                        Label("Add Word", systemImage: "plus")
                     }
                     .accessibilityIdentifier("wordAddButton")
+                }
+                ToolbarItem(placement: .secondaryAction) {
+                    Button {
+                        generateAllPending()
+                    } label: {
+                        Label("Generate Missing AI Info", systemImage: "sparkles")
+                    }
+                    .disabled(isBulkGenerating || pendingAIWords.isEmpty)
+                    .accessibilityIdentifier("wordBulkGenerateButton")
+                }
+            }
+            .safeAreaInset(edge: .bottom) {
+                if isBulkGenerating {
+                    HStack(spacing: 12) {
+                        ProgressView()
+                        Text("Generating AI info (\(bulkDone)/\(bulkTotal))")
+                            .font(.footnote)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(.regularMaterial, in: Capsule())
+                    .padding(.bottom, 8)
                 }
             }
             .sheet(isPresented: $isShowingAdd) {
@@ -65,6 +90,32 @@ struct WordsView: View {
         }
     }
 
+    /// AI情報が未生成・生成失敗の単語
+    private var pendingAIWords: [Word] {
+        words.filter { $0.aiInfoStatus == .none || $0.aiInfoStatus == .failed }
+    }
+
+    /// 未生成・失敗の単語のAI情報を順次生成する（並列にせずAPI負荷を抑える）
+    private func generateAllPending() {
+        let targets = pendingAIWords
+        guard !targets.isEmpty, !isBulkGenerating else { return }
+        isBulkGenerating = true
+        bulkTotal = targets.count
+        bulkDone = 0
+        Task {
+            for word in targets {
+                // 生成中にユーザーが削除した単語はスキップする
+                guard word.modelContext != nil else {
+                    bulkDone += 1
+                    continue
+                }
+                await WordAIInfoGenerator.shared.generate(for: word)
+                bulkDone += 1
+            }
+            isBulkGenerating = false
+        }
+    }
+
     /// 他タブから指定された単語があれば詳細をプッシュする
     private func consumePendingWord() {
         guard let word = router.pendingWord else { return }
@@ -77,10 +128,10 @@ struct WordsView: View {
             Image(systemName: "book")
                 .font(.system(size: 48))
                 .foregroundStyle(.secondary)
-            Text("単語がありません")
+            Text("No Words")
                 .font(.title2)
                 .fontWeight(.semibold)
-            Text("教科書やレッスンで出会った単語を登録しましょう。")
+            Text("Add words you come across in your textbooks and lessons.")
                 .font(.body)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -88,7 +139,7 @@ struct WordsView: View {
             Button {
                 isShowingAdd = true
             } label: {
-                Label("単語を追加", systemImage: "plus")
+                Label("Add Word", systemImage: "plus")
             }
             .buttonStyle(.borderedProminent)
         }
@@ -106,12 +157,28 @@ struct WordRow: View {
     let word: Word
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(word.text)
-                .font(.headline)
-            Text(word.translation)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(word.text)
+                    .font(.headline)
+                // 訳語はAI生成完了時に自動補完されるため、それまでは空（行を出さない）
+                if !word.translation.isEmpty {
+                    Text(word.translation)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            // AI情報の生成状態（completed / none は表示なし＝ノイズにしない）
+            switch word.aiInfoStatus {
+            case .generating:
+                ProgressView()
+            case .failed:
+                Image(systemName: "exclamationmark.triangle")
+                    .foregroundStyle(.orange)
+            case .none, .completed:
+                EmptyView()
+            }
         }
     }
 }

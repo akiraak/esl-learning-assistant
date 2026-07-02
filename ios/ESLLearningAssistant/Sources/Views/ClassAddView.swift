@@ -14,18 +14,18 @@ struct ClassAddView: View {
     var body: some View {
         Form {
             Section {
-                TextField("クラス名（例: ESL Beginner A）", text: $name)
+                TextField("Class name (e.g. ESL Beginner A)", text: $name)
                     .focused($isNameFocused)
                     .accessibilityIdentifier("classNameField")
             } footer: {
-                Text("受講しているコース・科目の単位です。作成後にレッスンを追加できます。")
+                Text("A course or subject you are taking. You can add lessons after creating it.")
             }
         }
-        .navigationTitle("クラスを追加")
+        .navigationTitle("Add Class")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
-                Button("追加", action: addClass)
+                Button("Add", action: addClass)
                     .disabled(trimmedName.isEmpty)
             }
         }

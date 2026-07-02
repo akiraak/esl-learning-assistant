@@ -4,9 +4,10 @@ import path from "path";
 import crypto from "crypto";
 import express from "express";
 import { config } from "./config";
-import { insertRequestLog } from "./db";
+import { insertRequestLog, insertWordInfoLog } from "./db";
 import { adminRouter } from "./admin";
 import { ocrAndTranslate } from "./ocrTranslate";
+import { generateWordInfo } from "./wordInfo";
 import { estimateCostUsd } from "./pricing";
 import { logger } from "./logger";
 import { synthesizeSpeech, VOICE_PRESETS, MODEL_PRESETS, type VoiceKey, type ModelKey } from "./tts";
@@ -117,6 +118,105 @@ app.post("/api/ocr-translate", async (req, res) => {
     });
 
     logger.error(`ocr-translate: failed image=${imageFilename} latencyMs=${latencyMs} error=${errorMessage}`);
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+const WORD_MAX_LENGTH = 100;
+const WORD_INFO_CONTEXT_MAX_LENGTH = 8000;
+
+app.post("/api/word-info", async (req, res) => {
+  const { word, targetLanguage, context, userTranslation } = req.body ?? {};
+
+  if (typeof word !== "string" || !word.trim()) {
+    logger.warn("word-info: rejected (word is required)");
+    res.status(400).json({ error: "word is required" });
+    return;
+  }
+  if (word.length > WORD_MAX_LENGTH) {
+    logger.warn(`word-info: rejected (word too long: ${word.length})`);
+    res.status(400).json({ error: `word must be ${WORD_MAX_LENGTH} characters or fewer` });
+    return;
+  }
+  if (typeof targetLanguage !== "string" || !targetLanguage) {
+    logger.warn("word-info: rejected (targetLanguage is required)");
+    res.status(400).json({ error: "targetLanguage is required" });
+    return;
+  }
+  if (context !== undefined && typeof context !== "string") {
+    logger.warn("word-info: rejected (context must be a string)");
+    res.status(400).json({ error: "context must be a string" });
+    return;
+  }
+  if (userTranslation !== undefined && typeof userTranslation !== "string") {
+    logger.warn("word-info: rejected (userTranslation must be a string)");
+    res.status(400).json({ error: "userTranslation must be a string" });
+    return;
+  }
+
+  const trimmedWord = word.trim();
+  // 教科書ページ全文が来るため長すぎる場合は先頭側を残して切り詰める（拒否はしない）
+  const trimmedContext =
+    typeof context === "string" && context.trim()
+      ? context.trim().slice(0, WORD_INFO_CONTEXT_MAX_LENGTH)
+      : undefined;
+  const trimmedUserTranslation =
+    typeof userTranslation === "string" && userTranslation.trim()
+      ? userTranslation.trim()
+      : undefined;
+
+  const startedAt = Date.now();
+  logger.info(
+    `word-info: start word="${trimmedWord}" targetLanguage=${targetLanguage} ` +
+      `context=${trimmedContext ? "yes" : "no"} model=${config.wordInfoModel}`
+  );
+  try {
+    const result = await generateWordInfo(
+      trimmedWord,
+      targetLanguage,
+      trimmedContext,
+      trimmedUserTranslation
+    );
+    const latencyMs = Date.now() - startedAt;
+    const costUsd = estimateCostUsd(result.model, result.inputTokens, result.outputTokens);
+
+    insertWordInfoLog({
+      word: trimmedWord,
+      targetLanguage,
+      userTranslation: trimmedUserTranslation ?? null,
+      context: trimmedContext ?? null,
+      wordInfoJson: JSON.stringify(result.wordInfo),
+      model: result.model,
+      inputTokens: result.inputTokens,
+      outputTokens: result.outputTokens,
+      costUsd,
+      status: "success",
+      errorMessage: null,
+      latencyMs,
+    });
+
+    logger.info(`word-info: success word="${trimmedWord}" latencyMs=${latencyMs}`);
+    res.json({ wordInfo: result.wordInfo, model: result.model });
+  } catch (error) {
+    const latencyMs = Date.now() - startedAt;
+    const errorMessage = error instanceof Error ? error.message : String(error);
+
+    insertWordInfoLog({
+      word: trimmedWord,
+      targetLanguage,
+      userTranslation: trimmedUserTranslation ?? null,
+      context: trimmedContext ?? null,
+      wordInfoJson: null,
+      model: config.wordInfoModel,
+      inputTokens: 0,
+      outputTokens: 0,
+      costUsd: 0,
+      status: "error",
+      errorMessage,
+      latencyMs,
+    });
+
+    logger.error(`word-info: failed word="${trimmedWord}" latencyMs=${latencyMs} error=${errorMessage}`);
     res.status(500).json({ error: errorMessage });
   }
 });

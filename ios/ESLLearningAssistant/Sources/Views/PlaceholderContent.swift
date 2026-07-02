@@ -25,7 +25,7 @@ struct PlaceholderContent: View {
 #Preview {
     PlaceholderContent(
         systemImage: "camera",
-        title: "撮影",
-        message: "プレースホルダーのサンプルです。"
+        title: "Capture",
+        message: "Sample placeholder content."
     )
 }

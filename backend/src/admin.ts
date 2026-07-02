@@ -1,8 +1,16 @@
 import path from "path";
 import { Router } from "express";
 import { marked } from "marked";
-import { getRequestLog, listRecentRequestLogs, RequestLogRow } from "./db";
+import {
+  getRequestLog,
+  getWordInfoLog,
+  listRecentRequestLogs,
+  listRecentWordInfoLogs,
+  RequestLogRow,
+  WordInfoLogRow,
+} from "./db";
 import { config } from "./config";
+import type { WordInfo } from "./wordInfo";
 
 export const adminRouter = Router();
 
@@ -50,9 +58,16 @@ function renderPage(title: string, extraStyle: string, body: string): string {
   `;
 }
 
-function statusLabel(log: RequestLogRow): string {
+function statusLabel(log: { status: string }): string {
   const cls = log.status === "success" ? "status-success" : "status-error";
   return `<span class="${cls}">${escapeHtml(log.status)}</span>`;
+}
+
+function navLinks(active: "ocr" | "word-info"): string {
+  const ocr = active === "ocr" ? "<strong>OCR・翻訳ログ</strong>" : `<a href="/admin">OCR・翻訳ログ</a>`;
+  const wordInfo =
+    active === "word-info" ? "<strong>単語情報ログ</strong>" : `<a href="/admin/word-info">単語情報ログ</a>`;
+  return `<p>${ocr} | ${wordInfo}</p>`;
 }
 
 // OCRモデルと翻訳モデルが同じ場合は1回の統合呼び出しにまとめており、
@@ -104,6 +119,7 @@ adminRouter.get("/", (_req, res) => {
       "",
       `
         <h1>Claude API 通信ログ</h1>
+        ${navLinks("ocr")}
         <p>直近${logs.length}件</p>
         <table>
           <thead>
@@ -206,4 +222,184 @@ adminRouter.get("/logs/:id/image", (req, res) => {
     return;
   }
   res.sendFile(path.join(config.imagesDir, log.image_filename));
+});
+
+adminRouter.get("/word-info", (_req, res) => {
+  const logs = listRecentWordInfoLogs(100);
+
+  const rows = logs
+    .map(
+      (log) => `
+        <tr class="log-row">
+          <td>${log.id}</td>
+          <td>${escapeHtml(log.created_at)}</td>
+          <td><strong>${escapeHtml(log.word)}</strong>${
+            log.user_translation ? `<br><span style="color:#666">${escapeHtml(log.user_translation)}</span>` : ""
+          }</td>
+          <td>${escapeHtml(log.target_language)}</td>
+          <td>${log.context ? "あり" : "なし"}</td>
+          <td>${escapeHtml(log.model)} (in:${log.input_tokens} / out:${log.output_tokens})</td>
+          <td>$${log.cost_usd.toFixed(5)}</td>
+          <td>${statusLabel(log)}${log.error_message ? `<br>${escapeHtml(log.error_message)}` : ""}</td>
+          <td>${log.latency_ms}ms</td>
+          <td><a href="/admin/word-info/${log.id}">詳細を見る →</a></td>
+        </tr>
+      `
+    )
+    .join("\n");
+
+  res.type("html").send(
+    renderPage(
+      "ESL Learning Assistant - 単語情報ログ",
+      "",
+      `
+        <h1>単語情報生成ログ</h1>
+        ${navLinks("word-info")}
+        <p>直近${logs.length}件</p>
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th><th>日時</th><th>単語</th><th>母語</th><th>文脈</th>
+              <th>モデル/トークン数</th><th>コスト</th><th>状態</th><th>処理時間</th><th></th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      `
+    )
+  );
+});
+
+/// word_info_json を人が読める形に整形する（パース不能ならJSONをそのまま表示）
+function renderWordInfoBlock(log: WordInfoLogRow): string {
+  if (!log.word_info_json) return "<p>(生成結果なし)</p>";
+
+  let info: WordInfo;
+  try {
+    info = JSON.parse(log.word_info_json) as WordInfo;
+  } catch {
+    return `<pre>${escapeHtml(log.word_info_json)}</pre>`;
+  }
+
+  const senses = info.senses
+    .map(
+      (sense, i) => `
+        <tr>
+          <td>${i + 1}</td>
+          <td>${escapeHtml(sense.partOfSpeech)}</td>
+          <td>${escapeHtml(sense.meaning)}</td>
+          <td>${escapeHtml(sense.englishDefinition)}</td>
+          <td>${sense.note ? escapeHtml(sense.note) : ""}</td>
+        </tr>
+      `
+    )
+    .join("\n");
+
+  const examples = info.examples
+    .map((ex) => `<li>${escapeHtml(ex.english)}<br><span style="color:#666">${escapeHtml(ex.translation)}</span></li>`)
+    .join("\n");
+
+  const inflections = info.inflections
+    .map((inf) => `${escapeHtml(inf.form)}: ${escapeHtml(inf.text)}`)
+    .join(" / ");
+
+  const optionalRow = (label: string, value: string | null) =>
+    value ? `<tr><th>${label}</th><td>${escapeHtml(value)}</td></tr>` : "";
+
+  return `
+    <h2>語義</h2>
+    <table>
+      <thead><tr><th>#</th><th>品詞</th><th>意味</th><th>英語定義</th><th>ニュアンス</th></tr></thead>
+      <tbody>${senses}</tbody>
+    </table>
+    <h2>例文</h2>
+    <ul>${examples}</ul>
+    <h2>その他</h2>
+    <table class="meta-table">
+      <tr><th>発音</th><td>${escapeHtml(info.pronunciation.ipa)}${
+        info.pronunciation.syllables ? ` / ${escapeHtml(info.pronunciation.syllables)}` : ""
+      }</td></tr>
+      ${inflections ? `<tr><th>語形変化</th><td>${inflections}</td></tr>` : ""}
+      ${info.collocations.length ? `<tr><th>コロケーション</th><td>${escapeHtml(info.collocations.join(", "))}</td></tr>` : ""}
+      ${info.synonyms.length ? `<tr><th>類義語</th><td>${escapeHtml(info.synonyms.join(", "))}</td></tr>` : ""}
+      ${info.antonyms.length ? `<tr><th>反意語</th><td>${escapeHtml(info.antonyms.join(", "))}</td></tr>` : ""}
+      ${optionalRow("使用上の注意", info.usageNote)}
+      ${optionalRow("CEFR", info.cefrLevel)}
+      ${optionalRow("使用域", info.register)}
+      ${optionalRow("語源・記憶のヒント", info.etymology)}
+      ${optionalRow("よくある間違い", info.commonMistakes)}
+    </table>
+    <h2>生JSON</h2>
+    <details><summary>表示する</summary><pre>${escapeHtml(JSON.stringify(info, null, 2))}</pre></details>
+  `;
+}
+
+adminRouter.get("/word-info/:id", (req, res) => {
+  const id = Number(req.params.id);
+  const log = getWordInfoLog(id);
+  if (!log) {
+    res
+      .status(404)
+      .type("html")
+      .send(
+        renderPage(
+          "ログが見つかりません",
+          "",
+          '<p>指定されたログは存在しません。</p><p><a href="/admin/word-info">← 一覧に戻る</a></p>'
+        )
+      );
+    return;
+  }
+
+  const prev = getWordInfoLog(id + 1); // 新しいログ
+  const next = getWordInfoLog(id - 1); // 古いログ
+
+  const body = `
+    <p><a href="/admin/word-info">← 一覧に戻る</a></p>
+    <h1>単語情報ログ #${log.id}: ${escapeHtml(log.word)}</h1>
+    <table class="meta-table">
+      <tr><th>日時</th><td>${escapeHtml(log.created_at)}</td></tr>
+      <tr><th>単語</th><td>${escapeHtml(log.word)}</td></tr>
+      <tr><th>ユーザー訳語</th><td>${log.user_translation ? escapeHtml(log.user_translation) : "(なし)"}</td></tr>
+      <tr><th>母語</th><td>${escapeHtml(log.target_language)}</td></tr>
+      <tr><th>モデル</th><td>${escapeHtml(log.model)}（in: ${log.input_tokens} / out: ${log.output_tokens}）</td></tr>
+      <tr><th>コスト</th><td>$${log.cost_usd.toFixed(5)}</td></tr>
+      <tr><th>状態</th><td>${statusLabel(log)}${log.error_message ? `<br>${escapeHtml(log.error_message)}` : ""}</td></tr>
+      <tr><th>処理時間</th><td>${log.latency_ms}ms</td></tr>
+    </table>
+
+    ${renderWordInfoBlock(log)}
+
+    <h2>文脈（教科書本文）</h2>
+    ${log.context ? `<div class="markdown-block">${renderMarkdown(log.context)}</div>` : "<p>(なし)</p>"}
+
+    <p class="nav-links">
+      ${prev ? `<a href="/admin/word-info/${prev.id}">← 新しいログ (#${prev.id})</a>` : "<span>(これが最新)</span>"}
+      &nbsp;|&nbsp;
+      ${next ? `<a href="/admin/word-info/${next.id}">古いログ (#${next.id}) →</a>` : "<span>(これが最古)</span>"}
+    </p>
+  `;
+
+  res.type("html").send(
+    renderPage(
+      `単語情報ログ #${log.id} - ESL Learning Assistant`,
+      `
+        .meta-table { border-collapse: collapse; margin: 12px 0 24px; width: auto; }
+        .meta-table th, .meta-table td { border: 1px solid #ccc; padding: 6px 12px; font-size: 13px; text-align: left; }
+        .meta-table th { background: #f0f0f0; white-space: nowrap; }
+        .markdown-block {
+          font-size: 14px;
+          line-height: 1.7;
+          border: 1px solid #ddd;
+          border-radius: 6px;
+          padding: 16px 20px;
+          margin-bottom: 24px;
+          background: #fafafa;
+        }
+        pre { background: #f5f5f5; padding: 12px; border-radius: 6px; overflow-x: auto; }
+        .nav-links { margin-top: 16px; }
+      `,
+      body
+    )
+  );
 });

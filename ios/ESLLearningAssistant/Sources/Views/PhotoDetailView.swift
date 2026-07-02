@@ -27,25 +27,25 @@ struct PhotoDetailView: View {
                 case .pending:
                     HStack {
                         ProgressView()
-                        Text("OCR・翻訳を開始しています…")
+                        Text("Starting OCR & translation…")
                             .foregroundStyle(.secondary)
                     }
                 case .processing:
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("OCR・翻訳の処理が完了していません（前回中断された可能性があります）")
+                        Text("OCR & translation did not finish (it may have been interrupted)")
                             .foregroundStyle(.secondary)
                         retryButton
                     }
                 case .failed:
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("OCR・翻訳の処理に失敗しました")
+                        Text("OCR & translation failed")
                             .foregroundStyle(.red)
                         retryButton
                     }
                 case .completed:
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
-                            Text("OCR結果（英語）")
+                            Text("OCR Result (English)")
                                 .font(.headline)
                             Spacer()
                             speechButton
@@ -55,7 +55,7 @@ struct PhotoDetailView: View {
                     }
                     Divider()
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("翻訳")
+                        Text("Translation")
                             .font(.headline)
                         Markdown(photo.translatedText ?? "")
                             .markdownHeadingHighlight()
@@ -66,7 +66,7 @@ struct PhotoDetailView: View {
             }
             .padding()
         }
-        .navigationTitle("写真詳細")
+        .navigationTitle("Photo Detail")
         .navigationBarTitleDisplayMode(.inline)
         .task(id: photo.id) {
             stopSpeaking()
@@ -114,7 +114,7 @@ struct PhotoDetailView: View {
             if isRetrying {
                 ProgressView()
             } else {
-                Label("翻訳する", systemImage: "arrow.clockwise")
+                Label("Translate", systemImage: "arrow.clockwise")
             }
         }
         .buttonStyle(.bordered)
@@ -128,7 +128,7 @@ struct PhotoDetailView: View {
             if isRetrying {
                 ProgressView()
             } else {
-                Label("再翻訳する", systemImage: "arrow.clockwise")
+                Label("Retranslate", systemImage: "arrow.clockwise")
             }
         }
         .buttonStyle(.bordered)

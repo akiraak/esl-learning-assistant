@@ -34,7 +34,7 @@ struct LessonsView: View {
                     emptyClassState
                 }
             }
-            .navigationTitle("レッスン")
+            .navigationTitle("Lessons")
             .sheet(isPresented: $isShowingSwitcher) {
                 ClassLessonSwitcherView(
                     currentClassID: currentClassIDBinding,
@@ -99,7 +99,7 @@ struct LessonsView: View {
                         Text(schoolClass.name)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
-                        Text(currentLesson?.title ?? "レッスン未選択")
+                        Text(currentLesson?.title ?? "No lesson selected")
                             .font(.title3)
                             .fontWeight(.semibold)
                     }
@@ -123,15 +123,15 @@ struct LessonsView: View {
             Button {
                 isShowingCapture = true
             } label: {
-                Label("写真を追加", systemImage: "camera")
+                Label("Add Photo", systemImage: "camera")
             }
         }
 
-        Section("コンテンツ (\(lesson.photos.count))") {
+        Section("Content (\(lesson.photos.count))") {
             let photos = lesson.photos.sorted { $0.capturedAt > $1.capturedAt }
             let untranslatedCount = photos.filter { $0.processingStatus == .pending || $0.processingStatus == .failed }.count
             if photos.isEmpty {
-                Text("まだコンテンツがありません")
+                Text("No content yet")
                     .foregroundStyle(.secondary)
             } else {
                 if untranslatedCount > 0 {
@@ -141,10 +141,10 @@ struct LessonsView: View {
                         if isBulkTranslating {
                             HStack {
                                 ProgressView()
-                                Text("翻訳中… (\(bulkTranslateDone)/\(bulkTranslateTotal))")
+                                Text("Translating… (\(bulkTranslateDone)/\(bulkTranslateTotal))")
                             }
                         } else {
-                            Label("未翻訳の写真をまとめて翻訳 (\(untranslatedCount)件)", systemImage: "translate")
+                            Label("Translate Untranslated Photos (\(untranslatedCount))", systemImage: "translate")
                         }
                     }
                     .disabled(isBulkTranslating)
@@ -162,8 +162,8 @@ struct LessonsView: View {
 
         wordsSection(lesson)
 
-        Section("問題") {
-            Text("問題機能は今後実装予定です")
+        Section("Questions") {
+            Text("Question features are coming soon")
                 .foregroundStyle(.secondary)
         }
     }
@@ -171,9 +171,9 @@ struct LessonsView: View {
     @ViewBuilder
     private func wordsSection(_ lesson: Lesson) -> some View {
         let words = lessonWords(lesson)
-        Section("単語 (\(words.count))") {
+        Section("Words (\(words.count))") {
             if words.isEmpty {
-                Text("まだ単語がありません")
+                Text("No words yet")
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(words) { word in
@@ -214,10 +214,10 @@ struct LessonsView: View {
             Image(systemName: "person.3")
                 .font(.system(size: 48))
                 .foregroundStyle(.secondary)
-            Text("クラスがありません")
+            Text("No Classes")
                 .font(.title2)
                 .fontWeight(.semibold)
-            Text("受講しているクラスを追加して始めましょう。")
+            Text("Add a class you are taking to get started.")
                 .font(.body)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -225,7 +225,7 @@ struct LessonsView: View {
             Button {
                 isShowingSwitcher = true
             } label: {
-                Label("クラスを追加", systemImage: "plus")
+                Label("Add Class", systemImage: "plus")
             }
             .buttonStyle(.borderedProminent)
             .accessibilityIdentifier("lessonAddClassButton")
@@ -238,16 +238,16 @@ struct LessonsView: View {
                 Image(systemName: "book.closed")
                     .font(.system(size: 40))
                     .foregroundStyle(.secondary)
-                Text("レッスンがありません")
+                Text("No Lessons")
                     .font(.headline)
-                Text("\(schoolClass.name) にレッスンを追加して始めましょう。")
+                Text("Add a lesson to \(schoolClass.name) to get started.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                 Button {
                     isShowingSwitcher = true
                 } label: {
-                    Label("レッスンを追加", systemImage: "plus")
+                    Label("Add Lesson", systemImage: "plus")
                 }
                 .buttonStyle(.borderedProminent)
             }
@@ -304,10 +304,10 @@ private struct PhotoRow: View {
     private var statusLabel: some View {
         let (text, systemImage, color): (String, String, Color) = {
             switch photo.processingStatus {
-            case .pending: return ("未処理", "clock", .secondary)
-            case .processing: return ("処理中", "hourglass", .secondary)
-            case .completed: return ("完了", "checkmark.circle", .green)
-            case .failed: return ("失敗", "exclamationmark.triangle", .red)
+            case .pending: return ("Pending", "clock", .secondary)
+            case .processing: return ("Processing", "hourglass", .secondary)
+            case .completed: return ("Done", "checkmark.circle", .green)
+            case .failed: return ("Failed", "exclamationmark.triangle", .red)
             }
         }()
         return Label(text, systemImage: systemImage)

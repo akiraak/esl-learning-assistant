@@ -31,4 +31,16 @@ enum PhotoStorage {
         let fileURL = directoryURL.appendingPathComponent(fileName)
         return try? Data(contentsOf: fileURL)
     }
+
+    static func delete(fileName: String) {
+        let fileURL = directoryURL.appendingPathComponent(fileName)
+        try? FileManager.default.removeItem(at: fileURL)
+    }
+
+    /// Photosディレクトリごと削除する（次回saveで再作成される）。
+    static func deleteAll() {
+        let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Photos", isDirectory: true)
+        try? FileManager.default.removeItem(at: url)
+    }
 }

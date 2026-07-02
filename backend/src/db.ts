@@ -50,6 +50,26 @@ if (!existingColumns.has("ocr_cost_usd")) {
   db.exec("ALTER TABLE requests ADD COLUMN translate_cost_usd REAL NOT NULL DEFAULT 0");
 }
 
+// 単語情報生成（/api/word-info）のログ。既存requestsテーブルはOCR専用構造のため分ける。
+db.exec(`
+  CREATE TABLE IF NOT EXISTS word_info_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    word TEXT NOT NULL,
+    target_language TEXT NOT NULL,
+    user_translation TEXT,
+    context TEXT,
+    word_info_json TEXT,
+    model TEXT NOT NULL,
+    input_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    cost_usd REAL NOT NULL DEFAULT 0,
+    status TEXT NOT NULL,
+    error_message TEXT,
+    latency_ms INTEGER NOT NULL DEFAULT 0
+  )
+`);
+
 export interface RequestLogInput {
   imageFilename: string | null;
   targetLanguage: string;
@@ -134,4 +154,78 @@ export function listRecentRequestLogs(limit: number): RequestLogRow[] {
 
 export function getRequestLog(id: number): RequestLogRow | undefined {
   return db.prepare("SELECT * FROM requests WHERE id = ?").get(id) as RequestLogRow | undefined;
+}
+
+export interface WordInfoLogInput {
+  word: string;
+  targetLanguage: string;
+  userTranslation: string | null;
+  context: string | null;
+  wordInfoJson: string | null;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+  status: "success" | "error";
+  errorMessage: string | null;
+  latencyMs: number;
+}
+
+const insertWordInfoStmt = db.prepare(`
+  INSERT INTO word_info_requests (
+    created_at, word, target_language, user_translation, context,
+    word_info_json, model, input_tokens, output_tokens,
+    cost_usd, status, error_message, latency_ms
+  ) VALUES (
+    @createdAt, @word, @targetLanguage, @userTranslation, @context,
+    @wordInfoJson, @model, @inputTokens, @outputTokens,
+    @costUsd, @status, @errorMessage, @latencyMs
+  )
+`);
+
+export function insertWordInfoLog(input: WordInfoLogInput): void {
+  insertWordInfoStmt.run({
+    createdAt: new Date().toISOString(),
+    word: input.word,
+    targetLanguage: input.targetLanguage,
+    userTranslation: input.userTranslation,
+    context: input.context,
+    wordInfoJson: input.wordInfoJson,
+    model: input.model,
+    inputTokens: input.inputTokens,
+    outputTokens: input.outputTokens,
+    costUsd: input.costUsd,
+    status: input.status,
+    errorMessage: input.errorMessage,
+    latencyMs: input.latencyMs,
+  });
+}
+
+export interface WordInfoLogRow {
+  id: number;
+  created_at: string;
+  word: string;
+  target_language: string;
+  user_translation: string | null;
+  context: string | null;
+  word_info_json: string | null;
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number;
+  status: string;
+  error_message: string | null;
+  latency_ms: number;
+}
+
+export function listRecentWordInfoLogs(limit: number): WordInfoLogRow[] {
+  return db
+    .prepare("SELECT * FROM word_info_requests ORDER BY id DESC LIMIT ?")
+    .all(limit) as WordInfoLogRow[];
+}
+
+export function getWordInfoLog(id: number): WordInfoLogRow | undefined {
+  return db
+    .prepare("SELECT * FROM word_info_requests WHERE id = ?")
+    .get(id) as WordInfoLogRow | undefined;
 }

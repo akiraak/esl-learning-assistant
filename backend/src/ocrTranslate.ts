@@ -44,7 +44,7 @@ const COMBINED_SCHEMA = {
   additionalProperties: false,
 } as const;
 
-interface StructuredCallResult<T> {
+export interface StructuredCallResult<T> {
   json: T;
   inputTokens: number;
   outputTokens: number;
@@ -53,7 +53,7 @@ interface StructuredCallResult<T> {
 // claude-haiku-4-5はoutput_config.effortパラメータ非対応
 // （"This model does not support the effort parameter."で400エラーになる）ため、
 // haiku系モデルではeffortを付けずに呼び出す。
-async function callStructured<T>(
+export async function callStructured<T>(
   model: string,
   schema: Record<string, unknown>,
   content: Anthropic.Messages.ContentBlockParam[]

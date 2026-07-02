@@ -1,4 +1,34 @@
+import SwiftData
 import SwiftUI
+
+#if DEBUG
+private enum DebugDeleteAction: String, Identifiable {
+    case allData
+    case classes
+    case words
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .allData: "Delete All Data"
+        case .classes: "Delete a Class and Its Lessons"
+        case .words: "Delete All Words"
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .allData:
+            "All classes, lessons, photos, and words will be deleted. This cannot be undone."
+        case .classes:
+            "Choose a class to delete. Its lessons and photos will also be deleted (words are kept). This cannot be undone."
+        case .words:
+            "All words will be deleted (classes, lessons, and photos are kept). This cannot be undone."
+        }
+    }
+}
+#endif
 
 struct SettingsView: View {
     @AppStorage(AppSettingsKeys.backendBaseURL)
@@ -10,64 +40,157 @@ struct SettingsView: View {
     @AppStorage(AppSettingsKeys.ttsModel)
     private var ttsModel = AppSettingsKeys.defaultTTSModel
 
+    #if DEBUG
+    @Environment(\.modelContext) private var modelContext
+    @Query private var classes: [Class]
+    @Query private var lessons: [Lesson]
+    @Query private var photos: [Photo]
+    @Query private var words: [Word]
+    @State private var pendingDeleteAction: DebugDeleteAction?
+    #endif
+
     var body: some View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("サーバーURL", text: $backendBaseURL)
+                    TextField("Server URL", text: $backendBaseURL)
                         .keyboardType(.URL)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                 } header: {
-                    Text("バックエンド")
+                    Text("Backend")
                 } footer: {
                     Text(
-                        "OCR・翻訳を処理するローカルバックエンドのURL。既定値は "
+                        "URL of the local backend that handles OCR & translation. The default is "
                             + AppSettingsKeys.defaultBackendBaseURL
-                            + "（実機ビルドはrun-ios-device.shがMacのIPを自動設定）です。"
-                            + "Macと異なるネットワークにいる場合などはここで変更してください。"
+                            + " (device builds are set to your Mac's IP by run-ios-device.sh). "
+                            + "Change this if you are on a different network from your Mac."
                     )
                 }
 
                 Section {
-                    Text("日本語（固定）")
+                    Text("Japanese (fixed)")
                         .foregroundStyle(.secondary)
                 } header: {
-                    Text("翻訳先の母語")
+                    Text("Native Language")
                 } footer: {
-                    Text("母語を選択できる設定は今後実装予定です。")
+                    Text("Language selection is coming soon.")
                 }
 
                 Section {
-                    Picker("音声エンジン", selection: $ttsEngine) {
-                        Text("端末内蔵").tag("local")
+                    Picker("Speech Engine", selection: $ttsEngine) {
+                        Text("On-Device").tag("local")
                         Text("Gemini").tag("gemini")
                     }
-                    Picker("声のタイプ", selection: $ttsVoice) {
-                        Text("ちょビ").tag("chobi")
-                        Text("なるこ").tag("naruko")
+                    Picker("Voice", selection: $ttsVoice) {
+                        Text("Chobi").tag("chobi")
+                        Text("Naruko").tag("naruko")
                     }
                     .disabled(ttsEngine != "gemini")
-                    Picker("TTSモデル", selection: $ttsModel) {
-                        Text("高速").tag("flash")
-                        Text("高品質").tag("pro")
+                    Picker("TTS Model", selection: $ttsModel) {
+                        Text("Fast").tag("flash")
+                        Text("High Quality").tag("pro")
                     }
                     .disabled(ttsEngine != "gemini")
                 } header: {
-                    Text("音声読み上げ")
+                    Text("Text-to-Speech")
                 } footer: {
                     Text(
-                        "OCR結果（英語）の読み上げに使う音声。端末内蔵は追加の通信なしですぐ再生、"
-                            + "Geminiはバックエンド経由でより自然な音声を生成します（声のタイプ・モデルを選択可能）。"
-                            + "「高品質」は生成に時間がかかる場合があります。"
+                        "Voice used to read the OCR result (English) aloud. On-Device plays "
+                            + "instantly without network access; Gemini generates more natural "
+                            + "speech via the backend (voice and model selectable). "
+                            + "High Quality may take longer to generate."
                     )
                 }
+
+                #if DEBUG
+                Section {
+                    Button(DebugDeleteAction.allData.title, role: .destructive) {
+                        pendingDeleteAction = .allData
+                    }
+                    Button(DebugDeleteAction.classes.title, role: .destructive) {
+                        pendingDeleteAction = .classes
+                    }
+                    .disabled(classes.isEmpty)
+                    Button(DebugDeleteAction.words.title, role: .destructive) {
+                        pendingDeleteAction = .words
+                    }
+                } header: {
+                    Text("Debug")
+                } footer: {
+                    Text(
+                        "Current data: \(classes.count) classes, \(lessons.count) lessons, "
+                            + "\(photos.count) photos, \(words.count) words (Debug builds only)"
+                    )
+                }
+                #endif
             }
-            .navigationTitle("設定")
+            .navigationTitle("Settings")
+            #if DEBUG
+            .confirmationDialog(
+                pendingDeleteAction?.title ?? "",
+                isPresented: Binding(
+                    get: { pendingDeleteAction != nil },
+                    set: { if !$0 { pendingDeleteAction = nil } }
+                ),
+                titleVisibility: .visible,
+                presenting: pendingDeleteAction
+            ) { action in
+                if action == .classes {
+                    ForEach(classes) { schoolClass in
+                        Button(
+                            "\(schoolClass.name) (\(schoolClass.lessons.count) lessons)",
+                            role: .destructive
+                        ) {
+                            deleteClass(schoolClass)
+                        }
+                    }
+                    Button("Delete All Classes", role: .destructive) {
+                        perform(.classes)
+                    }
+                } else {
+                    Button("Delete", role: .destructive) {
+                        perform(action)
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: { action in
+                Text(action.message)
+            }
+            #endif
         }
     }
+
+    #if DEBUG
+    private func perform(_ action: DebugDeleteAction) {
+        do {
+            switch action {
+            case .allData:
+                try DebugDataCleaner.deleteAllData(context: modelContext)
+            case .classes:
+                try DebugDataCleaner.deleteAllClasses(context: modelContext)
+            case .words:
+                try DebugDataCleaner.deleteAllWords(context: modelContext)
+            }
+        } catch {
+            print("DebugDataCleaner failed: \(error)")
+        }
+    }
+
+    private func deleteClass(_ schoolClass: Class) {
+        do {
+            try DebugDataCleaner.deleteClass(schoolClass, context: modelContext)
+        } catch {
+            print("DebugDataCleaner failed: \(error)")
+        }
+    }
+    #endif
 }
 
 #Preview {
     SettingsView()
+        .modelContainer(
+            for: [Class.self, Lesson.self, Photo.self, Word.self, WordOccurrence.self],
+            inMemory: true
+        )
 }

@@ -21,7 +21,7 @@ struct CaptureView: View {
                 Image(systemName: "camera")
                     .font(.system(size: 48))
                     .foregroundStyle(.secondary)
-                Text("教科書ページを撮影、または写真を選択してください")
+                Text("Take a photo of a textbook page, or choose one from your library")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -31,26 +31,26 @@ struct CaptureView: View {
                     Button {
                         isShowingCamera = true
                     } label: {
-                        Label("カメラで撮影", systemImage: "camera")
+                        Label("Take Photo", systemImage: "camera")
                     }
                     .buttonStyle(.borderedProminent)
                 }
 
                 PhotosPicker(selection: $photosPickerItem, matching: .images) {
-                    Label("写真を選択", systemImage: "photo.on.rectangle")
+                    Label("Choose Photo", systemImage: "photo.on.rectangle")
                 }
                 .buttonStyle(.bordered)
 
                 if isProcessing {
-                    ProgressView("OCR・翻訳を処理中…")
+                    ProgressView("Processing OCR & translation…")
                 }
             }
             .padding()
-            .navigationTitle("撮影")
+            .navigationTitle("Capture")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("閉じる") { dismiss() }
+                    Button("Close") { dismiss() }
                 }
             }
             .disabled(isProcessing)

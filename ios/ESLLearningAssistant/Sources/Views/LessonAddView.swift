@@ -17,23 +17,23 @@ struct LessonAddView: View {
     var body: some View {
         Form {
             Section {
-                TextField("レッスン名（例: Unit 3 Reading）", text: $title)
+                TextField("Lesson name (e.g. Unit 3 Reading)", text: $title)
                     .focused($isTitleFocused)
                     .accessibilityIdentifier("lessonTitleField")
             } footer: {
                 if isDuplicateTitle {
-                    Text("\(schoolClass.name) に同じ名前のレッスンが既にあります。")
+                    Text("\(schoolClass.name) already has a lesson with this name.")
                         .foregroundStyle(.red)
                 } else {
-                    Text("\(schoolClass.name) に追加します。")
+                    Text("Will be added to \(schoolClass.name).")
                 }
             }
         }
-        .navigationTitle("レッスンを追加")
+        .navigationTitle("Add Lesson")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
-                Button("追加", action: addLesson)
+                Button("Add", action: addLesson)
                     .disabled(trimmedTitle.isEmpty || isDuplicateTitle)
             }
         }

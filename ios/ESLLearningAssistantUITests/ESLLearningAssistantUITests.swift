@@ -28,6 +28,10 @@ final class ESLLearningAssistantUITests: XCTestCase {
     func testClassLessonCaptureFlow() throws {
         let app = XCUIApplication()
         app.launch()
+
+        // 前回実行のデータが残っていると空状態から始められないため、先に全クリアする
+        clearAllData(app)
+        app.tabBars.buttons["Lessons"].tap()
         attach(app, "01-lesson-empty-class")
 
         let addClassButton = app.buttons["lessonAddClassButton"]
@@ -42,7 +46,7 @@ final class ESLLearningAssistantUITests: XCTestCase {
         XCTAssertTrue(classNameField.waitForExistence(timeout: 5))
         classNameField.tap()
         classNameField.typeText("ESL Beginner A")
-        app.navigationBars.buttons["追加"].tap()
+        app.navigationBars.buttons["Add"].tap()
         attach(app, "02-switcher-class-added")
 
         let addLessonButton = app.buttons["switcherAddLessonButton"]
@@ -53,15 +57,15 @@ final class ESLLearningAssistantUITests: XCTestCase {
         XCTAssertTrue(lessonTitleField.waitForExistence(timeout: 5))
         lessonTitleField.tap()
         lessonTitleField.typeText("Unit 1 Greetings")
-        app.navigationBars.buttons["追加"].tap()
+        app.navigationBars.buttons["Add"].tap()
         attach(app, "04-lesson-with-lesson")
 
-        let capturePhotoButton = app.buttons["写真を追加"]
+        let capturePhotoButton = app.buttons["Add Photo"]
         XCTAssertTrue(capturePhotoButton.waitForExistence(timeout: 5))
         capturePhotoButton.tap()
         attach(app, "05-capture-sheet")
 
-        let pickPhotoButton = app.buttons["写真を選択"]
+        let pickPhotoButton = app.buttons["Choose Photo"]
         XCTAssertTrue(pickPhotoButton.waitForExistence(timeout: 5))
         pickPhotoButton.tap()
 
@@ -74,11 +78,14 @@ final class ESLLearningAssistantUITests: XCTestCase {
         )
         photoCellCoordinate.tap()
 
+        // PHPickerはOS側UIのため、シミュレータのロケール依存のボタン（日本語/英語）を両方許容する
         if app.navigationBars.buttons["追加"].waitForExistence(timeout: 3) {
             app.navigationBars.buttons["追加"].tap()
+        } else if app.navigationBars.buttons["Add"].waitForExistence(timeout: 1) {
+            app.navigationBars.buttons["Add"].tap()
         }
 
-        let ocrHeading = app.staticTexts["OCR結果（英語）"]
+        let ocrHeading = app.staticTexts["OCR Result (English)"]
         XCTAssertTrue(ocrHeading.waitForExistence(timeout: 10))
         attach(app, "07-photo-detail")
     }
@@ -96,7 +103,7 @@ final class ESLLearningAssistantUITests: XCTestCase {
             XCTAssertTrue(classNameField.waitForExistence(timeout: 5))
             classNameField.tap()
             classNameField.typeText("ESL Beginner A")
-            app.navigationBars.buttons["追加"].tap()
+            app.navigationBars.buttons["Add"].tap()
             let addLessonButton = app.buttons["switcherAddLessonButton"]
             XCTAssertTrue(addLessonButton.waitForExistence(timeout: 5))
             addLessonButton.tap()
@@ -104,7 +111,7 @@ final class ESLLearningAssistantUITests: XCTestCase {
             XCTAssertTrue(lessonTitleField.waitForExistence(timeout: 5))
             lessonTitleField.tap()
             lessonTitleField.typeText("Unit 1 Greetings")
-            app.navigationBars.buttons["追加"].tap()
+            app.navigationBars.buttons["Add"].tap()
         }
 
         // 切り替えシートを開き、既存と同名のレッスンを追加しようとする
@@ -121,11 +128,11 @@ final class ESLLearningAssistantUITests: XCTestCase {
         lessonTitleField.typeText("Unit 1 Greetings")
 
         // 追加ボタンが無効になり、重複メッセージが表示される
-        let addButton = app.navigationBars.buttons["追加"]
+        let addButton = app.navigationBars.buttons["Add"]
         XCTAssertTrue(addButton.waitForExistence(timeout: 5))
         XCTAssertFalse(addButton.isEnabled)
         XCTAssertTrue(
-            app.staticTexts["ESL Beginner A に同じ名前のレッスンが既にあります。"]
+            app.staticTexts["ESL Beginner A already has a lesson with this name."]
                 .waitForExistence(timeout: 5)
         )
         attach(app, "17-duplicate-lesson-blocked")
@@ -149,7 +156,7 @@ final class ESLLearningAssistantUITests: XCTestCase {
             XCTAssertTrue(classNameField.waitForExistence(timeout: 5))
             classNameField.tap()
             classNameField.typeText("ESL Beginner A")
-            app.navigationBars.buttons["追加"].tap()
+            app.navigationBars.buttons["Add"].tap()
             let addLessonButton = app.buttons["switcherAddLessonButton"]
             XCTAssertTrue(addLessonButton.waitForExistence(timeout: 5))
             addLessonButton.tap()
@@ -157,28 +164,25 @@ final class ESLLearningAssistantUITests: XCTestCase {
             XCTAssertTrue(lessonTitleField.waitForExistence(timeout: 5))
             lessonTitleField.tap()
             lessonTitleField.typeText("Unit 1 Greetings")
-            app.navigationBars.buttons["追加"].tap()
+            app.navigationBars.buttons["Add"].tap()
         }
 
-        // 単語タブ: レッスン指定ありで追加
+        // 単語タブ: レッスン指定ありで追加（入力は見出し語のみ）
         app.tabBars.buttons["Words"].tap()
         attach(app, "10-words-tab")
 
         app.buttons["wordAddButton"].tap()
-        let textField = app.textFields["見出し語（例: apple）"]
+        let textField = app.textFields["wordTextField"]
         XCTAssertTrue(textField.waitForExistence(timeout: 5))
         textField.tap()
         textField.typeText("apple")
-        let translationField = app.textFields["訳語（例: りんご）"]
-        translationField.tap()
-        translationField.typeText("ringo")
 
         app.buttons["wordLessonPicker"].tap()
         let lessonOption = app.buttons["ESL Beginner A / Unit 1 Greetings"]
         XCTAssertTrue(lessonOption.waitForExistence(timeout: 5))
         lessonOption.tap()
         attach(app, "11-word-add-form-with-lesson")
-        app.navigationBars.buttons["追加"].tap()
+        app.navigationBars.buttons["Add"].tap()
 
         XCTAssertTrue(app.staticTexts["apple"].waitForExistence(timeout: 5))
         attach(app, "12-words-list")
@@ -188,14 +192,15 @@ final class ESLLearningAssistantUITests: XCTestCase {
         XCTAssertTrue(textField.waitForExistence(timeout: 5))
         textField.tap()
         textField.typeText("book")
-        translationField.tap()
-        translationField.typeText("hon")
-        app.navigationBars.buttons["追加"].tap()
+        app.navigationBars.buttons["Add"].tap()
         XCTAssertTrue(app.staticTexts["book"].waitForExistence(timeout: 5))
 
         // 単語詳細: 登場レッスンが表示される
+        // （AI単語情報セクションが上に入るため、必要ならスクロールして探す）
         app.staticTexts["apple"].tap()
-        XCTAssertTrue(app.staticTexts["Unit 1 Greetings"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["apple"].waitForExistence(timeout: 5))
+        scrollTo(app, staticText: "Unit 1 Greetings")
+        XCTAssertTrue(app.staticTexts["Unit 1 Greetings"].exists)
         attach(app, "13-word-detail")
         app.navigationBars.buttons.firstMatch.tap()
 
@@ -219,6 +224,154 @@ final class ESLLearningAssistantUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["apple"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["book"].exists)
         attach(app, "16-words-search")
+    }
+
+    func testDebugMenuClearAllData() throws {
+        let app = XCUIApplication()
+        app.launch()
+
+        // 消える対象の単語を1件用意する（レッスン指定なしで追加できる）
+        app.tabBars.buttons["Words"].tap()
+        app.buttons["wordAddButton"].tap()
+        let textField = app.textFields["wordTextField"]
+        XCTAssertTrue(textField.waitForExistence(timeout: 5))
+        textField.tap()
+        textField.typeText("zebra")
+        app.navigationBars.buttons["Add"].tap()
+        XCTAssertTrue(app.staticTexts["zebra"].waitForExistence(timeout: 5))
+
+        // 設定タブのデバッグメニューを開く（フローティングタブバーに隠れるためスクロールする）
+        app.tabBars.buttons["Settings"].tap()
+        let clearButton = app.buttons["Delete All Data"]
+        XCTAssertTrue(clearButton.waitForExistence(timeout: 5))
+        app.swipeUp()
+        attach(app, "19-settings-debug-section")
+
+        // ダイアログを閉じただけでは削除されない
+        // （iOS 26のconfirmationDialogはポップオーバー表示でキャンセルボタンが出ないため、
+        //   外側タップで閉じる）
+        clearButton.tap()
+        let deleteButton = app.buttons["Delete"]
+        XCTAssertTrue(deleteButton.waitForExistence(timeout: 5))
+        attach(app, "20-debug-clear-confirmation")
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.55)).tap()
+        XCTAssertTrue(deleteButton.waitForNonExistence(timeout: 5))
+        app.tabBars.buttons["Words"].tap()
+        XCTAssertTrue(app.staticTexts["zebra"].waitForExistence(timeout: 5))
+
+        // 削除を実行すると単語が消える
+        app.tabBars.buttons["Settings"].tap()
+        app.swipeUp()
+        clearButton.tap()
+        XCTAssertTrue(deleteButton.waitForExistence(timeout: 5))
+        deleteButton.tap()
+
+        app.tabBars.buttons["Words"].tap()
+        XCTAssertTrue(app.staticTexts["zebra"].waitForNonExistence(timeout: 5))
+        attach(app, "21-words-after-clear")
+    }
+
+    func testDebugMenuDeleteSpecificClass() throws {
+        let app = XCUIApplication()
+        app.launch()
+
+        // 状態を確定させるため、まず全クリアしてからクラス・レッスンを1組作る
+        app.tabBars.buttons["Settings"].tap()
+        let clearButton = app.buttons["Delete All Data"]
+        XCTAssertTrue(clearButton.waitForExistence(timeout: 5))
+        app.swipeUp()
+        clearButton.tap()
+        let deleteButton = app.buttons["Delete"]
+        XCTAssertTrue(deleteButton.waitForExistence(timeout: 5))
+        deleteButton.tap()
+
+        app.tabBars.buttons["Lessons"].tap()
+        let addClassButton = app.buttons["lessonAddClassButton"]
+        XCTAssertTrue(addClassButton.waitForExistence(timeout: 5))
+        addClassButton.tap()
+        app.buttons["switcherAddClassButton"].tap()
+        let classNameField = app.textFields["classNameField"]
+        XCTAssertTrue(classNameField.waitForExistence(timeout: 5))
+        classNameField.tap()
+        classNameField.typeText("Debug Class")
+        app.navigationBars.buttons["Add"].tap()
+        let addLessonButton = app.buttons["switcherAddLessonButton"]
+        XCTAssertTrue(addLessonButton.waitForExistence(timeout: 5))
+        addLessonButton.tap()
+        let lessonTitleField = app.textFields["lessonTitleField"]
+        XCTAssertTrue(lessonTitleField.waitForExistence(timeout: 5))
+        lessonTitleField.tap()
+        lessonTitleField.typeText("Unit 1")
+        app.navigationBars.buttons["Add"].tap()
+
+        // クラス指定で削除する
+        app.tabBars.buttons["Settings"].tap()
+        let deleteClassButton = app.buttons["Delete a Class and Its Lessons"]
+        XCTAssertTrue(deleteClassButton.waitForExistence(timeout: 5))
+        app.swipeUp()
+        deleteClassButton.tap()
+        let classOption = app.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH %@", "Debug Class")
+        ).firstMatch
+        XCTAssertTrue(classOption.waitForExistence(timeout: 5))
+        attach(app, "22-debug-delete-class-dialog")
+        classOption.tap()
+
+        // レッスンタブが空状態（クラス作成ボタン表示）に戻る
+        app.tabBars.buttons["Lessons"].tap()
+        XCTAssertTrue(addClassButton.waitForExistence(timeout: 5))
+        attach(app, "23-lessons-after-class-delete")
+    }
+
+    func testWordAIInfoStatusUI() throws {
+        // 到達不能なバックエンドURLを指定して生成を確実に失敗させ、
+        // ネットワーク非依存で詳細画面の生成ステータスUIを確認する
+        let app = XCUIApplication()
+        app.launchArguments += ["-backendBaseURL", "http://127.0.0.1:9"]
+        app.launch()
+
+        app.tabBars.buttons["Words"].tap()
+        app.buttons["wordAddButton"].tap()
+        let textField = app.textFields["wordTextField"]
+        XCTAssertTrue(textField.waitForExistence(timeout: 5))
+        textField.tap()
+        textField.typeText("melon")
+        app.navigationBars.buttons["Add"].tap()
+
+        // 登録で自動生成が始まり、接続失敗で failed になる
+        XCTAssertTrue(app.staticTexts["melon"].waitForExistence(timeout: 5))
+        app.staticTexts["melon"].tap()
+        XCTAssertTrue(app.staticTexts["Generation failed"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["wordAIInfoRetryButton"].exists)
+        attach(app, "24-word-ai-info-failed")
+
+        // 再試行しても失敗のまま（到達不能URL）だが、ボタンが機能しクラッシュしないこと
+        app.buttons["wordAIInfoRetryButton"].tap()
+        XCTAssertTrue(app.staticTexts["Generation failed"].waitForExistence(timeout: 10))
+    }
+
+    /// 設定タブのデバッグメニューからデータを全クリアする
+    private func clearAllData(_ app: XCUIApplication) {
+        app.tabBars.buttons["Settings"].tap()
+        let clearButton = app.buttons["Delete All Data"]
+        XCTAssertTrue(clearButton.waitForExistence(timeout: 5))
+        app.swipeUp()
+        clearButton.tap()
+        let deleteButton = app.buttons["Delete"]
+        XCTAssertTrue(deleteButton.waitForExistence(timeout: 5))
+        deleteButton.tap()
+        XCTAssertTrue(deleteButton.waitForNonExistence(timeout: 5))
+    }
+
+    /// 指定テキストが見えるまで下方向へスクロールする（最大5回）
+    private func scrollTo(_ app: XCUIApplication, staticText label: String) {
+        for _ in 0..<5 {
+            if app.staticTexts[label].waitForExistence(timeout: 2),
+               app.staticTexts[label].isHittable {
+                return
+            }
+            app.swipeUp()
+        }
     }
 
     private func attach(_ app: XCUIApplication, _ name: String) {
