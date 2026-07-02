@@ -10,9 +10,6 @@ struct WordsView: View {
     @State private var fixedLessonForAdd: Lesson?
     @State private var searchText = ""
     @State private var pushedWord: Word?
-    @State private var isBulkGenerating = false
-    @State private var bulkDone = 0
-    @State private var bulkTotal = 0
 
     var body: some View {
         NavigationStack {
@@ -35,36 +32,10 @@ struct WordsView: View {
                 }
             }
             .searchable(text: $searchText, prompt: "Search words")
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        isShowingAdd = true
-                    } label: {
-                        Label("Add Word", systemImage: "plus")
-                    }
-                    .accessibilityIdentifier("wordAddButton")
-                }
-                ToolbarItem(placement: .secondaryAction) {
-                    Button {
-                        generateAllPending()
-                    } label: {
-                        Label("Generate Missing AI Info", systemImage: "sparkles")
-                    }
-                    .disabled(isBulkGenerating || pendingAIWords.isEmpty)
-                    .accessibilityIdentifier("wordBulkGenerateButton")
-                }
-            }
-            .safeAreaInset(edge: .bottom) {
-                if isBulkGenerating {
-                    HStack(spacing: 12) {
-                        ProgressView()
-                        Text("Generating AI info (\(bulkDone)/\(bulkTotal))")
-                            .font(.footnote)
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(.regularMaterial, in: Capsule())
-                    .padding(.bottom, 8)
+            .overlay(alignment: .bottomTrailing) {
+                // 空状態では中央の Add Word ボタンを使うため、一覧があるときだけ表示する
+                if !words.isEmpty {
+                    addFloatingButton
                 }
             }
             .sheet(isPresented: $isShowingAdd, onDismiss: { fixedLessonForAdd = nil }) {
@@ -94,30 +65,23 @@ struct WordsView: View {
         }
     }
 
-    /// AI情報が未生成・生成失敗の単語
-    private var pendingAIWords: [Word] {
-        words.filter { $0.aiInfoStatus == .none || $0.aiInfoStatus == .failed }
-    }
-
-    /// 未生成・失敗の単語のAI情報を順次生成する（並列にせずAPI負荷を抑える）
-    private func generateAllPending() {
-        let targets = pendingAIWords
-        guard !targets.isEmpty, !isBulkGenerating else { return }
-        isBulkGenerating = true
-        bulkTotal = targets.count
-        bulkDone = 0
-        Task {
-            for word in targets {
-                // 生成中にユーザーが削除した単語はスキップする
-                guard word.modelContext != nil else {
-                    bulkDone += 1
-                    continue
-                }
-                await WordAIInfoGenerator.shared.generate(for: word)
-                bulkDone += 1
-            }
-            isBulkGenerating = false
+    /// 右下に浮かべる単語追加ボタン
+    private var addFloatingButton: some View {
+        Button {
+            isShowingAdd = true
+        } label: {
+            Image(systemName: "plus")
+                .font(.title2)
+                .fontWeight(.semibold)
+                .foregroundStyle(.white)
+                .frame(width: 56, height: 56)
+                .background(Color.accentColor, in: Circle())
+                .shadow(color: .black.opacity(0.25), radius: 6, y: 3)
         }
+        .accessibilityLabel("Add Word")
+        .accessibilityIdentifier("wordAddButton")
+        .padding(.trailing, 20)
+        .padding(.bottom, 20)
     }
 
     /// 他タブから指定された単語があれば詳細をプッシュする
@@ -154,6 +118,8 @@ struct WordsView: View {
                 Label("Add Word", systemImage: "plus")
             }
             .buttonStyle(.borderedProminent)
+            // 空状態ではFABを出さないため、同じ識別子をこちらに付ける（UIテストが参照）
+            .accessibilityIdentifier("wordAddButton")
         }
     }
 

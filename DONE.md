@@ -1,5 +1,11 @@
 # DONE
 
+- [x] Wordsタブの右上「・・・」を削除。ツールバーの「+」と secondaryAction の
+      「Generate Missing AI Info」（一括生成）を廃止し、追加ボタンは右下の
+      フローティング「+」ボタンに変更（空状態では従来どおり中央の Add Word ボタン）。
+      `wordAddButton` 識別子を維持して既存UIテストはそのまま通る
+      [plan](docs/plans/archive/words-tab-fab-add-button.md)（2026-07-02）
+
 - [x] LessonsとWordsタブの単語一覧を、見出し語と訳語の2行表示から1行表示に変更。
       横にはみ出す場合は末尾省略（訳語側から先に省略）
       [plan](docs/plans/archive/word-row-single-line.md)（2026-07-02）
