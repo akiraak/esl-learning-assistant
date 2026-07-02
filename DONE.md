@@ -1,5 +1,27 @@
 # DONE
 
+- [x] backend 公開デプロイ対応（g3plus + Docker + esl.chobi.me）。backend の `/api/*` に
+      `X-API-Secret` ヘッダ認証を追加（timing-safe 比較、未設定なら起動 fail-fast、
+      2026-07-01 本番デプロイ済み）し、iOS アプリを対応させた:
+      `AppSettingsKeys.apiSecret`（UserDefaults + Info.plist デフォルトの既存パターン、
+      ハードコードなし）、Settings 画面に API Secret 入力欄、/api/* 3サービスの
+      リクエスト生成を `Services/BackendAPI.swift` に共通化してヘッダ付与、
+      401 は「Check the API Secret in Settings」と分かるメッセージを表示
+      （`Photo.processingErrorMessage` / `Word.aiInfoErrorMessage` に保存、TTS は alert）。
+      デフォルト base URL を本番 `https://esl.chobi.me` に切替し、`run-ios-device.sh` は
+      `--local`（Mac IP + backend/.env の secret 注入、デフォルト）/ `--prod`
+      （本番 URL + gitignore 済み `.env.prod` の secret 注入）で切り替え可能に。
+      接続問題の切り分け用に BackendAPI の os.Logger ログ、Settings の Test Connection
+      （/health 疎通 + 認証必須 `GET /api/ping` で secret 一致確認）、backend の
+      `/api/ping` を追加。実機 + 本番サーバで OCR翻訳 / 単語情報 / TTS のフルフロー動作確認済み。
+      デプロイ設定（Dockerfile / docker-compose / .env）は g3plus-ops リポジトリ側で管理
+      （運用手順: g3plus-ops の docs/workflows/esl-learning-assistant.md）。
+      本番 secret は Sx360 の `g3plus-ops/esl-learning-assistant/.env`、ローカルは
+      `backend/.env` に必須（未設定だと backend が起動しない）
+      [plan](docs/plans/archive/public-deploy-api-secret.md) /
+      [plan](docs/plans/archive/ios-api-secret-header.md) /
+      [plan](docs/plans/archive/backend-api-logging.md) (2026-07-02)
+
 - [x] Lessonページの Wordsに単語追加ボタン。タップでWordsタブの追加画面に遷移させLessonは
       設定されて変更できない状態にする（`AppRouter` に `pendingAddWordLesson` と
       `showAddWord(for:)` を追加し、既存の `pendingWord` と同じ「routerに積んでWordsタブ側が
