@@ -7,6 +7,7 @@ export const config = {
   translateModel: process.env.ANTHROPIC_TRANSLATE_MODEL ?? "claude-haiku-4-5",
   wordInfoModel: process.env.ANTHROPIC_WORD_INFO_MODEL ?? "claude-haiku-4-5",
   geminiApiKey: process.env.GEMINI_API_KEY ?? "",
+  apiSecret: process.env.API_SECRET ?? "",
   dataDir: path.resolve(__dirname, "..", "data"),
   imagesDir: path.resolve(__dirname, "..", "data", "images"),
   dbPath: path.resolve(__dirname, "..", "data", "db.sqlite"),

@@ -19,11 +19,39 @@ process.on("unhandledRejection", (reason) => {
   logger.error(`unhandledRejection: ${reason instanceof Error ? reason.stack ?? reason.message : String(reason)}`);
 });
 
+// 公開運用時に意図せず無防備にならないよう fail-fast（ローカル開発でも backend/.env に API_SECRET が必須）
+if (!config.apiSecret || config.apiSecret.length < 16 || !/^[A-Za-z0-9_-]+$/.test(config.apiSecret)) {
+  logger.error(
+    "API_SECRET is required (>=16 chars, [A-Za-z0-9_-] only). aborting to prevent unintended public exposure."
+  );
+  process.exit(1);
+}
+
+function isValidApiSecret(provided: unknown): boolean {
+  if (typeof provided !== "string" || !provided) {
+    return false;
+  }
+  // timing-safe 比較（長さ差で漏れないよう sha256 で固定長に揃える）
+  const providedHash = crypto.createHash("sha256").update(provided).digest();
+  const secretHash = crypto.createHash("sha256").update(config.apiSecret).digest();
+  return crypto.timingSafeEqual(providedHash, secretHash);
+}
+
 const app = express();
 app.use(express.json({ limit: "20mb" }));
 
 app.use((req, _res, next) => {
   logger.info(`${req.method} ${req.path} from ${req.ip}`);
+  next();
+});
+
+// /api/* は X-API-Secret ヘッダ必須。/admin は Cloudflare Access（エッジ側）、/health は無認証のまま
+app.use("/api", (req, res, next) => {
+  if (!isValidApiSecret(req.header("x-api-secret"))) {
+    logger.warn(`api: rejected (invalid X-API-Secret) ${req.method} ${req.originalUrl} from ${req.ip}`);
+    res.status(401).json({ error: "unauthorized" });
+    return;
+  }
   next();
 });
 

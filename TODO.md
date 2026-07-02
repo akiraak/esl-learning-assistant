@@ -1,5 +1,10 @@
 # TODO
 
+- [ ] backend 公開デプロイ対応（g3plus + Docker + esl.chobi.me） [plan](docs/plans/public-deploy-api-secret.md)
+  - [ ] `/api/*` に `X-API-Secret` ヘッダ認証を追加（backend コード変更）
+  - [ ] iOS アプリから `/api/*` 呼び出し時に `X-API-Secret` ヘッダを送る（本番 URL 切替とセット）
+  - デプロイ設定（Dockerfile / docker-compose / .env）は g3plus-ops リポジトリ側で管理
+
 - [ ] ESLアプリ実装 [spec](docs/specs/app-spec.md)
   - [ ] Phase 3: 問題作成
   - [ ] シミュレータ/実機のGUI操作で撮影→OCR・翻訳フルフロー（クラス/レッスン作成→撮影→
