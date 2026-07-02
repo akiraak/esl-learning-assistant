@@ -7,6 +7,31 @@ cd "$SCRIPT_DIR/ios"
 SCHEME="ESLLearningAssistant"
 PROJECT="ESLLearningAssistant.xcodeproj"
 BUNDLE_ID="com.akiraak.esllearningassistant"
+PROD_BASE_URL="https://esl.chobi.me"
+
+usage() {
+  cat <<'USAGE'
+Usage: run-ios-device.sh [--local|--prod]
+
+  --local  ローカルbackendに接続するビルド（デフォルト）。
+           MacのLAN IPを自動検出し、backend/.env の API_SECRET を注入する
+  --prod   公開サーバ (https://esl.chobi.me) に接続するビルド。
+           .env.prod の API_SECRET を注入する（.env.prod.example 参照。gitignore対象）
+
+環境変数 DEVICE_ID / BACKEND_BASE_URL / BACKEND_API_SECRET で個別に上書きできる。
+USAGE
+}
+
+TARGET="local"
+for arg in "$@"; do
+  case "$arg" in
+    --local) TARGET="local" ;;
+    --prod|--production) TARGET="prod" ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "[run-ios-device] 不明なオプション: $arg" >&2; usage >&2; exit 1 ;;
+  esac
+done
+echo "[run-ios-device] 接続先: $TARGET"
 
 # デバイスIDは DEVICE_ID 環境変数で上書き可能。未指定ならペアリング済みデバイスを自動検出する
 if [ -z "${DEVICE_ID:-}" ]; then
@@ -26,25 +51,54 @@ if [ -z "${DEVICE_ID:-}" ]; then
   DEVICE_ID="$(jq -r '.result.devices[0].identifier' "$DEVICES_JSON")"
 fi
 
-# バックエンドURLは BACKEND_BASE_URL 環境変数で上書き可能。未指定ならMacのLAN IPを自動検出して使う
+# バックエンドURLは BACKEND_BASE_URL 環境変数で上書き可能。
+# 未指定なら --prod は公開サーバ、--local(デフォルト) はMacのLAN IPを自動検出して使う
 if [ -z "${BACKEND_BASE_URL:-}" ]; then
-  MAC_IP=""
-  for iface in en0 en1 en2; do
-    MAC_IP="$(ipconfig getifaddr "$iface" 2>/dev/null || true)"
-    [ -n "$MAC_IP" ] && break
-  done
-  if [ -n "$MAC_IP" ]; then
-    BACKEND_BASE_URL="http://${MAC_IP}:8801"
-    echo "[run-ios-device] BACKEND_BASE_URL=${BACKEND_BASE_URL}（MacのLAN IPを自動検出）"
+  if [ "$TARGET" = "prod" ]; then
+    BACKEND_BASE_URL="$PROD_BASE_URL"
+    echo "[run-ios-device] BACKEND_BASE_URL=${BACKEND_BASE_URL}（公開サーバ）"
   else
-    BACKEND_BASE_URL="http://localhost:8801"
-    echo "[run-ios-device] MacのLAN IPを自動検出できませんでした。アプリの設定画面でサーバーURLを手動設定してください。" >&2
+    MAC_IP=""
+    for iface in en0 en1 en2; do
+      MAC_IP="$(ipconfig getifaddr "$iface" 2>/dev/null || true)"
+      [ -n "$MAC_IP" ] && break
+    done
+    if [ -n "$MAC_IP" ]; then
+      BACKEND_BASE_URL="http://${MAC_IP}:8801"
+      echo "[run-ios-device] BACKEND_BASE_URL=${BACKEND_BASE_URL}（MacのLAN IPを自動検出）"
+    else
+      BACKEND_BASE_URL="http://localhost:8801"
+      echo "[run-ios-device] MacのLAN IPを自動検出できませんでした。アプリの設定画面でサーバーURLを手動設定してください。" >&2
+    fi
+  fi
+fi
+
+# /api/* 認証用 secret。BACKEND_API_SECRET 環境変数で上書き可能。未指定なら
+# --local は backend/.env、--prod は .env.prod（gitignore対象、本番 secret を置く）から読む
+if [ -z "${BACKEND_API_SECRET:-}" ]; then
+  if [ "$TARGET" = "prod" ]; then
+    SECRET_FILE="$SCRIPT_DIR/.env.prod"
+  else
+    SECRET_FILE="$SCRIPT_DIR/backend/.env"
+  fi
+  if [ -f "$SECRET_FILE" ]; then
+    BACKEND_API_SECRET="$(grep -E '^API_SECRET=' "$SECRET_FILE" | head -n 1 | cut -d= -f2-)"
+    if [ -n "$BACKEND_API_SECRET" ]; then
+      echo "[run-ios-device] API Secret を ${SECRET_FILE#"$SCRIPT_DIR/"} から注入します"
+    fi
+  fi
+fi
+if [ -z "${BACKEND_API_SECRET:-}" ]; then
+  if [ "$TARGET" = "prod" ]; then
+    echo "[run-ios-device] API Secret が未指定です。.env.prod.example をコピーして .env.prod に本番 secret を設定するか、アプリの設定画面で入力してください。" >&2
+  else
+    echo "[run-ios-device] API Secret が未指定です。backend/.env の API_SECRET を設定するか、アプリの設定画面で入力してください。" >&2
   fi
 fi
 
 echo "[run-ios-device] DEVICE_ID=$DEVICE_ID でビルドします..."
 xcodebuild -project "$PROJECT" -scheme "$SCHEME" -destination "id=$DEVICE_ID" -allowProvisioningUpdates \
-  BACKEND_BASE_URL="$BACKEND_BASE_URL" build
+  BACKEND_BASE_URL="$BACKEND_BASE_URL" BACKEND_API_SECRET="${BACKEND_API_SECRET:-}" build
 
 DERIVED_DATA_APP_DIR="$HOME/Library/Developer/Xcode/DerivedData"
 # Index.noindex 配下はSourceKitのインデックス作成用ビルドで、インストール可能な実体ではないため除外する

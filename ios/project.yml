@@ -29,8 +29,11 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.akiraak.esllearningassistant
         ASSETSCATALOG_COMPILER_APPICON_NAME: AppIcon
-        # シミュレータ/通常ビルドの既定値。実機向けは run-ios-device.sh がMacのIPで上書きする。
-        BACKEND_BASE_URL: http://localhost:8801
+        # 既定は本番。ローカル開発の実機向けは run-ios-device.sh がMacのIPで上書きする。
+        BACKEND_BASE_URL: https://esl.chobi.me
+        # /api/* 認証用 secret。既定は空（アプリのSettings画面で入力）。
+        # run-ios-device.sh が backend/.env の API_SECRET を注入する。
+        BACKEND_API_SECRET: ""
     info:
       path: ESLLearningAssistant/Resources/Info.plist
       properties:
@@ -42,6 +45,7 @@ targets:
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
         BackendBaseURL: $(BACKEND_BASE_URL)
+        BackendAPISecret: $(BACKEND_API_SECRET)
 
   ESLLearningAssistantTests:
     type: bundle.unit-test

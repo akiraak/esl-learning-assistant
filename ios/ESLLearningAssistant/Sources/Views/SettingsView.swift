@@ -33,12 +33,17 @@ private enum DebugDeleteAction: String, Identifiable {
 struct SettingsView: View {
     @AppStorage(AppSettingsKeys.backendBaseURL)
     private var backendBaseURL = AppSettingsKeys.defaultBackendBaseURL
+    @AppStorage(AppSettingsKeys.apiSecret)
+    private var apiSecret = AppSettingsKeys.defaultAPISecret
     @AppStorage(AppSettingsKeys.ttsEngine)
     private var ttsEngine = AppSettingsKeys.defaultTTSEngine
     @AppStorage(AppSettingsKeys.ttsVoice)
     private var ttsVoice = AppSettingsKeys.defaultTTSVoice
     @AppStorage(AppSettingsKeys.ttsModel)
     private var ttsModel = AppSettingsKeys.defaultTTSModel
+
+    @State private var isTestingConnection = false
+    @State private var connectionTestResult: BackendAPI.ConnectionTestResult?
 
     #if DEBUG
     @Environment(\.modelContext) private var modelContext
@@ -57,14 +62,43 @@ struct SettingsView: View {
                         .keyboardType(.URL)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
+                    TextField("API Secret", text: $apiSecret)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .font(.body.monospaced())
+                    Button {
+                        Task {
+                            isTestingConnection = true
+                            connectionTestResult = await BackendAPI.testConnection()
+                            isTestingConnection = false
+                        }
+                    } label: {
+                        if isTestingConnection {
+                            ProgressView()
+                        } else {
+                            Text("Test Connection")
+                        }
+                    }
+                    .disabled(isTestingConnection)
+                    if let result = connectionTestResult {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(result.serverLine)
+                                .foregroundStyle(result.serverLine.hasPrefix("Server: OK") ? .green : .red)
+                            Text(result.secretLine)
+                                .foregroundStyle(result.secretLine.hasPrefix("API Secret: OK") ? .green : .red)
+                        }
+                        .font(.footnote.monospaced())
+                    }
                 } header: {
                     Text("Backend")
                 } footer: {
                     Text(
-                        "URL of the local backend that handles OCR & translation. The default is "
+                        "URL of the backend that handles OCR & translation. The default is "
                             + AppSettingsKeys.defaultBackendBaseURL
-                            + " (device builds are set to your Mac's IP by run-ios-device.sh). "
-                            + "Change this if you are on a different network from your Mac."
+                            + ". For local development, switch to http://localhost:8801 "
+                            + "(run-ios-device.sh sets device builds to your Mac's IP). "
+                            + "API Secret is required to call the backend; a wrong or empty "
+                            + "value causes authentication (401) errors."
                     )
                 }
 

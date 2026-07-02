@@ -17,6 +17,8 @@ final class Word {
     // すべてoptional/デフォルトありにして既存データの軽量マイグレーションを維持する。
     var aiInfo: WordAIInfo?
     var aiInfoStatus: WordAIInfoStatus = WordAIInfoStatus.none
+    /// AI生成が失敗したときのユーザー向けメッセージ（401時のAPI Secret案内など）
+    var aiInfoErrorMessage: String?
     var aiInfoGeneratedAt: Date?
     var aiInfoModel: String?
     /// 生成時の母語（言語コード）。母語設定変更後の再生成判断に使う。

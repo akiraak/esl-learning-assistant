@@ -136,6 +136,11 @@ struct WordDetailView: View {
                 Label("Generation failed", systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.red)
                     .accessibilityIdentifier("wordAIInfoFailedLabel")
+                if let errorMessage = word.aiInfoErrorMessage {
+                    Text(errorMessage)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
                 Button("Retry") {
                     WordAIInfoGenerator.shared.generateInBackground(for: word)
                 }

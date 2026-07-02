@@ -103,7 +103,7 @@ final class WordAIInfoDecodingTests: XCTestCase {
 
 @MainActor
 private final class MockWordInfoService: WordInfoService {
-    var result: Result<WordInfoResponse, Error> = .failure(WordInfoServiceError.serverError(statusCode: 500))
+    var result: Result<WordInfoResponse, Error> = .failure(BackendAPIError.serverError(statusCode: 500, message: nil))
     var callCount = 0
     var lastWord: String?
     var lastContext: String?
@@ -185,7 +185,7 @@ final class WordAIInfoGeneratorTests: XCTestCase {
         context.insert(word)
 
         let service = MockWordInfoService()
-        service.result = .failure(WordInfoServiceError.serverError(statusCode: 500))
+        service.result = .failure(BackendAPIError.serverError(statusCode: 500, message: nil))
         let generator = WordAIInfoGenerator(service: service)
 
         await generator.generate(for: word)
@@ -193,6 +193,30 @@ final class WordAIInfoGeneratorTests: XCTestCase {
         XCTAssertEqual(word.aiInfoStatus, .failed)
         XCTAssertNil(word.aiInfo)
         XCTAssertNil(word.aiInfoGeneratedAt)
+    }
+
+    /// 401（API Secret未設定・不一致）の失敗時に、Settings確認を促すメッセージが保存され、
+    /// 再生成の成功でクリアされること
+    func testGenerateUnauthorizedStoresErrorMessage() async throws {
+        let context = try makeContext()
+        let word = Word(text: "apple", translation: "りんご")
+        context.insert(word)
+
+        let service = MockWordInfoService()
+        service.result = .failure(BackendAPIError.unauthorized)
+        let generator = WordAIInfoGenerator(service: service)
+
+        await generator.generate(for: word)
+
+        XCTAssertEqual(word.aiInfoStatus, .failed)
+        let message = try XCTUnwrap(word.aiInfoErrorMessage)
+        XCTAssertTrue(message.contains("API Secret"))
+
+        service.result = .success(makeResponse())
+        await generator.generate(for: word)
+
+        XCTAssertEqual(word.aiInfoStatus, .completed)
+        XCTAssertNil(word.aiInfoErrorMessage)
     }
 
     func testGenerateSkipsWhenAlreadyGenerating() async throws {

@@ -17,39 +17,26 @@ final class RemoteOCRTranslationService: OCRTranslationService {
 
     func process(_ photo: Photo) async {
         photo.processingStatus = .processing
+        photo.processingErrorMessage = nil
 
         guard let imageData = PhotoStorage.loadData(fileName: photo.imageFileName) else {
             photo.processingStatus = .failed
+            photo.processingErrorMessage = "Failed to load the photo image."
             return
         }
 
-        let baseURLString = UserDefaults.standard.string(forKey: AppSettingsKeys.backendBaseURL)
-            ?? AppSettingsKeys.defaultBackendBaseURL
         let targetLanguage = UserDefaults.standard.string(forKey: AppSettingsKeys.targetLanguageCode)
             ?? AppSettingsKeys.defaultTargetLanguageCode
 
-        guard let url = URL(string: baseURLString)?.appendingPathComponent("api/ocr-translate") else {
-            photo.processingStatus = .failed
-            return
-        }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try? JSONEncoder().encode(
-            RequestBody(
-                imageBase64: imageData.base64EncodedString(),
-                mediaType: "image/jpeg",
-                targetLanguage: targetLanguage
-            )
-        )
-
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-                photo.processingStatus = .failed
-                return
-            }
+            let data = try await BackendAPI.post(
+                path: "api/ocr-translate",
+                body: RequestBody(
+                    imageBase64: imageData.base64EncodedString(),
+                    mediaType: "image/jpeg",
+                    targetLanguage: targetLanguage
+                )
+            )
             let decoded = try JSONDecoder().decode(ResponseBody.self, from: data)
             photo.ocrText = decoded.ocrText
             photo.translatedText = decoded.translatedText
@@ -57,6 +44,7 @@ final class RemoteOCRTranslationService: OCRTranslationService {
             photo.processingStatus = .completed
         } catch {
             photo.processingStatus = .failed
+            photo.processingErrorMessage = error.localizedDescription
         }
     }
 }

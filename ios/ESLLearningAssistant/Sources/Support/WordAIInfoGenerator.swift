@@ -21,6 +21,7 @@ final class WordAIInfoGenerator {
     func generate(for word: Word) async {
         guard word.aiInfoStatus != .generating else { return }
         word.aiInfoStatus = .generating
+        word.aiInfoErrorMessage = nil
 
         let targetLanguage = UserDefaults.standard.string(forKey: AppSettingsKeys.targetLanguageCode)
             ?? AppSettingsKeys.defaultTargetLanguageCode
@@ -50,6 +51,7 @@ final class WordAIInfoGenerator {
             }
         } catch {
             word.aiInfoStatus = .failed
+            word.aiInfoErrorMessage = error.localizedDescription
         }
     }
 }

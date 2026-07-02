@@ -40,6 +40,11 @@ struct PhotoDetailView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("OCR & translation failed")
                             .foregroundStyle(.red)
+                        if let errorMessage = photo.processingErrorMessage {
+                            Text(errorMessage)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
                         retryButton
                     }
                 case .completed:
@@ -75,6 +80,17 @@ struct PhotoDetailView: View {
         }
         .onDisappear {
             stopSpeaking()
+        }
+        .alert(
+            "Speech Failed",
+            isPresented: Binding(
+                get: { geminiSpeechService.errorMessage != nil },
+                set: { if !$0 { geminiSpeechService.errorMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(geminiSpeechService.errorMessage ?? "")
         }
     }
 

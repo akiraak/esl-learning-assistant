@@ -12,3 +12,6 @@ backend/node_modules/
 backend/dist/
 backend/.env
 backend/data/
+
+# 本番接続ビルド用 secret（run-ios-device.sh --prod が読む。.env.prod.example 参照）
+.env.prod

@@ -15,6 +15,9 @@ final class Photo {
     var imageFileName: String
     var capturedAt: Date
     var processingStatus: PhotoProcessingStatus
+    /// OCR・翻訳が失敗したときのユーザー向けメッセージ（401時のAPI Secret案内など）。
+    /// optional追加のみなので既存データの軽量マイグレーションを維持する。
+    var processingErrorMessage: String?
     var ocrText: String?
     var translatedText: String?
     var translationLanguage: String?

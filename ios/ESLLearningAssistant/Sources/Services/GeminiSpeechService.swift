@@ -5,6 +5,8 @@ import AVFoundation
 final class GeminiSpeechService: NSObject, ObservableObject {
     @Published private(set) var isLoading = false
     @Published private(set) var isSpeaking = false
+    /// 401（API Secret未設定・不一致）のユーザー向けメッセージ。表示側でalertに使う
+    @Published var errorMessage: String?
 
     private struct RequestBody: Encodable {
         let text: String
@@ -18,15 +20,6 @@ final class GeminiSpeechService: NSObject, ObservableObject {
         guard !text.isEmpty else { return }
         stop()
 
-        let baseURLString = UserDefaults.standard.string(forKey: AppSettingsKeys.backendBaseURL)
-            ?? AppSettingsKeys.defaultBackendBaseURL
-        guard let url = URL(string: baseURLString)?.appendingPathComponent("api/tts") else { return }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try? JSONEncoder().encode(RequestBody(text: text, voice: voice, model: model))
-
         isLoading = true
         Task {
             defer { isLoading = false }
@@ -35,17 +28,19 @@ final class GeminiSpeechService: NSObject, ObservableObject {
                 try session.setCategory(.playback)
                 try session.setActive(true)
 
-                let (data, response) = try await URLSession.shared.data(for: request)
-                guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-                    return
-                }
+                let data = try await BackendAPI.post(
+                    path: "api/tts",
+                    body: RequestBody(text: text, voice: voice, model: model)
+                )
                 let player = try AVAudioPlayer(data: data)
                 player.delegate = self
                 self.player = player
                 isSpeaking = true
                 player.play()
+            } catch BackendAPIError.unauthorized {
+                errorMessage = BackendAPIError.unauthorized.localizedDescription
             } catch {
-                // 生成・再生に失敗した場合は無音のまま終了する
+                // 401以外の生成・再生失敗は従来どおり無音のまま終了する
             }
         }
     }
