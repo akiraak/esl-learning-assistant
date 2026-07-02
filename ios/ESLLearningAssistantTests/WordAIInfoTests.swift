@@ -108,17 +108,20 @@ private final class MockWordInfoService: WordInfoService {
     var lastWord: String?
     var lastContext: String?
     var lastUserTranslation: String?
+    var lastRegenerate: Bool?
 
     func fetchWordInfo(
         word: String,
         targetLanguage: String,
         context: String?,
-        userTranslation: String?
+        userTranslation: String?,
+        regenerate: Bool
     ) async throws -> WordInfoResponse {
         callCount += 1
         lastWord = word
         lastContext = context
         lastUserTranslation = userTranslation
+        lastRegenerate = regenerate
         return try result.get()
     }
 }
@@ -155,7 +158,8 @@ final class WordAIInfoGeneratorTests: XCTestCase {
                 register: nil,
                 commonMistakes: nil
             ),
-            model: "claude-haiku-4-5"
+            model: "claude-haiku-4-5",
+            cached: nil
         )
     }
 

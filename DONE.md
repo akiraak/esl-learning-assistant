@@ -1,5 +1,13 @@
 # DONE
 
+- [x] 単語データをサーバに保存。backend に `words` テーブルを新設し、`/api/word-info` は
+      保存済みなら Claude API を呼ばずに返却（`cached: true`・コスト0でログ記録）、
+      未保存 or `regenerate: true` なら生成して upsert 保存。キャッシュキーは
+      (trim+小文字化した word, targetLanguage)。管理画面に「単語一覧」タブを追加し、
+      詳細ページから削除・再生成が可能。iOS は `WordInfoService` に `regenerate` 引数を追加し、
+      WordDetailView の「Regenerate AI Info」（生成済み上書き時）のみ `regenerate: true` を送る
+      [plan](docs/plans/archive/word-info-server-storage.md)（2026-07-02）
+
 - [x] レッスン画面から単語詳細を開いた場合も戻るときはレッスンに戻る。
       単語タップでWordsタブへ切り替えるのをやめ、レッスン画面のスタックに
       `WordDetailView` を直接プッシュするように変更（Back・削除後の pop ともレッスンに戻る）。

@@ -2,15 +2,23 @@ import path from "path";
 import { Router } from "express";
 import { marked } from "marked";
 import {
+  deleteStoredWord,
   getRequestLog,
+  getStoredWordById,
   getWordInfoLog,
+  insertWordInfoLog,
   listRecentRequestLogs,
   listRecentWordInfoLogs,
+  listStoredWords,
   RequestLogRow,
+  StoredWordRow,
+  upsertStoredWord,
   WordInfoLogRow,
 } from "./db";
 import { config } from "./config";
-import type { WordInfo } from "./wordInfo";
+import { generateWordInfo, type WordInfo } from "./wordInfo";
+import { estimateCostUsd } from "./pricing";
+import { logger } from "./logger";
 
 export const adminRouter = Router();
 
@@ -63,11 +71,12 @@ function statusLabel(log: { status: string }): string {
   return `<span class="${cls}">${escapeHtml(log.status)}</span>`;
 }
 
-function navLinks(active: "ocr" | "word-info"): string {
+function navLinks(active: "ocr" | "word-info" | "words"): string {
   const ocr = active === "ocr" ? "<strong>OCR・翻訳ログ</strong>" : `<a href="/admin">OCR・翻訳ログ</a>`;
   const wordInfo =
     active === "word-info" ? "<strong>単語情報ログ</strong>" : `<a href="/admin/word-info">単語情報ログ</a>`;
-  return `<p>${ocr} | ${wordInfo}</p>`;
+  const words = active === "words" ? "<strong>単語一覧</strong>" : `<a href="/admin/words">単語一覧</a>`;
+  return `<p>${ocr} | ${wordInfo} | ${words}</p>`;
 }
 
 // OCRモデルと翻訳モデルが同じ場合は1回の統合呼び出しにまとめており、
@@ -238,7 +247,7 @@ adminRouter.get("/word-info", (_req, res) => {
           }</td>
           <td>${escapeHtml(log.target_language)}</td>
           <td>${log.context ? "あり" : "なし"}</td>
-          <td>${escapeHtml(log.model)} (in:${log.input_tokens} / out:${log.output_tokens})</td>
+          <td>${log.cache_hit ? '<span style="color:#2a7">キャッシュ返却</span><br>' : ""}${escapeHtml(log.model)} (in:${log.input_tokens} / out:${log.output_tokens})</td>
           <td>$${log.cost_usd.toFixed(5)}</td>
           <td>${statusLabel(log)}${log.error_message ? `<br>${escapeHtml(log.error_message)}` : ""}</td>
           <td>${log.latency_ms}ms</td>
@@ -270,15 +279,16 @@ adminRouter.get("/word-info", (_req, res) => {
   );
 });
 
-/// word_info_json を人が読める形に整形する（パース不能ならJSONをそのまま表示）
-function renderWordInfoBlock(log: WordInfoLogRow): string {
-  if (!log.word_info_json) return "<p>(生成結果なし)</p>";
+/// word_info_json を人が読める形に整形する（パース不能ならJSONをそのまま表示）。
+/// 単語情報ログ（WordInfoLogRow）と保存済み単語（StoredWordRow）の両方で使う。
+function renderWordInfoBlock(row: { word_info_json: string | null }): string {
+  if (!row.word_info_json) return "<p>(生成結果なし)</p>";
 
   let info: WordInfo;
   try {
-    info = JSON.parse(log.word_info_json) as WordInfo;
+    info = JSON.parse(row.word_info_json) as WordInfo;
   } catch {
-    return `<pre>${escapeHtml(log.word_info_json)}</pre>`;
+    return `<pre>${escapeHtml(row.word_info_json)}</pre>`;
   }
 
   const senses = info.senses
@@ -362,6 +372,7 @@ adminRouter.get("/word-info/:id", (req, res) => {
       <tr><th>単語</th><td>${escapeHtml(log.word)}</td></tr>
       <tr><th>ユーザー訳語</th><td>${log.user_translation ? escapeHtml(log.user_translation) : "(なし)"}</td></tr>
       <tr><th>母語</th><td>${escapeHtml(log.target_language)}</td></tr>
+      <tr><th>キャッシュ</th><td>${log.cache_hit ? '<span style="color:#2a7">保存済みを返却（生成なし）</span>' : "新規生成"}</td></tr>
       <tr><th>モデル</th><td>${escapeHtml(log.model)}（in: ${log.input_tokens} / out: ${log.output_tokens}）</td></tr>
       <tr><th>コスト</th><td>$${log.cost_usd.toFixed(5)}</td></tr>
       <tr><th>状態</th><td>${statusLabel(log)}${log.error_message ? `<br>${escapeHtml(log.error_message)}` : ""}</td></tr>
@@ -402,4 +413,221 @@ adminRouter.get("/word-info/:id", (req, res) => {
       body
     )
   );
+});
+
+/// 一覧プレビュー用に先頭語義を取り出す（パース不能なら空文字）
+function firstMeaningPreview(row: StoredWordRow): string {
+  try {
+    const info = JSON.parse(row.word_info_json) as WordInfo;
+    return info.senses[0]?.meaning ?? "";
+  } catch {
+    return "";
+  }
+}
+
+adminRouter.get("/words", (_req, res) => {
+  const words = listStoredWords();
+
+  const rows = words
+    .map(
+      (row) => `
+        <tr class="log-row">
+          <td>${row.id}</td>
+          <td><strong>${escapeHtml(row.word)}</strong></td>
+          <td>${escapeHtml(row.target_language)}</td>
+          <td>${escapeHtml(firstMeaningPreview(row))}</td>
+          <td>${escapeHtml(row.model)}</td>
+          <td>${row.generation_count}</td>
+          <td>${escapeHtml(row.created_at)}</td>
+          <td>${escapeHtml(row.updated_at)}</td>
+          <td><a href="/admin/words/${row.id}">詳細を見る →</a></td>
+        </tr>
+      `
+    )
+    .join("\n");
+
+  res.type("html").send(
+    renderPage(
+      "ESL Learning Assistant - 単語一覧",
+      "",
+      `
+        <h1>保存済み単語一覧</h1>
+        ${navLinks("words")}
+        <p>全${words.length}件</p>
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th><th>単語</th><th>母語</th><th>先頭語義</th>
+              <th>モデル</th><th>生成回数</th><th>作成日時</th><th>更新日時</th><th></th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      `
+    )
+  );
+});
+
+const WORD_DETAIL_STYLE = `
+  .meta-table { border-collapse: collapse; margin: 12px 0 24px; width: auto; }
+  .meta-table th, .meta-table td { border: 1px solid #ccc; padding: 6px 12px; font-size: 13px; text-align: left; }
+  .meta-table th { background: #f0f0f0; white-space: nowrap; }
+  .markdown-block {
+    font-size: 14px;
+    line-height: 1.7;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    padding: 16px 20px;
+    margin-bottom: 24px;
+    background: #fafafa;
+  }
+  pre { background: #f5f5f5; padding: 12px; border-radius: 6px; overflow-x: auto; }
+  .action-buttons { display: flex; gap: 12px; margin: 16px 0 24px; }
+  .action-buttons button { padding: 8px 16px; font-size: 14px; cursor: pointer; }
+  .danger-button { color: #c33; }
+`;
+
+adminRouter.get("/words/:id", (req, res) => {
+  const id = Number(req.params.id);
+  const row = getStoredWordById(id);
+  if (!row) {
+    res
+      .status(404)
+      .type("html")
+      .send(
+        renderPage(
+          "単語が見つかりません",
+          "",
+          '<p>指定された単語は存在しません。</p><p><a href="/admin/words">← 一覧に戻る</a></p>'
+        )
+      );
+    return;
+  }
+
+  const body = `
+    <p><a href="/admin/words">← 一覧に戻る</a></p>
+    <h1>単語 #${row.id}: ${escapeHtml(row.word)}</h1>
+    <table class="meta-table">
+      <tr><th>単語</th><td>${escapeHtml(row.word)}</td></tr>
+      <tr><th>母語</th><td>${escapeHtml(row.target_language)}</td></tr>
+      <tr><th>ユーザー訳語</th><td>${row.user_translation ? escapeHtml(row.user_translation) : "(なし)"}</td></tr>
+      <tr><th>モデル</th><td>${escapeHtml(row.model)}</td></tr>
+      <tr><th>生成回数</th><td>${row.generation_count}</td></tr>
+      <tr><th>作成日時</th><td>${escapeHtml(row.created_at)}</td></tr>
+      <tr><th>更新日時</th><td>${escapeHtml(row.updated_at)}</td></tr>
+    </table>
+
+    <div class="action-buttons">
+      <form method="post" action="/admin/words/${row.id}/regenerate"
+            onsubmit="return confirm('AI情報を再生成します。現在の内容は上書きされます。よろしいですか？')">
+        <button type="submit">再生成する</button>
+      </form>
+      <form method="post" action="/admin/words/${row.id}/delete"
+            onsubmit="return confirm('この単語の保存データを削除します。よろしいですか？（アプリから再リクエストされれば再生成されます）')">
+        <button type="submit" class="danger-button">削除する</button>
+      </form>
+    </div>
+
+    ${renderWordInfoBlock(row)}
+
+    <h2>文脈（最後の生成に使用）</h2>
+    ${row.context ? `<div class="markdown-block">${renderMarkdown(row.context)}</div>` : "<p>(なし)</p>"}
+  `;
+
+  res.type("html").send(renderPage(`単語 #${row.id}: ${row.word} - ESL Learning Assistant`, WORD_DETAIL_STYLE, body));
+});
+
+adminRouter.post("/words/:id/delete", (req, res) => {
+  const id = Number(req.params.id);
+  const row = getStoredWordById(id);
+  if (!row) {
+    res.status(404).type("html").send(
+      renderPage("単語が見つかりません", "", '<p>指定された単語は存在しません。</p><p><a href="/admin/words">← 一覧に戻る</a></p>')
+    );
+    return;
+  }
+  deleteStoredWord(id);
+  logger.info(`admin: deleted stored word #${id} "${row.word}" (${row.target_language})`);
+  res.redirect("/admin/words");
+});
+
+adminRouter.post("/words/:id/regenerate", async (req, res) => {
+  const id = Number(req.params.id);
+  const row = getStoredWordById(id);
+  if (!row) {
+    res.status(404).type("html").send(
+      renderPage("単語が見つかりません", "", '<p>指定された単語は存在しません。</p><p><a href="/admin/words">← 一覧に戻る</a></p>')
+    );
+    return;
+  }
+
+  const startedAt = Date.now();
+  logger.info(`admin: regenerate stored word #${id} "${row.word}" (${row.target_language})`);
+  try {
+    const result = await generateWordInfo(
+      row.word,
+      row.target_language,
+      row.context ?? undefined,
+      row.user_translation ?? undefined
+    );
+    const latencyMs = Date.now() - startedAt;
+    const costUsd = estimateCostUsd(result.model, result.inputTokens, result.outputTokens);
+    const wordInfoJson = JSON.stringify(result.wordInfo);
+
+    upsertStoredWord({
+      word: row.word,
+      targetLanguage: row.target_language,
+      wordInfoJson,
+      model: result.model,
+      context: row.context,
+      userTranslation: row.user_translation,
+    });
+
+    insertWordInfoLog({
+      word: row.word,
+      targetLanguage: row.target_language,
+      userTranslation: row.user_translation,
+      context: row.context,
+      wordInfoJson,
+      model: result.model,
+      inputTokens: result.inputTokens,
+      outputTokens: result.outputTokens,
+      costUsd,
+      status: "success",
+      errorMessage: null,
+      latencyMs,
+      cacheHit: false,
+    });
+
+    logger.info(`admin: regenerated stored word #${id} "${row.word}" latencyMs=${latencyMs}`);
+    res.redirect(`/admin/words/${id}`);
+  } catch (error) {
+    const latencyMs = Date.now() - startedAt;
+    const errorMessage = error instanceof Error ? error.message : String(error);
+
+    insertWordInfoLog({
+      word: row.word,
+      targetLanguage: row.target_language,
+      userTranslation: row.user_translation,
+      context: row.context,
+      wordInfoJson: null,
+      model: config.wordInfoModel,
+      inputTokens: 0,
+      outputTokens: 0,
+      costUsd: 0,
+      status: "error",
+      errorMessage,
+      latencyMs,
+      cacheHit: false,
+    });
+
+    logger.error(`admin: regenerate failed word #${id} "${row.word}" error=${errorMessage}`);
+    res.status(500).type("html").send(
+      renderPage(
+        "再生成に失敗しました",
+        "",
+        `<p>再生成に失敗しました: ${escapeHtml(errorMessage)}</p><p><a href="/admin/words/${id}">← 詳細に戻る</a></p>`
+      )
+    );
+  }
 });

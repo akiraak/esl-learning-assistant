@@ -66,7 +66,34 @@ db.exec(`
     cost_usd REAL NOT NULL DEFAULT 0,
     status TEXT NOT NULL,
     error_message TEXT,
-    latency_ms INTEGER NOT NULL DEFAULT 0
+    latency_ms INTEGER NOT NULL DEFAULT 0,
+    cache_hit INTEGER NOT NULL DEFAULT 0
+  )
+`);
+
+// words テーブル導入前のDBには cache_hit 列が無いため後方互換マイグレーション
+const wordInfoColumns = new Set(
+  (db.prepare("PRAGMA table_info(word_info_requests)").all() as { name: string }[]).map((c) => c.name)
+);
+if (!wordInfoColumns.has("cache_hit")) {
+  db.exec("ALTER TABLE word_info_requests ADD COLUMN cache_hit INTEGER NOT NULL DEFAULT 0");
+}
+
+// 単語情報の正式な保存先（word_info_requests は通信ログとして温存し役割を分ける）。
+// キャッシュキーは (trim + 小文字化した word, target_language)。
+db.exec(`
+  CREATE TABLE IF NOT EXISTS words (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    word TEXT NOT NULL,
+    target_language TEXT NOT NULL,
+    word_info_json TEXT NOT NULL,
+    model TEXT NOT NULL,
+    context TEXT,
+    user_translation TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    generation_count INTEGER NOT NULL DEFAULT 1,
+    UNIQUE(word, target_language)
   )
 `);
 
@@ -169,17 +196,18 @@ export interface WordInfoLogInput {
   status: "success" | "error";
   errorMessage: string | null;
   latencyMs: number;
+  cacheHit: boolean;
 }
 
 const insertWordInfoStmt = db.prepare(`
   INSERT INTO word_info_requests (
     created_at, word, target_language, user_translation, context,
     word_info_json, model, input_tokens, output_tokens,
-    cost_usd, status, error_message, latency_ms
+    cost_usd, status, error_message, latency_ms, cache_hit
   ) VALUES (
     @createdAt, @word, @targetLanguage, @userTranslation, @context,
     @wordInfoJson, @model, @inputTokens, @outputTokens,
-    @costUsd, @status, @errorMessage, @latencyMs
+    @costUsd, @status, @errorMessage, @latencyMs, @cacheHit
   )
 `);
 
@@ -198,6 +226,7 @@ export function insertWordInfoLog(input: WordInfoLogInput): void {
     status: input.status,
     errorMessage: input.errorMessage,
     latencyMs: input.latencyMs,
+    cacheHit: input.cacheHit ? 1 : 0,
   });
 }
 
@@ -216,6 +245,7 @@ export interface WordInfoLogRow {
   status: string;
   error_message: string | null;
   latency_ms: number;
+  cache_hit: number;
 }
 
 export function listRecentWordInfoLogs(limit: number): WordInfoLogRow[] {
@@ -228,4 +258,79 @@ export function getWordInfoLog(id: number): WordInfoLogRow | undefined {
   return db
     .prepare("SELECT * FROM word_info_requests WHERE id = ?")
     .get(id) as WordInfoLogRow | undefined;
+}
+
+export interface StoredWordRow {
+  id: number;
+  word: string;
+  target_language: string;
+  word_info_json: string;
+  model: string;
+  context: string | null;
+  user_translation: string | null;
+  created_at: string;
+  updated_at: string;
+  generation_count: number;
+}
+
+/// キャッシュキー正規化（"Apple" と "apple" は同一エントリとする割り切り）
+export function normalizeWordKey(word: string): string {
+  return word.trim().toLowerCase();
+}
+
+export function getStoredWord(word: string, targetLanguage: string): StoredWordRow | undefined {
+  return db
+    .prepare("SELECT * FROM words WHERE word = ? AND target_language = ?")
+    .get(normalizeWordKey(word), targetLanguage) as StoredWordRow | undefined;
+}
+
+export function getStoredWordById(id: number): StoredWordRow | undefined {
+  return db.prepare("SELECT * FROM words WHERE id = ?").get(id) as StoredWordRow | undefined;
+}
+
+export function listStoredWords(): StoredWordRow[] {
+  return db.prepare("SELECT * FROM words ORDER BY updated_at DESC, id DESC").all() as StoredWordRow[];
+}
+
+export interface StoredWordInput {
+  word: string;
+  targetLanguage: string;
+  wordInfoJson: string;
+  model: string;
+  context: string | null;
+  userTranslation: string | null;
+}
+
+const upsertStoredWordStmt = db.prepare(`
+  INSERT INTO words (
+    word, target_language, word_info_json, model, context, user_translation,
+    created_at, updated_at, generation_count
+  ) VALUES (
+    @word, @targetLanguage, @wordInfoJson, @model, @context, @userTranslation,
+    @now, @now, 1
+  )
+  ON CONFLICT(word, target_language) DO UPDATE SET
+    word_info_json = excluded.word_info_json,
+    model = excluded.model,
+    context = excluded.context,
+    user_translation = excluded.user_translation,
+    updated_at = excluded.updated_at,
+    generation_count = generation_count + 1
+`);
+
+/// 生成結果を保存する。同一キーが既にあれば内容を更新して generation_count を加算する（後勝ち）。
+export function upsertStoredWord(input: StoredWordInput): void {
+  upsertStoredWordStmt.run({
+    word: normalizeWordKey(input.word),
+    targetLanguage: input.targetLanguage,
+    wordInfoJson: input.wordInfoJson,
+    model: input.model,
+    context: input.context,
+    userTranslation: input.userTranslation,
+    now: new Date().toISOString(),
+  });
+}
+
+export function deleteStoredWord(id: number): void {
+  db.prepare("DELETE FROM words WHERE id = ?").run(id);
 }

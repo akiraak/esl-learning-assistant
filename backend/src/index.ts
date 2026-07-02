@@ -4,7 +4,7 @@ import path from "path";
 import crypto from "crypto";
 import express from "express";
 import { config } from "./config";
-import { insertRequestLog, insertWordInfoLog } from "./db";
+import { getStoredWord, insertRequestLog, insertWordInfoLog, upsertStoredWord } from "./db";
 import { adminRouter } from "./admin";
 import { ocrAndTranslate } from "./ocrTranslate";
 import { generateWordInfo } from "./wordInfo";
@@ -159,7 +159,7 @@ const WORD_MAX_LENGTH = 100;
 const WORD_INFO_CONTEXT_MAX_LENGTH = 8000;
 
 app.post("/api/word-info", async (req, res) => {
-  const { word, targetLanguage, context, userTranslation } = req.body ?? {};
+  const { word, targetLanguage, context, userTranslation, regenerate } = req.body ?? {};
 
   if (typeof word !== "string" || !word.trim()) {
     logger.warn("word-info: rejected (word is required)");
@@ -186,6 +186,11 @@ app.post("/api/word-info", async (req, res) => {
     res.status(400).json({ error: "userTranslation must be a string" });
     return;
   }
+  if (regenerate !== undefined && typeof regenerate !== "boolean") {
+    logger.warn("word-info: rejected (regenerate must be a boolean)");
+    res.status(400).json({ error: "regenerate must be a boolean" });
+    return;
+  }
 
   const trimmedWord = word.trim();
   // 教科書ページ全文が来るため長すぎる場合は先頭側を残して切り詰める（拒否はしない）
@@ -199,9 +204,36 @@ app.post("/api/word-info", async (req, res) => {
       : undefined;
 
   const startedAt = Date.now();
+
+  // 保存済みなら Claude API を呼ばずに返す（regenerate 指定時は作りなおす）
+  if (!regenerate) {
+    const stored = getStoredWord(trimmedWord, targetLanguage);
+    if (stored) {
+      const latencyMs = Date.now() - startedAt;
+      insertWordInfoLog({
+        word: trimmedWord,
+        targetLanguage,
+        userTranslation: trimmedUserTranslation ?? null,
+        context: trimmedContext ?? null,
+        wordInfoJson: stored.word_info_json,
+        model: stored.model,
+        inputTokens: 0,
+        outputTokens: 0,
+        costUsd: 0,
+        status: "success",
+        errorMessage: null,
+        latencyMs,
+        cacheHit: true,
+      });
+      logger.info(`word-info: cache hit word="${trimmedWord}" latencyMs=${latencyMs}`);
+      res.json({ wordInfo: JSON.parse(stored.word_info_json), model: stored.model, cached: true });
+      return;
+    }
+  }
+
   logger.info(
     `word-info: start word="${trimmedWord}" targetLanguage=${targetLanguage} ` +
-      `context=${trimmedContext ? "yes" : "no"} model=${config.wordInfoModel}`
+      `context=${trimmedContext ? "yes" : "no"} regenerate=${regenerate === true} model=${config.wordInfoModel}`
   );
   try {
     const result = await generateWordInfo(
@@ -212,13 +244,23 @@ app.post("/api/word-info", async (req, res) => {
     );
     const latencyMs = Date.now() - startedAt;
     const costUsd = estimateCostUsd(result.model, result.inputTokens, result.outputTokens);
+    const wordInfoJson = JSON.stringify(result.wordInfo);
+
+    upsertStoredWord({
+      word: trimmedWord,
+      targetLanguage,
+      wordInfoJson,
+      model: result.model,
+      context: trimmedContext ?? null,
+      userTranslation: trimmedUserTranslation ?? null,
+    });
 
     insertWordInfoLog({
       word: trimmedWord,
       targetLanguage,
       userTranslation: trimmedUserTranslation ?? null,
       context: trimmedContext ?? null,
-      wordInfoJson: JSON.stringify(result.wordInfo),
+      wordInfoJson,
       model: result.model,
       inputTokens: result.inputTokens,
       outputTokens: result.outputTokens,
@@ -226,10 +268,11 @@ app.post("/api/word-info", async (req, res) => {
       status: "success",
       errorMessage: null,
       latencyMs,
+      cacheHit: false,
     });
 
     logger.info(`word-info: success word="${trimmedWord}" latencyMs=${latencyMs}`);
-    res.json({ wordInfo: result.wordInfo, model: result.model });
+    res.json({ wordInfo: result.wordInfo, model: result.model, cached: false });
   } catch (error) {
     const latencyMs = Date.now() - startedAt;
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -247,6 +290,7 @@ app.post("/api/word-info", async (req, res) => {
       status: "error",
       errorMessage,
       latencyMs,
+      cacheHit: false,
     });
 
     logger.error(`word-info: failed word="${trimmedWord}" latencyMs=${latencyMs} error=${errorMessage}`);

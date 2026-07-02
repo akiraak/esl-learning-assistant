@@ -12,13 +12,14 @@ final class WordAIInfoGenerator {
         self.service = service
     }
 
-    /// 生成を開始してすぐ戻る（WordAddView の登録時トリガー用）
-    func generateInBackground(for word: Word) {
-        Task { await generate(for: word) }
+    /// 生成を開始してすぐ戻る（WordAddView の登録時トリガー用）。
+    /// regenerate: true でサーバ保存済みの内容も作りなおす（省略時はサーバ保存があればそれを受け取る）。
+    func generateInBackground(for word: Word, regenerate: Bool = false) {
+        Task { await generate(for: word, regenerate: regenerate) }
     }
 
     /// 単語情報を生成して word に反映する。生成中の単語には多重実行しない。
-    func generate(for word: Word) async {
+    func generate(for word: Word, regenerate: Bool = false) async {
         guard word.aiInfoStatus != .generating else { return }
         word.aiInfoStatus = .generating
         word.aiInfoErrorMessage = nil
@@ -37,7 +38,8 @@ final class WordAIInfoGenerator {
                 word: word.text,
                 targetLanguage: targetLanguage,
                 context: context,
-                userTranslation: word.translation.isEmpty ? nil : word.translation
+                userTranslation: word.translation.isEmpty ? nil : word.translation,
+                regenerate: regenerate
             )
             word.aiInfo = response.wordInfo
             word.aiInfoModel = response.model

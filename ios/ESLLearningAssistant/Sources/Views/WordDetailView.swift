@@ -115,7 +115,8 @@ struct WordDetailView: View {
             titleVisibility: .visible
         ) {
             Button("Regenerate") {
-                WordAIInfoGenerator.shared.generateInBackground(for: word)
+                // 生成済みの上書き＝明示的な作りなおし要求なので、サーバ保存分も再生成させる
+                WordAIInfoGenerator.shared.generateInBackground(for: word, regenerate: true)
             }
         } message: {
             Text("The current AI-generated info will be replaced.")

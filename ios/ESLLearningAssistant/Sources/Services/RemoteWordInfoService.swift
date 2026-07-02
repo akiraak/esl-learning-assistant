@@ -4,6 +4,8 @@ import Foundation
 struct WordInfoResponse: Decodable {
     let wordInfo: WordAIInfo
     let model: String
+    /// サーバ保存済みの返却なら true（表示には使わないがデバッグ用に保持）
+    let cached: Bool?
 }
 
 @MainActor
@@ -12,7 +14,8 @@ protocol WordInfoService {
         word: String,
         targetLanguage: String,
         context: String?,
-        userTranslation: String?
+        userTranslation: String?,
+        regenerate: Bool
     ) async throws -> WordInfoResponse
 }
 
@@ -24,13 +27,15 @@ final class RemoteWordInfoService: WordInfoService {
         let targetLanguage: String
         let context: String?
         let userTranslation: String?
+        let regenerate: Bool
     }
 
     func fetchWordInfo(
         word: String,
         targetLanguage: String,
         context: String?,
-        userTranslation: String?
+        userTranslation: String?,
+        regenerate: Bool
     ) async throws -> WordInfoResponse {
         let data = try await BackendAPI.post(
             path: "api/word-info",
@@ -38,7 +43,8 @@ final class RemoteWordInfoService: WordInfoService {
                 word: word,
                 targetLanguage: targetLanguage,
                 context: context,
-                userTranslation: userTranslation
+                userTranslation: userTranslation,
+                regenerate: regenerate
             )
         )
         return try JSONDecoder().decode(WordInfoResponse.self, from: data)
