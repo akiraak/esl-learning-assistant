@@ -1,5 +1,9 @@
 # DONE
 
+- [x] 各タブ画面トップのナビゲーションタイトル（Lessons / Words / Settings）を削除
+      （`LessonsView` / `WordsView` / `SettingsView` の `.navigationTitle` を削除。
+      シミュレータ向けビルド成功を確認済み）
+      [plan](docs/plans/archive/remove-tab-page-nav-titles.md) (2026-07-01)
 - [x] 単語詳細の Meanings / Collocations / Synonyms & Antonyms も読み上げ可能に
       （各語義の英英定義、各コロケーション行、Synonyms/Antonyms のカンマ区切りリスト全体に
       `SpeechButton` を追加。シミュレータ向けビルド成功を確認済み）

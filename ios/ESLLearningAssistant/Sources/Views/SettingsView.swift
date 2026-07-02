@@ -125,7 +125,6 @@ struct SettingsView: View {
                 }
                 #endif
             }
-            .navigationTitle("Settings")
             #if DEBUG
             .confirmationDialog(
                 pendingDeleteAction?.title ?? "",

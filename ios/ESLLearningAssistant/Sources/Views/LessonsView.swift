@@ -34,7 +34,6 @@ struct LessonsView: View {
                     emptyClassState
                 }
             }
-            .navigationTitle("Lessons")
             .sheet(isPresented: $isShowingSwitcher) {
                 ClassLessonSwitcherView(
                     currentClassID: currentClassIDBinding,

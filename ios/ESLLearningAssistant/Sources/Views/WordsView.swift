@@ -33,7 +33,6 @@ struct WordsView: View {
                     }
                 }
             }
-            .navigationTitle("Words")
             .searchable(text: $searchText, prompt: "Search words")
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
