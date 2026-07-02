@@ -1,5 +1,10 @@
 # DONE
 
+- [x] レッスン画面の Add Photo / Add Word をセクションヘッダー（`Content (XXX)` / `Words (XXX)`）
+      右端のシンプルな「+」ボタンに移動（独立した追加行を削除。識別子は
+      `lessonPhotoAddButton` 新設 / `lessonWordAddButton` 維持、UIテストの参照も更新）
+      [plan](docs/plans/archive/lesson-section-header-add-buttons.md)（2026-07-02）
+
 - [x] backend 公開デプロイ対応（g3plus + Docker + esl.chobi.me）。backend の `/api/*` に
       `X-API-Secret` ヘッダ認証を追加（timing-safe 比較、未設定なら起動 fail-fast、
       2026-07-01 本番デプロイ済み）し、iOS アプリを対応させた:

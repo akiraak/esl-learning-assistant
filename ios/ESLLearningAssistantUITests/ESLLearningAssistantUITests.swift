@@ -60,7 +60,7 @@ final class ESLLearningAssistantUITests: XCTestCase {
         app.navigationBars.buttons["Add"].tap()
         attach(app, "04-lesson-with-lesson")
 
-        let capturePhotoButton = app.buttons["Add Photo"]
+        let capturePhotoButton = app.buttons["lessonPhotoAddButton"]
         XCTAssertTrue(capturePhotoButton.waitForExistence(timeout: 5))
         capturePhotoButton.tap()
         attach(app, "05-capture-sheet")

@@ -125,14 +125,6 @@ struct LessonsView: View {
     @ViewBuilder
     private func lessonContent(_ lesson: Lesson) -> some View {
         Section {
-            Button {
-                isShowingCapture = true
-            } label: {
-                Label("Add Photo", systemImage: "camera")
-            }
-        }
-
-        Section("Content (\(lesson.photos.count))") {
             let photos = lesson.photos.sorted { $0.capturedAt > $1.capturedAt }
             let untranslatedCount = photos.filter { $0.processingStatus == .pending || $0.processingStatus == .failed }.count
             if photos.isEmpty {
@@ -163,6 +155,18 @@ struct LessonsView: View {
                     .buttonStyle(.plain)
                 }
             }
+        } header: {
+            HStack {
+                Text("Content (\(lesson.photos.count))")
+                Spacer()
+                Button {
+                    isShowingCapture = true
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .accessibilityIdentifier("lessonPhotoAddButton")
+                .accessibilityLabel("Add Photo")
+            }
         }
 
         wordsSection(lesson)
@@ -178,14 +182,7 @@ struct LessonsView: View {
     @ViewBuilder
     private func wordsSection(_ lesson: Lesson) -> some View {
         let words = lessonWords(lesson)
-        Section("Words (\(words.count))") {
-            // 単語追加はWordsタブの追加画面に集約し、このレッスンを固定した状態で開く
-            Button {
-                router.showAddWord(for: lesson)
-            } label: {
-                Label("Add Word", systemImage: "plus")
-            }
-            .accessibilityIdentifier("lessonWordAddButton")
+        Section {
             if words.isEmpty {
                 Text("No words yet")
                     .foregroundStyle(.secondary)
@@ -206,6 +203,19 @@ struct LessonsView: View {
                     }
                     .buttonStyle(.plain)
                 }
+            }
+        } header: {
+            HStack {
+                Text("Words (\(words.count))")
+                Spacer()
+                // 単語追加はWordsタブの追加画面に集約し、このレッスンを固定した状態で開く
+                Button {
+                    router.showAddWord(for: lesson)
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .accessibilityIdentifier("lessonWordAddButton")
+                .accessibilityLabel("Add Word")
             }
         }
     }
