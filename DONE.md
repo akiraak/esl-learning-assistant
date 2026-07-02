@@ -1,5 +1,9 @@
 # DONE
 
+- [x] LessonsとWordsタブの単語一覧を、見出し語と訳語の2行表示から1行表示に変更。
+      横にはみ出す場合は末尾省略（訳語側から先に省略）
+      [plan](docs/plans/archive/word-row-single-line.md)（2026-07-02）
+
 - [x] Lesson画面Wordsの行頭削除ボタンをやめ、左スワイプの「Remove」に変更。
       挙動は変わらず、そのレッスンとのリンク（`WordOccurrence`）を外すのみで
       Wordsタブの単語一覧には残る（明示 `modelContext.save()`）。

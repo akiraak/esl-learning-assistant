@@ -164,14 +164,18 @@ struct WordRow: View {
 
     var body: some View {
         HStack {
-            VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 8) {
                 Text(word.text)
                     .font(.headline)
-                // 訳語はAI生成完了時に自動補完されるため、それまでは空（行を出さない）
+                    .lineLimit(1)
+                    // 幅が足りないときは訳語側から省略する
+                    .layoutPriority(1)
+                // 訳語はAI生成完了時に自動補完されるため、それまでは空（表示しない）
                 if !word.translation.isEmpty {
                     Text(word.translation)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
             }
             Spacer()
