@@ -5,6 +5,8 @@ struct WordDetailView: View {
     let word: Word
 
     @State private var isConfirmingRegenerate = false
+    @StateObject private var speechService = SpeechService()
+    @State private var speakingText: String?
 
     var body: some View {
         List {
@@ -19,13 +21,17 @@ struct WordDetailView: View {
 
             if let example = word.exampleSentence, !example.isEmpty {
                 Section("Example Sentence") {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(example)
-                        if let source = word.exampleSentenceSource {
-                            Text(source == .textbook ? "From textbook" : "AI generated")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(example)
+                            if let source = word.exampleSentenceSource {
+                                Text(source == .textbook ? "From textbook" : "AI generated")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
+                        Spacer()
+                        SpeechButton(text: example, speechService: speechService, speakingText: $speakingText)
                     }
                 }
             }
@@ -72,6 +78,9 @@ struct WordDetailView: View {
             }
         }
         .navigationTitle(word.text)
+        .onDisappear {
+            speechService.stop()
+        }
         .toolbar {
             if word.aiInfoStatus == .completed {
                 ToolbarItem(placement: .primaryAction) {
@@ -134,7 +143,12 @@ struct WordDetailView: View {
             }
         case .completed:
             if let info = word.aiInfo {
-                WordAIInfoSections(info: info)
+                WordAIInfoSections(
+                    info: info,
+                    wordText: word.text,
+                    speechService: speechService,
+                    speakingText: $speakingText
+                )
             }
         }
     }
@@ -143,16 +157,23 @@ struct WordDetailView: View {
 /// AI生成情報の表示セクション群。空の項目（nil・空配列）はセクションごと非表示にする。
 private struct WordAIInfoSections: View {
     let info: WordAIInfo
+    let wordText: String
+    @ObservedObject var speechService: SpeechService
+    @Binding var speakingText: String?
 
     var body: some View {
         Section("Pronunciation") {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(info.pronunciation.ipa)
-                if let syllables = info.pronunciation.syllables, !syllables.isEmpty {
-                    Text(syllables)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(info.pronunciation.ipa)
+                    if let syllables = info.pronunciation.syllables, !syllables.isEmpty {
+                        Text(syllables)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
+                Spacer()
+                SpeechButton(text: wordText, speechService: speechService, speakingText: $speakingText)
             }
             badgeRow
         }
@@ -174,9 +195,13 @@ private struct WordAIInfoSections: View {
                                     Text(sense.meaning)
                                         .fontWeight(.semibold)
                                 }
-                                Text(sense.englishDefinition)
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
+                                HStack(alignment: .top) {
+                                    Text(sense.englishDefinition)
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                    Spacer()
+                                    SpeechButton(text: sense.englishDefinition, speechService: speechService, speakingText: $speakingText)
+                                }
                                 if let note = sense.note, !note.isEmpty {
                                     Text(note)
                                         .font(.caption)
@@ -201,11 +226,15 @@ private struct WordAIInfoSections: View {
         if !info.examples.isEmpty {
             Section("Examples") {
                 ForEach(Array(info.examples.enumerated()), id: \.offset) { _, example in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(example.english)
-                        Text(example.translation)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(example.english)
+                            Text(example.translation)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        SpeechButton(text: example.english, speechService: speechService, speakingText: $speakingText)
                     }
                     .padding(.vertical, 2)
                 }
@@ -215,7 +244,11 @@ private struct WordAIInfoSections: View {
         if !info.collocations.isEmpty {
             Section("Collocations") {
                 ForEach(info.collocations, id: \.self) { collocation in
-                    Text(collocation)
+                    HStack {
+                        Text(collocation)
+                        Spacer()
+                        SpeechButton(text: collocation, speechService: speechService, speakingText: $speakingText)
+                    }
                 }
             }
         }
@@ -223,10 +256,10 @@ private struct WordAIInfoSections: View {
         if !info.synonyms.isEmpty || !info.antonyms.isEmpty {
             Section("Synonyms & Antonyms") {
                 if !info.synonyms.isEmpty {
-                    LabeledContent("Synonyms", value: info.synonyms.joined(separator: ", "))
+                    wordListRow(title: "Synonyms", words: info.synonyms)
                 }
                 if !info.antonyms.isEmpty {
-                    LabeledContent("Antonyms", value: info.antonyms.joined(separator: ", "))
+                    wordListRow(title: "Antonyms", words: info.antonyms)
                 }
             }
         }
@@ -277,6 +310,15 @@ private struct WordAIInfoSections: View {
             .contains { !($0 ?? "").isEmpty }
     }
 
+    /// 類義語・反意語のような単語リスト行。カンマ区切りのリスト全体を読み上げ対象にする。
+    private func wordListRow(title: String, words: [String]) -> some View {
+        let joined = words.joined(separator: ", ")
+        return HStack(alignment: .top) {
+            LabeledContent(title, value: joined)
+            SpeechButton(text: joined, speechService: speechService, speakingText: $speakingText)
+        }
+    }
+
     private func noteRow(title: String, text: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
@@ -285,5 +327,33 @@ private struct WordAIInfoSections: View {
             Text(text)
         }
         .padding(.vertical, 2)
+    }
+}
+
+/// 英文の行末に置く読み上げボタン。端末内蔵TTS（SpeechService）で読み上げ、再生中は停止ボタンになる。
+private struct SpeechButton: View {
+    let text: String
+    @ObservedObject var speechService: SpeechService
+    @Binding var speakingText: String?
+
+    private var isActive: Bool {
+        speechService.isSpeaking && speakingText == text
+    }
+
+    var body: some View {
+        Button {
+            if isActive {
+                speechService.stop()
+                speakingText = nil
+            } else {
+                speakingText = text
+                speechService.speak(text)
+            }
+        } label: {
+            Image(systemName: isActive ? "stop.fill" : "speaker.wave.2.fill")
+                .foregroundStyle(.tint)
+        }
+        .buttonStyle(.borderless)
+        .accessibilityLabel(isActive ? "Stop" : "Speak")
     }
 }

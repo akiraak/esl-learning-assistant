@@ -1,5 +1,16 @@
 # DONE
 
+- [x] 単語詳細の Meanings / Collocations / Synonyms & Antonyms も読み上げ可能に
+      （各語義の英英定義、各コロケーション行、Synonyms/Antonyms のカンマ区切りリスト全体に
+      `SpeechButton` を追加。シミュレータ向けビルド成功を確認済み）
+      [plan](docs/plans/archive/word-detail-speech-more-sections.md) (2026-07-01)
+- [x] 単語詳細の英文部分に読み上げを追加（iOS組み込みTTS。既存`SpeechService`
+      （AVSpeechSynthesizer）を再利用し、`WordDetailView`のPronunciation（見出し語）・
+      AI例文（Examples）・レガシー例文（Example Sentence）の各行末にスピーカーボタンを
+      追加。再生中は停止ボタンに切り替わり、同じボタン再タップで停止・別ボタンで切り替え、
+      画面離脱時に自動停止。シミュレータ向けビルド成功を確認済み）
+      [plan](docs/plans/archive/word-detail-speech.md) (2026-07-01)
+
 - [x] 単語追加ダイアログの簡素化＋UI表記の全英語化（`WordAddView`を見出し語＋レッスン選択のみに
       変更（訳語・例文・品詞の入力を削除）。訳語はAI生成完了時に先頭語義の母語訳で自動補完し、
       ユーザー入力済みの訳語は上書きしない。一覧・詳細は訳語が空の間は表示しない。全ビューの
