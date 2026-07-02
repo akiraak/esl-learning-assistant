@@ -11,6 +11,7 @@ struct LessonsView: View {
 
     @State private var isShowingSwitcher = false
     @State private var isShowingCapture = false
+    @State private var isEditingMemo = false
     @State private var selectedPhoto: Photo?
     @State private var isBulkTranslating = false
     @State private var bulkTranslateDone = 0
@@ -49,6 +50,11 @@ struct LessonsView: View {
             }
             .navigationDestination(item: $selectedPhoto) { photo in
                 PhotoDetailView(photo: photo)
+            }
+            .navigationDestination(isPresented: $isEditingMemo) {
+                if let lesson = currentLesson {
+                    LessonMemoEditView(lesson: lesson)
+                }
             }
         }
     }
@@ -161,6 +167,8 @@ struct LessonsView: View {
 
         wordsSection(lesson)
 
+        memoSection(lesson)
+
         Section("Questions") {
             Text("Question features are coming soon")
                 .foregroundStyle(.secondary)
@@ -192,6 +200,31 @@ struct LessonsView: View {
                     .buttonStyle(.plain)
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func memoSection(_ lesson: Lesson) -> some View {
+        Section("Memo") {
+            Button {
+                isEditingMemo = true
+            } label: {
+                HStack {
+                    if let memo = lesson.memo, !memo.isEmpty {
+                        Text(memo)
+                    } else {
+                        Text("No memo yet")
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "square.and.pencil")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("lessonMemoButton")
         }
     }
 

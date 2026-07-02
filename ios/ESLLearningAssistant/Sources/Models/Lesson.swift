@@ -7,6 +7,8 @@ final class Lesson {
     var schoolClass: Class
     var title: String
     var createdAt: Date
+    /// レッスンへの自由記述メモ。未入力は nil（オプショナル追加のためライトウェイトマイグレーションで移行）
+    var memo: String?
 
     @Relationship(deleteRule: .cascade, inverse: \Photo.lesson)
     var photos: [Photo] = []
@@ -14,10 +16,11 @@ final class Lesson {
     @Relationship(deleteRule: .cascade, inverse: \WordOccurrence.lesson)
     var wordOccurrences: [WordOccurrence] = []
 
-    init(id: UUID = UUID(), schoolClass: Class, title: String, createdAt: Date = .now) {
+    init(id: UUID = UUID(), schoolClass: Class, title: String, createdAt: Date = .now, memo: String? = nil) {
         self.id = id
         self.schoolClass = schoolClass
         self.title = title
         self.createdAt = createdAt
+        self.memo = memo
     }
 }

@@ -1,5 +1,13 @@
 # DONE
 
+- [x] レッスンページにメモ機能を追加（`Lesson` に `memo: String?` を追加（オプショナルのため
+      ライトウェイトマイグレーションで自動移行）。`LessonsView` の Words と Questions の間に
+      Memo セクションを追加し、タップで新設の `LessonMemoEditView`（TextEditor）へ遷移。
+      空白のみで保存した場合は nil に戻して「メモなし」扱い。autosave任せだと保存直後の
+      アプリ終了でメモが失われることを実機動作確認で発見したため、保存時に明示的に
+      `modelContext.save()` を実行。ユニットテスト3件・UIテスト（作成→空白保存→複数行保存→
+      再起動後の永続化確認、スクリーンショット付き）を追加し全成功）
+      [plan](docs/plans/archive/lesson-memo.md) (2026-07-01)
 - [x] クラス名とレッスン名を編集可能に（`ClassEditView` / `LessonEditView` を新設し、
       クラス・レッスン切り替えシートに編集導線を追加（クラスはセクションヘッダー、
       レッスンは各行右端の鉛筆アイコン）。レッスン名は追加時と同じ大文字小文字を区別しない
