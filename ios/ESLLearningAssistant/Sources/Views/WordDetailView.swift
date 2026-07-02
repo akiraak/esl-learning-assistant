@@ -4,7 +4,11 @@ import SwiftData
 struct WordDetailView: View {
     let word: Word
 
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.dismiss) private var dismiss
+
     @State private var isConfirmingRegenerate = false
+    @State private var isConfirmingDelete = false
     @StateObject private var speechService = SpeechService()
     @State private var speakingText: String?
 
@@ -76,24 +80,34 @@ struct WordDetailView: View {
                 }
                 LabeledContent("Reviews", value: "\(word.reviewState.reviewCount)")
             }
+
+            Section {
+                Button {
+                    // 生成済み情報を上書きするときだけ確認を挟む。未生成・失敗時は即生成する
+                    if word.aiInfoStatus == .completed {
+                        isConfirmingRegenerate = true
+                    } else {
+                        WordAIInfoGenerator.shared.generateInBackground(for: word)
+                    }
+                } label: {
+                    Label("Regenerate AI Info", systemImage: "arrow.clockwise")
+                }
+                .disabled(word.aiInfoStatus == .generating)
+                .accessibilityIdentifier("wordRegenerateButton")
+
+                Button(role: .destructive) {
+                    isConfirmingDelete = true
+                } label: {
+                    // destructiveロールは文字だけ赤くなりアイコンがtintのままなので、アイコンも揃える
+                    Label("Delete Word", systemImage: "trash")
+                        .foregroundStyle(.red)
+                }
+                .accessibilityIdentifier("wordDeleteButton")
+            }
         }
         .navigationTitle(word.text)
         .onDisappear {
             speechService.stop()
-        }
-        .toolbar {
-            if word.aiInfoStatus == .completed {
-                ToolbarItem(placement: .primaryAction) {
-                    Menu {
-                        Button("Regenerate AI Info") {
-                            isConfirmingRegenerate = true
-                        }
-                    } label: {
-                        Label("More", systemImage: "ellipsis.circle")
-                    }
-                    .accessibilityIdentifier("wordDetailMenu")
-                }
-            }
         }
         .confirmationDialog(
             "Regenerate AI info?",
@@ -106,6 +120,25 @@ struct WordDetailView: View {
         } message: {
             Text("The current AI-generated info will be replaced.")
         }
+        .confirmationDialog(
+            "Delete this word?",
+            isPresented: $isConfirmingDelete,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                deleteWord()
+            }
+        } message: {
+            Text("The word will be removed from the word list and all lessons.")
+        }
+    }
+
+    /// 単語本体を削除して一覧に戻る。cascade で全レッスンの WordOccurrence も消える
+    private func deleteWord() {
+        dismiss()
+        modelContext.delete(word)
+        // autosave任せだと直後にアプリが強制終了された場合に失われるため明示的に保存する
+        try? modelContext.save()
     }
 
     /// AI生成情報のセクション群（ステータスに応じて表示を切り替える）
