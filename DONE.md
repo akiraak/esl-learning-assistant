@@ -1,5 +1,26 @@
 # DONE
 
+- [x] Lesson画面Wordsの行頭削除ボタンをやめ、左スワイプの「Remove」に変更。
+      挙動は変わらず、そのレッスンとのリンク（`WordOccurrence`）を外すのみで
+      Wordsタブの単語一覧には残る（明示 `modelContext.save()`）。
+      UIテストを `LessonWordRemoveUITests`（スワイプ操作版）に置き換え
+      [plan](docs/plans/archive/lesson-words-swipe-remove.md)（2026-07-02）
+
+- [x] Wordsタブの単語一覧の左スワイプ削除を廃止（単語本体の削除は詳細画面の Delete Word に集約）。
+      Lesson画面のWords各行の左端に赤い「−」削除ボタンを常時表示し、押すとそのレッスンとの
+      リンク（`WordOccurrence`）だけが消えて単語一覧には残る。明示的に `modelContext.save()`。
+      UIテスト `LessonWordRemoveButtonUITests` を追加。
+      ※一度ユーザー指示で revert したが指示ミスだったため同日中に再実装
+      [plan](docs/plans/archive/lesson-words-per-row-remove-button.md)（2026-07-02）
+
+- [x] Words詳細画面の最下部に「Regenerate AI Info」と「Delete Word」ボタンを追加。
+      再生成は生成完了時のみ確認ダイアログを挟み、削除は確認後に単語本体を削除
+      （cascadeで全レッスンのリンクも消える）して一覧に戻る。明示的に `modelContext.save()`。
+      ツールバーの「…」メニュー（Regenerateのみ）はボタンに置き換えて削除。
+      Lesson画面Wordsの左スワイプRemoveはユーザー指示で取りやめ（revert）。
+      UIテスト `WordDetailButtonsUITests` を追加
+      [plan](docs/plans/archive/word-detail-delete-regenerate-buttons.md)（2026-07-02）
+
 - [x] レッスン画面の Add Photo / Add Word をセクションヘッダー（`Content (XXX)` / `Words (XXX)`）
       右端のシンプルな「+」ボタンに移動（独立した追加行を削除。識別子は
       `lessonPhotoAddButton` 新設 / `lessonWordAddButton` 維持、UIテストの参照も更新）
