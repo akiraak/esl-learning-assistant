@@ -209,14 +209,17 @@ final class ESLLearningAssistantUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["apple"].waitForExistence(timeout: 5))
         attach(app, "14-lesson-with-word")
 
-        // レッスンの単語タップ → Wordsタブに切り替わり詳細が表示される
+        // レッスンの単語タップ → レッスン画面のまま詳細が表示され、戻るとレッスンに戻る
         app.staticTexts["apple"].tap()
         XCTAssertTrue(app.navigationBars["apple"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.tabBars.buttons["Words"].isSelected)
+        XCTAssertTrue(app.tabBars.buttons["Lessons"].isSelected)
         attach(app, "15-word-detail-via-lesson-tap")
         app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["apple"].waitForNonExistence(timeout: 5))
+        XCTAssertTrue(app.tabBars.buttons["Lessons"].isSelected)
 
         // 単語タブ: 検索で絞り込める
+        app.tabBars.buttons["Words"].tap()
         let searchField = app.searchFields.firstMatch
         XCTAssertTrue(searchField.waitForExistence(timeout: 5))
         searchField.tap()

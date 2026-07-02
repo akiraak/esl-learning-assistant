@@ -1,5 +1,20 @@
 # DONE
 
+- [x] レッスン画面から単語詳細を開いた場合も戻るときはレッスンに戻る。
+      単語タップでWordsタブへ切り替えるのをやめ、レッスン画面のスタックに
+      `WordDetailView` を直接プッシュするように変更（Back・削除後の pop ともレッスンに戻る）。
+      不要になった `AppRouter.pendingWord` / `showWord` と `WordsView` 側の受け取り処理を削除し、
+      `AppRouter` はタブ選択の保持のみに簡素化。UIテスト2件を新挙動に合わせて更新し、
+      詳細から Back でレッスンに戻る検証を追加
+      [plan](docs/plans/archive/lesson-word-detail-return-to-lesson.md)（2026-07-02）
+
+- [x] レッスン画面で単語を追加した場合は戻るときはレッスンに戻る。
+      追加ボタンでWordsタブへ切り替えるのをやめ、レッスン画面上で直接
+      `WordAddView(fixedLesson:)` をシート表示するように変更（閉じればレッスンに戻る）。
+      不要になった `AppRouter.pendingAddWordLesson` / `showAddWord` と
+      `WordsView` 側の受け取り処理を削除し、UIテスト3件を新挙動に合わせて更新
+      [plan](docs/plans/archive/lesson-word-add-return-to-lesson.md)（2026-07-02）
+
 - [x] Wordsタブの右上「・・・」を削除。ツールバーの「+」と secondaryAction の
       「Generate Missing AI Info」（一括生成）を廃止し、追加ボタンは右下の
       フローティング「+」ボタンに変更（空状態では従来どおり中央の Add Word ボタン）。

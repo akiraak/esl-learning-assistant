@@ -32,7 +32,7 @@ final class WordDetailButtonsUITests: XCTestCase {
         lessonTitleField.typeText("Unit 1 Greetings")
         app.navigationBars.buttons["Add"].tap()
 
-        // レッスンに単語を追加する（Wordsタブに切り替わる）
+        // レッスンに単語を追加する（レッスン画面に留まる）
         let lessonWordAddButton = app.buttons["lessonWordAddButton"]
         scrollTo(app, element: lessonWordAddButton)
         lessonWordAddButton.tap()
@@ -43,7 +43,19 @@ final class WordDetailButtonsUITests: XCTestCase {
         app.navigationBars.buttons["Add"].tap()
         XCTAssertTrue(app.staticTexts["greeting"].waitForExistence(timeout: 5))
 
-        // 詳細画面を開く
+        // レッスンのWords行をタップすると、レッスン画面のまま詳細画面が開く
+        app.staticTexts["greeting"].tap()
+        XCTAssertTrue(app.navigationBars["greeting"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.tabBars.buttons["Lessons"].isSelected)
+
+        // 戻るとレッスン画面に戻る
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["greeting"].waitForNonExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["greeting"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.tabBars.buttons["Lessons"].isSelected)
+        attach(app, "29-back-to-lesson")
+
+        // 再度詳細を開く
         app.staticTexts["greeting"].tap()
         XCTAssertTrue(app.navigationBars["greeting"].waitForExistence(timeout: 5))
 
@@ -72,20 +84,20 @@ final class WordDetailButtonsUITests: XCTestCase {
         XCTAssertTrue(dialogTitle.waitForNonExistence(timeout: 5))
         XCTAssertTrue(app.navigationBars["greeting"].exists)
 
-        // 削除を実行すると一覧に戻り、単語が消えている
+        // 削除を実行するとレッスン画面に戻り、Wordsから消えている（cascadeでリンクも削除）
         scrollTo(app, element: deleteButton)
         deleteButton.tap()
         let confirmDelete = app.buttons["Delete"]
         XCTAssertTrue(confirmDelete.waitForExistence(timeout: 5))
         confirmDelete.tap()
-        XCTAssertTrue(app.staticTexts["No Words"].waitForExistence(timeout: 5))
-        attach(app, "33-word-deleted-from-list")
-
-        // レッスンのWordsからも消えている（cascadeでリンクも削除）
-        app.tabBars.buttons["Lessons"].tap()
         XCTAssertTrue(app.staticTexts["Words (0)"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["No words yet"].exists)
-        attach(app, "34-lesson-words-empty")
+        attach(app, "33-lesson-words-empty")
+
+        // Wordsタブの一覧からも消えている
+        app.tabBars.buttons["Words"].tap()
+        XCTAssertTrue(app.staticTexts["No Words"].waitForExistence(timeout: 5))
+        attach(app, "34-words-list-empty")
     }
 
     private func clearAllData(_ app: XCUIApplication) {

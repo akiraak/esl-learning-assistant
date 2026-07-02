@@ -38,10 +38,10 @@ final class LessonWordAddUITests: XCTestCase {
         attach(app, "10-lesson-words-section")
         lessonWordAddButton.tap()
 
-        // Wordsタブに切り替わり、単語追加シートが開く
+        // Lessonsタブに留まったまま、単語追加シートが開く
         let wordTextField = app.textFields["wordTextField"]
         XCTAssertTrue(wordTextField.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.tabBars.buttons["Words"].isSelected)
+        XCTAssertTrue(app.tabBars.buttons["Lessons"].isSelected)
 
         // レッスンは固定表示（Pickerは存在しない＝変更不可）
         // LabeledContent はラベルと値を1つのアクセシビリティ要素に結合するため identifier で参照する
@@ -57,19 +57,20 @@ final class LessonWordAddUITests: XCTestCase {
         wordTextField.typeText("greeting")
         app.navigationBars.buttons["Add"].tap()
 
-        // Wordsタブの一覧に追加されている
-        XCTAssertTrue(app.staticTexts["greeting"].waitForExistence(timeout: 5))
-        attach(app, "12-words-list-added")
-
-        // Lessonsタブに戻ると、そのレッスンの Words に反映されている
-        app.tabBars.buttons["Lessons"].tap()
+        // シートが閉じてレッスン画面に戻り、そのレッスンの Words に反映されている
+        XCTAssertTrue(wordTextField.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(app.tabBars.buttons["Lessons"].isSelected)
         scrollTo(app, staticText: "greeting")
         XCTAssertTrue(app.staticTexts["Words (1)"].exists)
         XCTAssertTrue(app.staticTexts["greeting"].exists)
-        attach(app, "13-lesson-words-reflected")
+        attach(app, "12-lesson-words-reflected")
+
+        // Wordsタブの一覧にも追加されている
+        app.tabBars.buttons["Words"].tap()
+        XCTAssertTrue(app.staticTexts["greeting"].waitForExistence(timeout: 5))
+        attach(app, "13-words-list-added")
 
         // 回帰確認: Wordsタブからの通常追加ではレッスンPickerが選択可能なまま
-        app.tabBars.buttons["Words"].tap()
         app.buttons["wordAddButton"].tap()
         let picker = app.buttons["wordLessonPicker"]
         XCTAssertTrue(picker.waitForExistence(timeout: 5))

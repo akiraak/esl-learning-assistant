@@ -32,10 +32,12 @@ final class LessonWordRemoveUITests: XCTestCase {
         lessonTitleField.typeText("Unit 1 Greetings")
         app.navigationBars.buttons["Add"].tap()
 
-        // レッスンに単語を追加する（Wordsタブに切り替わる）
+        // レッスンに単語を追加する（レッスン画面に留まる）
         addWordToLesson(app, text: "greeting")
 
         // Wordsタブの一覧を左スワイプしても Delete ボタンは出ない（単語本体のスワイプ削除は無し）。
+        app.tabBars.buttons["Words"].tap()
+        XCTAssertTrue(app.staticTexts["greeting"].waitForExistence(timeout: 5))
         // スワイプアクションが無い行では横パンが行タップ扱いになり詳細へ遷移するため、
         // 「Delete が現れない」ことを主張点にし、遷移していたら一覧へ戻す
         let wordCell = app.cells.firstMatch
@@ -79,17 +81,16 @@ final class LessonWordRemoveUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["greeting"].waitForExistence(timeout: 5))
         attach(app, "64-persisted-after-relaunch")
 
-        // 外した単語を同じレッスンに再リンクできる
+        // 外した単語を同じレッスンに再リンクできる（追加後はレッスン画面に留まる）
         app.tabBars.buttons["Lessons"].tap()
         addWordToLesson(app, text: "greeting")
-        app.tabBars.buttons["Lessons"].tap()
         XCTAssertTrue(app.staticTexts["Words (1)"].waitForExistence(timeout: 5))
         scrollTo(app, staticText: "greeting")
         XCTAssertTrue(app.staticTexts["greeting"].exists)
         attach(app, "65-relinked")
     }
 
-    /// LessonsタブのAdd Wordボタンからレッスン固定で単語を追加する
+    /// LessonsタブのAdd Wordボタンからレッスン固定で単語を追加する（追加後はレッスン画面に留まる）
     private func addWordToLesson(_ app: XCUIApplication, text: String) {
         let lessonWordAddButton = app.buttons["lessonWordAddButton"]
         scrollTo(app, element: lessonWordAddButton)

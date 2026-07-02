@@ -3,7 +3,6 @@ import SwiftData
 
 struct LessonsView: View {
     @Environment(\.modelContext) private var modelContext
-    @Environment(AppRouter.self) private var router
     @Query(sort: \Class.createdAt) private var classes: [Class]
 
     @AppStorage("currentClassID") private var currentClassIDString: String?
@@ -12,6 +11,10 @@ struct LessonsView: View {
     @State private var isShowingSwitcher = false
     @State private var isShowingCapture = false
     @State private var isEditingMemo = false
+    /// レッスン固定の単語追加シートを開く対象。閉じればこのレッスン画面に戻る
+    @State private var wordAddLesson: Lesson?
+    /// この画面のスタックで詳細を開く単語。戻ればこのレッスン画面に戻る
+    @State private var selectedWord: Word?
     @State private var selectedPhoto: Photo?
     @State private var isBulkTranslating = false
     @State private var bulkTranslateDone = 0
@@ -48,8 +51,14 @@ struct LessonsView: View {
                     }
                 }
             }
+            .sheet(item: $wordAddLesson) { lesson in
+                WordAddView(fixedLesson: lesson)
+            }
             .navigationDestination(item: $selectedPhoto) { photo in
                 PhotoDetailView(photo: photo)
+            }
+            .navigationDestination(item: $selectedWord) { word in
+                WordDetailView(word: word)
             }
             .navigationDestination(isPresented: $isEditingMemo) {
                 if let lesson = currentLesson {
@@ -188,9 +197,9 @@ struct LessonsView: View {
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(words) { word in
-                    // 単語詳細はWordsタブに集約するため、タブを切り替えて表示する
+                    // 詳細はこの画面のスタックにプッシュする（戻ればレッスンに戻る）
                     Button {
-                        router.showWord(word)
+                        selectedWord = word
                     } label: {
                         HStack {
                             WordRow(word: word)
@@ -216,9 +225,9 @@ struct LessonsView: View {
             HStack {
                 Text("Words (\(words.count))")
                 Spacer()
-                // 単語追加はWordsタブの追加画面に集約し、このレッスンを固定した状態で開く
+                // このレッスンを固定した追加シートをこの画面上で開く（閉じればレッスンに戻る）
                 Button {
-                    router.showAddWord(for: lesson)
+                    wordAddLesson = lesson
                 } label: {
                     Image(systemName: "plus")
                 }
@@ -384,6 +393,5 @@ private struct PhotoRow: View {
 
 #Preview {
     LessonsView()
-        .environment(AppRouter())
         .modelContainer(for: [Class.self, Lesson.self, Photo.self, Word.self, WordOccurrence.self], inMemory: true)
 }

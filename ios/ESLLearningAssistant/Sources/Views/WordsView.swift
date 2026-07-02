@@ -3,13 +3,10 @@ import SwiftData
 
 struct WordsView: View {
     @Environment(\.modelContext) private var modelContext
-    @Environment(AppRouter.self) private var router
     @Query(sort: \Word.registeredAt, order: .reverse) private var words: [Word]
 
     @State private var isShowingAdd = false
-    @State private var fixedLessonForAdd: Lesson?
     @State private var searchText = ""
-    @State private var pushedWord: Word?
 
     var body: some View {
         NavigationStack {
@@ -38,19 +35,8 @@ struct WordsView: View {
                     addFloatingButton
                 }
             }
-            .sheet(isPresented: $isShowingAdd, onDismiss: { fixedLessonForAdd = nil }) {
-                WordAddView(fixedLesson: fixedLessonForAdd)
-            }
-            .navigationDestination(item: $pushedWord) { word in
-                WordDetailView(word: word)
-            }
-            .onAppear(perform: consumePendingWord)
-            .onChange(of: router.pendingWord) { _, _ in
-                consumePendingWord()
-            }
-            .onAppear(perform: consumePendingAddWordLesson)
-            .onChange(of: router.pendingAddWordLesson) { _, _ in
-                consumePendingAddWordLesson()
+            .sheet(isPresented: $isShowingAdd) {
+                WordAddView()
             }
         }
     }
@@ -82,21 +68,6 @@ struct WordsView: View {
         .accessibilityIdentifier("wordAddButton")
         .padding(.trailing, 20)
         .padding(.bottom, 20)
-    }
-
-    /// 他タブから指定された単語があれば詳細をプッシュする
-    private func consumePendingWord() {
-        guard let word = router.pendingWord else { return }
-        router.pendingWord = nil
-        pushedWord = word
-    }
-
-    /// 他タブから指定されたレッスンがあれば、レッスン固定の単語追加画面を開く
-    private func consumePendingAddWordLesson() {
-        guard let lesson = router.pendingAddWordLesson else { return }
-        router.pendingAddWordLesson = nil
-        fixedLessonForAdd = lesson
-        isShowingAdd = true
     }
 
     private var emptyState: some View {
@@ -161,6 +132,5 @@ struct WordRow: View {
 
 #Preview {
     WordsView()
-        .environment(AppRouter())
         .modelContainer(for: [Class.self, Lesson.self, Photo.self, Word.self, WordOccurrence.self], inMemory: true)
 }
