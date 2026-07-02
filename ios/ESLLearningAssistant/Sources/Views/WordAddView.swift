@@ -88,17 +88,28 @@ struct WordAddView: View {
         }
 
         if let lesson = fixedLesson {
-            modelContext.insert(WordOccurrence(word: word, lesson: lesson))
+            link(word, to: lesson)
         } else if let lessonID = selectedLessonID,
                   let lesson = classes.flatMap(\.lessons).first(where: { $0.id == lessonID }) {
-            modelContext.insert(WordOccurrence(word: word, lesson: lesson))
+            link(word, to: lesson)
         }
+        // autosave任せだと直後にアプリを強制終了された場合に失われるため明示的に保存する
+        try? modelContext.save()
 
         // AI単語情報を未生成なら生成開始（画面は閉じてバックグラウンドで継続）
         if word.aiInfoStatus == .none || word.aiInfoStatus == .failed {
             WordAIInfoGenerator.shared.generateInBackground(for: word)
         }
         dismiss()
+    }
+
+    /// 出現記録を作ってレッスンに紐付ける。to-one側（occurrence.lesson）の設定だけだと
+    /// 逆側 lesson.wordOccurrences への反映と変更通知が次の保存まで遅れ、レッスン画面に
+    /// 即時表示されないため、lesson側の配列にも明示的に追加する（関係の実体は同一）。
+    private func link(_ word: Word, to lesson: Lesson) {
+        let occurrence = WordOccurrence(word: word, lesson: lesson)
+        modelContext.insert(occurrence)
+        lesson.wordOccurrences.append(occurrence)
     }
 }
 

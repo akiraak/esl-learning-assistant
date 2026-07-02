@@ -1,5 +1,12 @@
 # DONE
 
+- [x] レッスン画面で単語を追加した直後にWordsセクションへ即時反映されない問題を修正。
+      `WordAddView` が出現記録を to-one 側（occurrence.lesson）だけ設定して insert していたため、
+      逆側 `lesson.wordOccurrences` への反映と変更通知が次の autosave まで遅れていた。
+      lesson 側の配列にも明示的に append して即時発火させ、追加完了時に明示的な
+      `modelContext.save()` も行うように変更（強制終了時のデータ保全の既知パターン）
+      [plan](docs/plans/archive/lesson-words-immediate-refresh.md)（2026-07-02）
+
 - [x] 単語データをサーバに保存。backend に `words` テーブルを新設し、`/api/word-info` は
       保存済みなら Claude API を呼ばずに返却（`cached: true`・コスト0でログ記録）、
       未保存 or `regenerate: true` なら生成して upsert 保存。キャッシュキーは
