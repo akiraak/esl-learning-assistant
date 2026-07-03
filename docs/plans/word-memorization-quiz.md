@@ -62,6 +62,7 @@ TODO の疑問「記憶は1日後3日後7日後と間を伸ばしてテストす
 - 素材は `Word` + `WordAIInfo`（englishDefinition / examples / synonyms / antonyms / collocations / inflections / IPA）からローカル生成する。`aiInfo` が未生成の単語は、`text` だけで組める形式（TC9・VC2・VT1 など）に自動フォールバックする。
 - 誤答選択肢は原則、単語帳内の他の単語（品詞・CEFR が近いものを優先）から取る。登録語が少なく選択肢が組めない場合も同様に `text` のみ形式へフォールバック。
 - イラストを使う形式（TC11・IC1・IT1・VC8）はイラスト生成済みの単語に限って出題する。イラスト4択（TC11・VC8）は誤答用に他単語の生成済みイラストが3枚以上必要で、足りない場合はテキスト系形式へフォールバック。
+- **品詞・活用形ラベルの日→英マッピングが必要**: `Sense.partOfSpeech`・`Inflection.form` は母語（日本語）表記で保存されている（例:「動詞」「過去形」）ため、全英語の問題文（TC7・TC8・TT3・VC7）に使うには「動詞 → verb」「過去形 → past tense」等の固定マッピングテーブルを実装する。マッピングに無いラベルの単語では該当形式を出題しない（フォールバック）。
 
 **形式 ID の表記ルール**: `[出題][回答] + 連番`。
 
@@ -86,7 +87,7 @@ TC: 出題テキスト・回答4択（評価: 一致）:
 | TC7 | 活用形 | "What is the past tense / plural of X?" → 正しい活用形を選ぶ（誤答は規則活用の誤形など） | inflections |
 | TC8 | 品詞 | "X is a ___ (noun / verb / adjective / adverb)" | partOfSpeech |
 | TC9 | スペリング | 正しい綴りを選ぶ（誤答は文字入替・脱字で機械生成） | text のみ |
-| TC10 | 文中語義 | 例文を提示し "What does X mean here?" → 定義を選ぶ（多義語は senses の該当義が正解） | examples + senses |
+| TC10 | 文中語義 | 例文を提示し "What does X mean here?" → 定義を選ぶ。例文と語義の対応がデータモデルに無いため、**v1 は senses が1件の単語に限定**（誤答は他単語の定義）。多義語対応は Example↔Sense リンクの追加後（スコープ外） | examples + senses |
 | TC11 | 単語→イラスト4択 | 単語を提示 → 対応するイラストを4枚から選ぶ（誤答は他単語の生成済みイラスト） | 単語イラスト |
 
 TT: 出題テキスト・回答テキスト入力 / IC: 出題イラスト・回答4択 / IT: 出題イラスト・回答テキスト入力（いずれも評価: 一致）:
@@ -152,13 +153,14 @@ VC: 出題音声・回答4択 / VTC: 出題音声+テキスト・回答4択 / VT
 
 - `ReviewScheduler` を純関数として実装し、ユニットテストで検証: 正解時のステップ進行と dueDate、不正解時のリセット、最終ステップ維持、日付境界（深夜・タイムゾーン）。
 - 4択の選択肢生成: 誤答が正答と重複しない・登録語 4 件未満時のフォールバック・イラスト4択のイラスト不足時フォールバックをユニットテスト。
+- 品詞・活用形ラベルの日→英マッピング: 既知ラベルの変換と、未知ラベル時に該当形式（TC7・TC8・TT3・VC7）が出題対象から外れることをユニットテスト。
 - テキスト入力（TT / IT / VTT / VT 系）の判定: 正規化（大文字小文字・前後空白・句読点）と VT2 の一致率判定をユニットテスト。
 - `FormatSelector`: 素材が十分な場合にセッション内の実績比率が目標比率（出題 50:50、回答 60:30:10）へ収束すること、素材不足時に出題可能な形式へフォールバックし例外を出さないことをユニットテスト。
 - UI はシミュレータで手動確認: 復習対象の抽出（dueDate 条件の `@Query`／フィルタ）、セッション完走、reviewState の永続化、既存単語（reviewState 既定値）の後方互換。
 
 ## 6. Phase 分割
 
-- Phase 1: 設計確定・スペック更新（本プラン + `data-model.md` の WordReviewState/Question 位置づけ更新）
+- Phase 1: 設計確定・スペック更新（本プラン + `data-model.md` の WordReviewState/Question 位置づけ更新 + `app-spec.md` §3.2 の保留事項解消）
 - Phase 2: `ReviewScheduler`・`FormatSelector`（比率調整） + `WordReviewState` 拡張 + ユニットテスト
 - Phase 3: ReviewSessionView（確定した出題形式）と Words タブの「今日の復習」導線
 - Phase 4: WordDetailView への復習状態表示・仕上げ（動作確認、DONE 移動・プランのアーカイブ）
