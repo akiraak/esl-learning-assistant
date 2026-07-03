@@ -7,18 +7,22 @@ import { config } from "./config";
 import {
   getStoredWord,
   getTtsAudioByHash,
+  getWordIllustrationByHash,
   insertRequestLog,
   insertWordInfoLog,
+  normalizeWordKey,
   upsertStoredWord,
   upsertTtsAudio,
+  upsertWordIllustration,
 } from "./db";
 import { adminRouter } from "./admin";
 import { ocrAndTranslate } from "./ocrTranslate";
-import { generateWordInfo } from "./wordInfo";
+import { generateWordInfo, type WordInfo } from "./wordInfo";
 import { estimateCostUsd } from "./pricing";
 import { startPricingSync } from "./pricingSync";
 import { logger } from "./logger";
 import { synthesizeSpeech, VOICE_PRESETS, MODEL_PRESETS, type VoiceKey, type ModelKey } from "./tts";
+import { buildIllustrationPrompt, generateIllustration, ILLUSTRATION_MODEL } from "./illustration";
 
 process.on("uncaughtException", (error) => {
   logger.error(`uncaughtException: ${error.stack ?? error.message}`);
@@ -371,6 +375,111 @@ app.post("/api/tts", async (req, res) => {
   }
 });
 
+// 自動生成は第1義（senseIndex=0）のみ。将来「意味ごとに生成」に拡張できるよう senseIndex を受け付ける
+const ILLUSTRATION_SENSE_INDEX_MAX = 9;
+
+app.post("/api/word-illustration", async (req, res) => {
+  const { word, targetLanguage, senseIndex } = req.body ?? {};
+
+  if (typeof word !== "string" || !word.trim()) {
+    logger.warn("word-illustration: rejected (word is required)");
+    res.status(400).json({ error: "word is required" });
+    return;
+  }
+  if (word.length > WORD_MAX_LENGTH) {
+    logger.warn(`word-illustration: rejected (word too long: ${word.length})`);
+    res.status(400).json({ error: `word must be ${WORD_MAX_LENGTH} characters or fewer` });
+    return;
+  }
+  if (typeof targetLanguage !== "string" || !targetLanguage) {
+    logger.warn("word-illustration: rejected (targetLanguage is required)");
+    res.status(400).json({ error: "targetLanguage is required" });
+    return;
+  }
+  if (
+    senseIndex !== undefined &&
+    (typeof senseIndex !== "number" || !Number.isInteger(senseIndex) || senseIndex < 0 || senseIndex > ILLUSTRATION_SENSE_INDEX_MAX)
+  ) {
+    logger.warn(`word-illustration: rejected (invalid senseIndex: ${String(senseIndex)})`);
+    res.status(400).json({ error: `senseIndex must be an integer between 0 and ${ILLUSTRATION_SENSE_INDEX_MAX}` });
+    return;
+  }
+
+  const trimmedWord = word.trim();
+  const resolvedSenseIndex = senseIndex ?? 0;
+  const startedAt = Date.now();
+
+  // 同一 (model, word, targetLanguage, senseIndex) は保存済みPNGを返す（OpenAI再呼び出しなし）。
+  // ファイルが欠損していた場合は再生成して自己修復する。
+  const keyHash = crypto
+    .createHash("sha256")
+    .update(`${ILLUSTRATION_MODEL}|${normalizeWordKey(trimmedWord)}|${targetLanguage}|${resolvedSenseIndex}`)
+    .digest("hex");
+  const cached = getWordIllustrationByHash(keyHash);
+  if (cached) {
+    const cachedPath = path.join(config.illustrationsDir, cached.filename);
+    if (fs.existsSync(cachedPath)) {
+      logger.info(`word-illustration: cache hit hash=${keyHash.slice(0, 12)} latencyMs=${Date.now() - startedAt}`);
+      res.set("Content-Type", "image/png");
+      res.send(fs.readFileSync(cachedPath));
+      return;
+    }
+    logger.warn(`word-illustration: cached file missing, re-generating hash=${keyHash.slice(0, 12)}`);
+  }
+
+  // 保存済みの単語情報（words.word_info_json）から該当義の英語定義と例文を取ってプロンプトに含める。
+  // 未生成の単語や該当義が無い場合は単語のみで生成する。
+  let definition: string | undefined;
+  let exampleSentence: string | undefined;
+  const stored = getStoredWord(trimmedWord, targetLanguage);
+  if (stored) {
+    try {
+      const info = JSON.parse(stored.word_info_json) as WordInfo;
+      definition = info.senses[resolvedSenseIndex]?.englishDefinition || undefined;
+      exampleSentence = info.examples[0]?.english || undefined;
+    } catch {
+      logger.warn(`word-illustration: broken word_info_json for word="${trimmedWord}", generating without it`);
+    }
+  }
+
+  const prompt = buildIllustrationPrompt(trimmedWord, definition, exampleSentence);
+  logger.info(
+    `word-illustration: start word="${trimmedWord}" targetLanguage=${targetLanguage} ` +
+      `senseIndex=${resolvedSenseIndex} wordInfo=${stored ? "yes" : "no"} model=${ILLUSTRATION_MODEL}`
+  );
+  try {
+    const { png, inputTokens, outputTokens } = await generateIllustration(prompt);
+    const costUsd = estimateCostUsd(ILLUSTRATION_MODEL, inputTokens, outputTokens);
+    const filename = `${keyHash}.png`;
+    fs.writeFileSync(path.join(config.illustrationsDir, filename), png);
+    upsertWordIllustration({
+      word: normalizeWordKey(trimmedWord),
+      targetLanguage,
+      senseIndex: resolvedSenseIndex,
+      prompt,
+      model: ILLUSTRATION_MODEL,
+      keyHash,
+      filename,
+      byteSize: png.length,
+      inputTokens,
+      outputTokens,
+      costUsd,
+    });
+    logger.info(
+      `word-illustration: success word="${trimmedWord}" tokens=in:${inputTokens}/out:${outputTokens} ` +
+        `cost=$${costUsd.toFixed(4)} latencyMs=${Date.now() - startedAt}`
+    );
+    res.set("Content-Type", "image/png");
+    res.send(png);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(
+      `word-illustration: failed word="${trimmedWord}" latencyMs=${Date.now() - startedAt} error=${errorMessage}`
+    );
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
 app.use("/admin", adminRouter);
 
 app.listen(config.port, () => {
@@ -379,6 +488,9 @@ app.listen(config.port, () => {
   }
   if (!config.geminiApiKey) {
     logger.warn("GEMINI_API_KEY is not set. /api/tts will fail.");
+  }
+  if (!config.openaiApiKey) {
+    logger.warn("OPENAI_API_KEY is not set. /api/word-illustration will fail.");
   }
   logger.info(`ESL Learning Assistant backend listening on http://localhost:${config.port}`);
   logger.info(`Admin dashboard: http://localhost:${config.port}/admin`);

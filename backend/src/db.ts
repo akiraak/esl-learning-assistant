@@ -4,6 +4,7 @@ import { config } from "./config";
 
 fs.mkdirSync(config.imagesDir, { recursive: true });
 fs.mkdirSync(config.ttsDir, { recursive: true });
+fs.mkdirSync(config.illustrationsDir, { recursive: true });
 
 export const db = new Database(config.dbPath);
 db.pragma("journal_mode = WAL");
@@ -108,6 +109,27 @@ if (!ttsColumns.has("input_tokens")) {
   db.exec("ALTER TABLE tts_audio ADD COLUMN output_tokens INTEGER NOT NULL DEFAULT 0");
   db.exec("ALTER TABLE tts_audio ADD COLUMN cost_usd REAL NOT NULL DEFAULT 0");
 }
+
+// 単語イラスト（GPT Image 2 生成）の保存（実体は data/illustrations/<key_hash>.png、ここはメタデータ）。
+// キャッシュキーは sha256("model|word|target_language|sense_index")。
+// sense_index は自動生成では常に0（第1義）だが、将来「意味ごとに生成」に拡張できるようキーに含める。
+db.exec(`
+  CREATE TABLE IF NOT EXISTS word_illustrations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    word TEXT NOT NULL,
+    target_language TEXT NOT NULL,
+    sense_index INTEGER NOT NULL DEFAULT 0,
+    prompt TEXT NOT NULL,
+    model TEXT NOT NULL,
+    key_hash TEXT NOT NULL UNIQUE,
+    filename TEXT NOT NULL,
+    byte_size INTEGER NOT NULL,
+    input_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    cost_usd REAL NOT NULL DEFAULT 0
+  )
+`);
 
 // 汎用のシステムイベントログ。料金チェック以外のイベントも今後ここに記録する。
 db.exec(`
@@ -451,6 +473,88 @@ export function upsertTtsAudio(input: {
 
 export function deleteTtsAudio(id: number): void {
   db.prepare("DELETE FROM tts_audio WHERE id = ?").run(id);
+}
+
+export interface WordIllustrationRow {
+  id: number;
+  created_at: string;
+  word: string;
+  target_language: string;
+  sense_index: number;
+  prompt: string;
+  model: string;
+  key_hash: string;
+  filename: string;
+  byte_size: number;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number;
+}
+
+export function getWordIllustrationByHash(keyHash: string): WordIllustrationRow | undefined {
+  return db
+    .prepare("SELECT * FROM word_illustrations WHERE key_hash = ?")
+    .get(keyHash) as WordIllustrationRow | undefined;
+}
+
+export function getWordIllustrationById(id: number): WordIllustrationRow | undefined {
+  return db.prepare("SELECT * FROM word_illustrations WHERE id = ?").get(id) as WordIllustrationRow | undefined;
+}
+
+export function listWordIllustrations(): WordIllustrationRow[] {
+  return db.prepare("SELECT * FROM word_illustrations ORDER BY id DESC").all() as WordIllustrationRow[];
+}
+
+const upsertWordIllustrationStmt = db.prepare(`
+  INSERT INTO word_illustrations (
+    created_at, word, target_language, sense_index, prompt, model,
+    key_hash, filename, byte_size, input_tokens, output_tokens, cost_usd
+  ) VALUES (
+    @createdAt, @word, @targetLanguage, @senseIndex, @prompt, @model,
+    @keyHash, @filename, @byteSize, @inputTokens, @outputTokens, @costUsd
+  )
+  ON CONFLICT(key_hash) DO UPDATE SET
+    created_at = excluded.created_at,
+    prompt = excluded.prompt,
+    byte_size = excluded.byte_size,
+    input_tokens = excluded.input_tokens,
+    output_tokens = excluded.output_tokens,
+    cost_usd = excluded.cost_usd
+`);
+
+/// 生成結果のメタデータを保存する。ファイル欠損からの自己修復・管理画面からの再生成時は
+/// 既存行を更新する（トークン数・料金も再生成時の値で上書きする）。
+export function upsertWordIllustration(input: {
+  word: string;
+  targetLanguage: string;
+  senseIndex: number;
+  prompt: string;
+  model: string;
+  keyHash: string;
+  filename: string;
+  byteSize: number;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+}): void {
+  upsertWordIllustrationStmt.run({
+    createdAt: new Date().toISOString(),
+    word: input.word,
+    targetLanguage: input.targetLanguage,
+    senseIndex: input.senseIndex,
+    prompt: input.prompt,
+    model: input.model,
+    keyHash: input.keyHash,
+    filename: input.filename,
+    byteSize: input.byteSize,
+    inputTokens: input.inputTokens,
+    outputTokens: input.outputTokens,
+    costUsd: input.costUsd,
+  });
+}
+
+export function deleteWordIllustration(id: number): void {
+  db.prepare("DELETE FROM word_illustrations WHERE id = ?").run(id);
 }
 
 export type SystemLogLevel = "info" | "warn" | "error";

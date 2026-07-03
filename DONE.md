@@ -1,5 +1,20 @@
 # DONE
 
+- [x] 単語詳細に意味が直感的に分かりやすいようなイラストをAIで生成して表示する。
+      OpenAI GPT Image 2（`gpt-image-2`、1024x1024/low）で第1義のイラストを生成する
+      `POST /api/word-illustration` を追加（tts.ts パターン踏襲: raw fetch + リトライ、
+      `word_illustrations` テーブル + `data/illustrations/<hash>.png` 保存、
+      キー sha256("model|word|target_language|sense_index")、キャッシュヒット時は再生成なし）。
+      料金は per-image 固定ではなくトークン単価制（in $5 / out $30 per 1M、手動固定値
+      `DEFAULT_IMAGE_PRICING`）で usage から算出し `/admin/pricing` に表示。
+      管理画面 `/admin/illustrations`（サムネイル一覧・再生成・削除）を追加。
+      iOS は `WordIllustrationStore`（Application Support/illustrations、サーバと同一キー）+
+      `RemoteWordIllustrationService` + 単語詳細 AI 情報の先頭に Illustration セクション
+      （生成ボタン → スピナー → 表示、ローカルキャッシュ優先）。
+      tsc / xcodebuild / ストア単体テスト4件 / curl（401・400・キー未設定500・
+      キャッシュヒット・管理画面）確認済み。実画像生成は `OPENAI_API_KEY` 設定後に確認。
+      [plan](docs/plans/archive/word-illustration-generation.md)（2026-07-03）
+
 - [x] 管理画面にAIモデルの料金ページを作成。
       `/admin/pricing` を追加（サイドバー「AI料金」）。適用中の単価（per 1M・USD）を
       モデル / 用途（config から逆引き: OCR・翻訳・単語情報・TTS）/ 取得元

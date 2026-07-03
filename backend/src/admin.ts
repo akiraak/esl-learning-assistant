@@ -5,10 +5,12 @@ import fs from "fs";
 import {
   deleteStoredWord,
   deleteTtsAudio,
+  deleteWordIllustration,
   getPricingState,
   getRequestLog,
   getStoredWordById,
   getTtsAudioById,
+  getWordIllustrationById,
   getWordInfoLog,
   insertWordInfoLog,
   listRecentRequestLogs,
@@ -16,14 +18,17 @@ import {
   listRecentWordInfoLogs,
   listStoredWords,
   listTtsAudio,
+  listWordIllustrations,
   RequestLogRow,
   StoredWordRow,
   upsertStoredWord,
+  upsertWordIllustration,
   WordInfoLogRow,
 } from "./db";
 import { config } from "./config";
 import { generateWordInfo, type WordInfo } from "./wordInfo";
-import { DEFAULT_PRICING, DEFAULT_TTS_PRICING, estimateCostUsd, getCurrentPricing } from "./pricing";
+import { generateIllustration, ILLUSTRATION_MODEL } from "./illustration";
+import { DEFAULT_IMAGE_PRICING, DEFAULT_PRICING, DEFAULT_TTS_PRICING, estimateCostUsd, getCurrentPricing } from "./pricing";
 import { fetchAndApplyPricing, fetchAndApplyTtsPricing } from "./pricingSync";
 import { logger } from "./logger";
 
@@ -144,13 +149,14 @@ function renderMarkdown(value: string | null): string {
   return marked.parse(escaped, { async: false, breaks: true }) as string;
 }
 
-type NavSection = "ocr" | "word-info" | "words" | "tts" | "pricing" | "logs";
+type NavSection = "ocr" | "word-info" | "words" | "tts" | "illustrations" | "pricing" | "logs";
 
 const NAV_ITEMS: Array<[NavSection, string, string]> = [
   ["ocr", "/admin", "OCR・翻訳ログ"],
   ["word-info", "/admin/word-info", "単語情報ログ"],
   ["words", "/admin/words", "単語一覧"],
   ["tts", "/admin/tts", "TTS一覧"],
+  ["illustrations", "/admin/illustrations", "単語イラスト"],
   ["pricing", "/admin/pricing", "AI料金"],
   ["logs", "/admin/system-logs", "システムログ"],
 ];
@@ -799,6 +805,143 @@ adminRouter.get("/tts", (_req, res) => {
   );
 });
 
+adminRouter.get("/illustrations", (_req, res) => {
+  const rows = listWordIllustrations();
+  const totalCostUsd = rows.reduce((sum, row) => sum + row.cost_usd, 0);
+  const totalBytes = rows.reduce((sum, row) => sum + row.byte_size, 0);
+
+  const tableRows = rows
+    .map(
+      (row) => `
+        <tr class="log-row">
+          <td class="mono dim">#${row.id}</td>
+          <td class="mono dim">${escapeHtml(formatSeattleTime(row.created_at))}</td>
+          <td><a href="/admin/illustrations/${row.id}/image" target="_blank"><img class="thumb" src="/admin/illustrations/${row.id}/image" alt="${escapeHtml(row.word)}" style="max-width:120px;max-height:120px;" loading="lazy"></a></td>
+          <td><strong>${escapeHtml(row.word)}</strong><br><span class="dim">${escapeHtml(row.target_language)} / 第${row.sense_index + 1}義</span></td>
+          <td class="prompt-cell dim">${escapeHtml(row.prompt)}</td>
+          <td class="dim">${escapeHtml(row.model)}</td>
+          <td class="mono dim">${(row.byte_size / 1024).toFixed(0)} KB</td>
+          <td class="mono">$${row.cost_usd.toFixed(4)}<br><span class="faint">in:${row.input_tokens} / out:${row.output_tokens}</span></td>
+          <td>
+            <div class="row-actions">
+              <form method="post" action="/admin/illustrations/${row.id}/regenerate"
+                    onsubmit="return confirm('このイラストを再生成します。現在の画像は上書きされます。よろしいですか？')">
+                <button type="submit" class="btn btn-primary">再生成</button>
+              </form>
+              <form method="post" action="/admin/illustrations/${row.id}/delete"
+                    onsubmit="return confirm('このイラストを削除します。よろしいですか？（アプリから再リクエストされれば再生成されます）')">
+                <button type="submit" class="btn btn-danger">削除</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+      `
+    )
+    .join("\n");
+
+  res.type("html").send(
+    renderPage(
+      "ESL Learning Assistant - 単語イラスト",
+      `
+        .prompt-cell { max-width: 380px; font-size: 11.5px; word-break: break-word; }
+        .row-actions { display: flex; flex-direction: column; gap: 8px; }
+      `,
+      `
+        <h1>単語イラスト一覧</h1>
+        <p class="page-sub">GPT Image 2 で生成した単語イラスト（第1義の自動生成）</p>
+        <div class="stats">
+          <div class="stat"><div class="lbl">保存件数</div><div class="val">${rows.length}<small>件</small></div></div>
+          <div class="stat"><div class="lbl">料金合計</div><div class="val">$${totalCostUsd.toFixed(4)}</div></div>
+          <div class="stat"><div class="lbl">合計サイズ</div><div class="val">${(totalBytes / 1024 / 1024).toFixed(1)}<small>MB</small></div></div>
+        </div>
+        <div class="card">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th><th>作成日時</th><th>イラスト</th><th>単語</th>
+                <th>プロンプト</th><th>モデル</th><th>サイズ</th><th>料金</th><th></th>
+              </tr>
+            </thead>
+            <tbody>${tableRows || '<tr><td colspan="9" class="faint">（まだイラストはありません）</td></tr>'}</tbody>
+          </table>
+        </div>
+      `,
+      "illustrations"
+    )
+  );
+});
+
+adminRouter.get("/illustrations/:id/image", (req, res) => {
+  const id = Number(req.params.id);
+  const row = getWordIllustrationById(id);
+  if (!row) {
+    res.status(404).end();
+    return;
+  }
+  res.sendFile(path.join(config.illustrationsDir, row.filename));
+});
+
+adminRouter.post("/illustrations/:id/delete", (req, res) => {
+  const id = Number(req.params.id);
+  const row = getWordIllustrationById(id);
+  if (!row) {
+    res.status(404).type("html").send(
+      renderPage("イラストが見つかりません", "", '<p>指定されたイラストは存在しません。</p><p><a href="/admin/illustrations">← 一覧に戻る</a></p>')
+    );
+    return;
+  }
+  // 行を消してもファイルが残るとディスクを食い続けるため、ファイル→行の順に削除する
+  fs.rmSync(path.join(config.illustrationsDir, row.filename), { force: true });
+  deleteWordIllustration(id);
+  logger.info(`admin: deleted word illustration #${id} "${row.word}" (${row.byte_size} bytes)`);
+  res.redirect("/admin/illustrations");
+});
+
+adminRouter.post("/illustrations/:id/regenerate", async (req, res) => {
+  const id = Number(req.params.id);
+  const row = getWordIllustrationById(id);
+  if (!row) {
+    res.status(404).type("html").send(
+      renderPage("イラストが見つかりません", "", '<p>指定されたイラストは存在しません。</p><p><a href="/admin/illustrations">← 一覧に戻る</a></p>')
+    );
+    return;
+  }
+
+  const startedAt = Date.now();
+  logger.info(`admin: regenerate word illustration #${id} "${row.word}"`);
+  try {
+    // 保存済みプロンプトで作りなおす（単語情報が更新されていてもプロンプトは据え置きの割り切り）
+    const { png, inputTokens, outputTokens } = await generateIllustration(row.prompt);
+    const costUsd = estimateCostUsd(row.model, inputTokens, outputTokens);
+    fs.writeFileSync(path.join(config.illustrationsDir, row.filename), png);
+    upsertWordIllustration({
+      word: row.word,
+      targetLanguage: row.target_language,
+      senseIndex: row.sense_index,
+      prompt: row.prompt,
+      model: row.model,
+      keyHash: row.key_hash,
+      filename: row.filename,
+      byteSize: png.length,
+      inputTokens,
+      outputTokens,
+      costUsd,
+    });
+    logger.info(`admin: regenerated word illustration #${id} "${row.word}" latencyMs=${Date.now() - startedAt}`);
+    res.redirect("/admin/illustrations");
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`admin: regenerate illustration failed #${id} "${row.word}" error=${errorMessage}`);
+    res.status(500).type("html").send(
+      renderPage(
+        "再生成に失敗しました",
+        "",
+        `<p>再生成に失敗しました: ${escapeHtml(errorMessage)}</p><p><a href="/admin/illustrations">← 一覧に戻る</a></p>`
+      )
+    );
+  }
+});
+
 // このアプリでの各モデルの用途（設定値から逆引き）。料金ページの表示用
 function modelUsage(model: string): string {
   const usages: string[] = [];
@@ -807,6 +950,7 @@ function modelUsage(model: string): string {
   if (model === config.wordInfoModel) usages.push("単語情報");
   if (model === "gemini-2.5-flash-preview-tts") usages.push("TTS (flash)");
   if (model === "gemini-2.5-pro-preview-tts") usages.push("TTS (pro)");
+  if (model === ILLUSTRATION_MODEL) usages.push("単語イラスト");
   return usages.join(" / ");
 }
 
@@ -817,10 +961,11 @@ adminRouter.get("/pricing", (_req, res) => {
     .filter((log) => log.category === "pricing")
     .slice(0, 10);
 
-  // Claude（LiteLLM自動更新）→ Gemini TTS（Google公式ページ自動更新）の順に表示する
+  // Claude（LiteLLM自動更新）→ Gemini TTS（Google公式ページ自動更新）→ 画像生成（手動固定値）の順に表示する
   const groups: Array<{ source: string; defaults: Record<string, { input: number; output: number }> }> = [
     { source: "LiteLLM（24時間ごと自動更新）", defaults: DEFAULT_PRICING },
     { source: "Google公式ページ（24時間ごと自動更新）", defaults: DEFAULT_TTS_PRICING },
+    { source: "手動（OpenAI公式ページの固定値）", defaults: DEFAULT_IMAGE_PRICING },
   ];
 
   const priceCell = (value: number, defaultValue: number) =>

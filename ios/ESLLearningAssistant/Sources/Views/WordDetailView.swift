@@ -205,6 +205,10 @@ struct WordDetailView: View {
                 WordAIInfoSections(
                     info: info,
                     wordText: word.text,
+                    // イラストのキャッシュキーはAI情報を生成した言語に揃える（未記録の旧データは設定値）
+                    targetLanguage: word.aiInfoLanguage
+                        ?? UserDefaults.standard.string(forKey: AppSettingsKeys.targetLanguageCode)
+                        ?? AppSettingsKeys.defaultTargetLanguageCode,
                     speechService: speechService,
                     speakingText: $speakingText,
                     ttsPlayback: ttsPlayback,
@@ -219,12 +223,17 @@ struct WordDetailView: View {
 private struct WordAIInfoSections: View {
     let info: WordAIInfo
     let wordText: String
+    let targetLanguage: String
     @ObservedObject var speechService: SpeechService
     @Binding var speakingText: String?
     @ObservedObject var ttsPlayback: TTSPlaybackService
     @Binding var ttsErrorMessage: String?
 
     var body: some View {
+        Section("Illustration") {
+            WordIllustrationRow(wordText: wordText, targetLanguage: targetLanguage)
+        }
+
         Section("Pronunciation") {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -390,6 +399,71 @@ private struct WordAIInfoSections: View {
             Text(text)
         }
         .padding(.vertical, 2)
+    }
+}
+
+/// 単語の意味を直感的に伝えるAI生成イラスト（GPT Image 2）の行。
+/// 端末ローカルに保存済みなら即表示、未生成なら生成ボタン → スピナー → 表示の
+/// TTSButton と同様の状態遷移。生成した画像はサーバと端末ローカルの両方に保存され、
+/// 2回目以降の生成はサーバキャッシュ、再訪時の表示は端末ローカルから行われる。
+private struct WordIllustrationRow: View {
+    let wordText: String
+    let targetLanguage: String
+
+    @State private var isGenerating = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        // 存在チェックのみで軽量。生成完了で isGenerating が変わると再評価されて画像表示に切り替わる
+        let localURL = WordIllustrationStore.localURL(word: wordText, targetLanguage: targetLanguage)
+        if let localURL, let uiImage = UIImage(contentsOfFile: localURL.path) {
+            Image(uiImage: uiImage)
+                .resizable()
+                .scaledToFit()
+                .frame(maxWidth: .infinity)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8))
+                .accessibilityLabel("Illustration of \(wordText)")
+                .accessibilityIdentifier("wordIllustrationImage")
+        } else if isGenerating {
+            HStack(spacing: 12) {
+                ProgressView()
+                Text("Generating illustration…")
+                    .foregroundStyle(.secondary)
+            }
+            .accessibilityIdentifier("wordIllustrationGeneratingLabel")
+        } else {
+            VStack(alignment: .leading, spacing: 6) {
+                Button {
+                    generate()
+                } label: {
+                    Label("Generate Illustration", systemImage: "photo.badge.plus")
+                }
+                .accessibilityIdentifier("wordIllustrationGenerateButton")
+                if let errorMessage {
+                    Text(errorMessage)
+                        .font(.footnote)
+                        .foregroundStyle(.red)
+                }
+            }
+        }
+    }
+
+    /// サーバで生成（保存済みならサーバキャッシュ返却）したPNGを端末ローカルに保存する
+    private func generate() {
+        guard !isGenerating else { return }
+        isGenerating = true
+        errorMessage = nil
+        Task {
+            defer { isGenerating = false }
+            do {
+                let data = try await RemoteWordIllustrationService()
+                    .fetchIllustration(word: wordText, targetLanguage: targetLanguage, senseIndex: 0)
+                try WordIllustrationStore.save(data: data, word: wordText, targetLanguage: targetLanguage)
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
     }
 }
 

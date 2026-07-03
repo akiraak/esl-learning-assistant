@@ -24,11 +24,23 @@ export const DEFAULT_TTS_PRICING: PricingTable = {
   "gemini-2.5-pro-preview-tts": { input: 1.0, output: 20.0 },
 };
 
+// 画像生成モデルの100万トークンあたり単価（USD）。GPT Image 2 は per-image の固定額ではなく
+// トークン単価制（input=テキスト入力、output=画像出力）で、Images API レスポンスの usage から
+// 料金を算出できる。自動更新の対象外（手動管理の固定値）。
+// 参照: https://developers.openai.com/api/docs/pricing（2026-07-03 確認）
+export const DEFAULT_IMAGE_PRICING: PricingTable = {
+  "gpt-image-2": { input: 5.0, output: 30.0 },
+};
+
 // 検証ガード: 既定値からの乖離がこの倍率を超える取得値は壊れているとみなして採用しない
 const MAX_DEVIATION_FACTOR = 10;
 
 // 採用中の単価表（自動更新でプロセス内のこの値だけが書き換わる。再起動不要）
-let currentPricing: PricingTable = { ...structuredClone(DEFAULT_PRICING), ...structuredClone(DEFAULT_TTS_PRICING) };
+let currentPricing: PricingTable = {
+  ...structuredClone(DEFAULT_PRICING),
+  ...structuredClone(DEFAULT_TTS_PRICING),
+  ...structuredClone(DEFAULT_IMAGE_PRICING),
+};
 
 export function estimateCostUsd(model: string, inputTokens: number, outputTokens: number): number {
   const pricing = currentPricing[model];
@@ -152,7 +164,7 @@ function matchPrice(section: string, pattern: RegExp): number | null {
 
 /// pricing_state に保存済みの単価表（per-1M）を復元する。検証ガードを通ったモデルだけ採用する。
 export function restorePricing(saved: PricingTable): void {
-  const defaults: PricingTable = { ...DEFAULT_PRICING, ...DEFAULT_TTS_PRICING };
+  const defaults: PricingTable = { ...DEFAULT_PRICING, ...DEFAULT_TTS_PRICING, ...DEFAULT_IMAGE_PRICING };
   const next = getCurrentPricing();
   for (const model of Object.keys(defaults)) {
     const entry = saved[model];
