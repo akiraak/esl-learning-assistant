@@ -168,6 +168,53 @@ VC: 出題音声・回答4択 / VTC: 出題音声+テキスト・回答4択 / VT
   アーカイブ時に `docs/specs/data-model.md`・`docs/specs/app-spec.md` から本プランへのリンクを
   `docs/plans/archive/` のパスへ更新する）
 
+## 6.5 Phase 3 再開用メモ（セッション復帰時にここから読む）
+
+### 進捗
+
+- **Phase 1 完了**（commit `357f5e6`）: data-model.md §5 確定・Question 位置づけ注記・app-spec.md §3.2 解消
+- **Phase 2 完了**（commit `f8c7f06`）: 以下を実装済み・ユニットテスト全46件成功
+- **Phase 3 が次**: ReviewSessionView + Words タブ「今日の復習」導線 + タブバッジ
+
+### Phase 2 で実装済みの部品（そのまま使う）
+
+- `Models/Word.swift`: `WordReviewState` に `stepIndex` / `correctCount` / `lapseCount` 追加済み（旧データはデコードでデフォルト0）
+- `Support/ReviewScheduler.swift`:
+  - `ReviewScheduler.reviewed(_:isCorrect:at:calendar:) -> WordReviewState`（純関数。正解=現在ステップの間隔を適用しステップ+1、不正解=step 0・+3日）
+  - `ReviewScheduler.isDue(_:on:calendar:) -> Bool`（ローカル日付で dueDate <= 今日）
+- `Support/FormatSelector.swift`:
+  - `ReviewQuestionFormat`（28形式 enum、`promptBucket`/`answerBucket` 付き）
+  - `FormatSelector.availableFormats(for: ReviewWordMaterial) -> Set<ReviewQuestionFormat>`
+  - `FormatSelector.select(availableFormats:sessionCounts:targets:using:) -> ReviewQuestionFormat?`（targets 省略時 `.v1`。RNG 注入可）
+  - `ReviewWordMaterial(text:aiInfo:hasIllustration:distractors:)` / `ReviewDistractorPool(wordCount:definitionCount:exampleCount:illustrationCount:)`
+- `Support/GrammarLabelMapping.swift`: `englishPartOfSpeech(for:)` / `englishInflectionForm(for:)` / `posChoices`
+
+### Phase 3 でやること
+
+1. **問題組み立ての純関数**（新規 `Support/ReviewQuestionBuilder.swift` 推奨）: 形式ごとの問題文・正答・誤答選択肢の生成、テキスト入力の正規化判定（大文字小文字・前後空白・句読点）、VT2 の単語単位一致率判定。§5 テスト方針の残り（選択肢の重複なし・フォールバック・入力判定）をユニットテストで
+2. **ReviewSessionView（新規）**: 1問ずつ出題→回答→フィードバック（正解時に例文・イラスト・TTS 再生）→次へ。上限20問、セッション内の不正解単語は最後に再出題。**reviewState への反映は各単語の初回解答のみ**（再出題は表示のみ、`ReviewScheduler.reviewed` を二重適用しない）
+3. **WordsView に「今日の復習」カード**: List 上部に件数+開始ボタン、対象0件なら「今日の復習は完了 🎉」
+4. **Words タブにバッジ**: `ContentView.swift` の `WordsView().tabItem{...}` に `.badge(dueCount)`。ContentView に `@Query` を足して `ReviewScheduler.isDue` でフィルタ
+
+### 統合ポイント（調査済みの実装パターン）
+
+- **復習対象の抽出**: `reviewState` は SwiftData の埋め込み Codable のため `#Predicate` でのネスト条件は避け、`@Query` で全 `Word` を取り `ReviewScheduler.isDue($0.reviewState)` でメモリ内フィルタする（件数は小さい）
+- **targetLanguage の解決**（WordDetailView:209 のパターン）: `word.aiInfoLanguage ?? UserDefaults.standard.string(forKey: AppSettingsKeys.targetLanguageCode) ?? AppSettingsKeys.defaultTargetLanguageCode`
+- **イラスト有無/表示**: `WordIllustrationStore.localURL(word: word.text, targetLanguage: lang) != nil`（senseIndex 省略=0）。表示は `AsyncImage(url:)` ではなく `UIImage(contentsOfFile:)` 等ローカル読み込み（WordDetailView の `WordIllustrationRow` 参照）
+- **TTS 再生**（WordDetailView の `TTSButton` パターン）:
+  - voice/model は `@AppStorage(AppSettingsKeys.ttsVoice/.ttsModel)`。model が `"local"` ならサーバ送信時 `AppSettingsKeys.fallbackServerTTSModel`（"flash"）に読み替え
+  - 生成済み確認: `TTSAudioStore.localURL(text:voice:model:)` → あれば `TTSPlaybackService.play(url:)`
+  - 未生成: `BackendAPI.post(path: "api/tts", body: {text, voice, model})` → `TTSAudioStore.save(...)`。音声問題では生成待ちを避けるため、**未生成時は `SpeechService.speak(_:languageCode:)`（AVSpeechSynthesizer）へフォールバック**するのが簡単
+- **UI テスト**が `accessibilityIdentifier` を参照する慣習（例: `wordAddButton`）。新規ボタンにも識別子を付ける
+
+### ビルド・テストコマンド
+
+```bash
+cd ios && xcodegen generate   # 新規ファイル追加後に必須
+xcodebuild test -project ESLLearningAssistant.xcodeproj -scheme ESLLearningAssistant \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:ESLLearningAssistantTests
+```
+
 ## 7. 調査: 音声入力を使った問題作成はどのようにできるか（AI 音声認識を含む）
 
 TODO の調査項目「音声入力を使った問題作成がどのようにできるか調査をする」への回答（調査日: 2026-07-03）。
