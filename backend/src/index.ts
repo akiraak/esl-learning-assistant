@@ -5,12 +5,17 @@ import crypto from "crypto";
 import express from "express";
 import { config } from "./config";
 import {
+  countQuizQuestions,
   getStoredWord,
   getTtsAudioByHash,
   getWordIllustrationByHash,
   insertRequestLog,
   insertWordInfoLog,
+  listIllustratedWords,
+  listQuizQuestions,
+  listStoredWordTexts,
   normalizeWordKey,
+  replaceQuizQuestions,
   upsertStoredWord,
   upsertTtsAudio,
   upsertWordIllustration,
@@ -18,6 +23,7 @@ import {
 import { adminRouter } from "./admin";
 import { ocrAndTranslate } from "./ocrTranslate";
 import { generateWordInfo, type WordInfo } from "./wordInfo";
+import { generateQuizQuestions } from "./quizQuestions";
 import { estimateCostUsd } from "./pricing";
 import { startPricingSync } from "./pricingSync";
 import { logger } from "./logger";
@@ -308,6 +314,152 @@ app.post("/api/word-info", async (req, res) => {
     logger.error(`word-info: failed word="${trimmedWord}" latencyMs=${latencyMs} error=${errorMessage}`);
     res.status(500).json({ error: errorMessage });
   }
+});
+
+// 復習クイズ問題の生成（docs/plans/quiz-questions-server-storage.md）。
+// 単語情報（words テーブル）を素材に、1単語分の問題（形式×バリエーション）を生成して保存する。
+// iOS は単語情報の生成成功後にこれを fire-and-forget で呼ぶ。
+app.post("/api/quiz-questions/generate", async (req, res) => {
+  const { word, targetLanguage, regenerate } = req.body ?? {};
+
+  if (typeof word !== "string" || !word.trim()) {
+    logger.warn("quiz-questions: rejected (word is required)");
+    res.status(400).json({ error: "word is required" });
+    return;
+  }
+  if (word.length > WORD_MAX_LENGTH) {
+    logger.warn(`quiz-questions: rejected (word too long: ${word.length})`);
+    res.status(400).json({ error: `word must be ${WORD_MAX_LENGTH} characters or fewer` });
+    return;
+  }
+  if (typeof targetLanguage !== "string" || !targetLanguage) {
+    logger.warn("quiz-questions: rejected (targetLanguage is required)");
+    res.status(400).json({ error: "targetLanguage is required" });
+    return;
+  }
+  if (regenerate !== undefined && typeof regenerate !== "boolean") {
+    logger.warn("quiz-questions: rejected (regenerate must be a boolean)");
+    res.status(400).json({ error: "regenerate must be a boolean" });
+    return;
+  }
+
+  const trimmedWord = word.trim();
+  const startedAt = Date.now();
+
+  // 生成済みなら Claude API を呼ばずに返す（regenerate 指定時は作りなおす）
+  if (!regenerate) {
+    const count = countQuizQuestions(trimmedWord, targetLanguage);
+    if (count > 0) {
+      logger.info(`quiz-questions: cache hit word="${trimmedWord}" count=${count}`);
+      res.json({ cached: true, count });
+      return;
+    }
+  }
+
+  // 素材は保存済みの単語情報。無ければ先に /api/word-info を呼ぶ必要がある
+  const stored = getStoredWord(trimmedWord, targetLanguage);
+  if (!stored) {
+    logger.warn(`quiz-questions: rejected (word info not found for "${trimmedWord}")`);
+    res.status(404).json({ error: "word info not found. generate word info first" });
+    return;
+  }
+
+  logger.info(
+    `quiz-questions: start word="${trimmedWord}" targetLanguage=${targetLanguage} ` +
+      `regenerate=${regenerate === true} model=${config.quizQuestionModel}`
+  );
+  try {
+    const wordInfo = JSON.parse(stored.word_info_json) as WordInfo;
+    const result = await generateQuizQuestions(
+      trimmedWord,
+      wordInfo,
+      listIllustratedWords(targetLanguage),
+      listStoredWordTexts(targetLanguage)
+    );
+    const latencyMs = Date.now() - startedAt;
+
+    if (result.questions.length === 0) {
+      const errorMessage = result.errors.join(" / ") || "no questions generated";
+      logger.error(`quiz-questions: failed word="${trimmedWord}" latencyMs=${latencyMs} error=${errorMessage}`);
+      res.status(500).json({ error: errorMessage });
+      return;
+    }
+
+    replaceQuizQuestions(
+      trimmedWord,
+      targetLanguage,
+      result.questions.map((generated) => ({
+        word: trimmedWord,
+        targetLanguage,
+        format: generated.question.format,
+        variantIndex: generated.variantIndex,
+        questionJson: JSON.stringify(generated.question),
+        model: generated.model,
+        inputTokens: generated.inputTokens,
+        outputTokens: generated.outputTokens,
+        costUsd:
+          generated.model === "rule"
+            ? 0
+            : estimateCostUsd(generated.model, generated.inputTokens, generated.outputTokens),
+      }))
+    );
+
+    const totalCostUsd = estimateCostUsd(
+      config.quizQuestionModel,
+      result.totalInputTokens,
+      result.totalOutputTokens
+    );
+    logger.info(
+      `quiz-questions: success word="${trimmedWord}" count=${result.questions.length} ` +
+        `partialErrors=${result.errors.length} latencyMs=${latencyMs} ` +
+        `tokens=${result.totalInputTokens}/${result.totalOutputTokens} costUsd=${totalCostUsd.toFixed(4)}`
+    );
+    if (result.errors.length > 0) {
+      logger.warn(`quiz-questions: partial failure word="${trimmedWord}" errors=${result.errors.join(" / ")}`);
+    }
+    res.json({ cached: false, count: result.questions.length, partialErrors: result.errors });
+  } catch (error) {
+    const latencyMs = Date.now() - startedAt;
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`quiz-questions: failed word="${trimmedWord}" latencyMs=${latencyMs} error=${errorMessage}`);
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// 保存済み問題のバッチ取得。復習セッション開始時に due 単語（最大20語）分をまとめて返す。
+const QUIZ_QUERY_MAX_WORDS = 50;
+
+app.post("/api/quiz-questions/query", (req, res) => {
+  const { words, targetLanguage } = req.body ?? {};
+
+  if (!Array.isArray(words) || words.length === 0 || words.some((w) => typeof w !== "string" || !w.trim())) {
+    logger.warn("quiz-questions/query: rejected (words must be a non-empty string array)");
+    res.status(400).json({ error: "words must be a non-empty string array" });
+    return;
+  }
+  if (words.length > QUIZ_QUERY_MAX_WORDS) {
+    logger.warn(`quiz-questions/query: rejected (too many words: ${words.length})`);
+    res.status(400).json({ error: `words must be ${QUIZ_QUERY_MAX_WORDS} or fewer` });
+    return;
+  }
+  if (typeof targetLanguage !== "string" || !targetLanguage) {
+    logger.warn("quiz-questions/query: rejected (targetLanguage is required)");
+    res.status(400).json({ error: "targetLanguage is required" });
+    return;
+  }
+
+  // キーは正規化済み単語（iOS 側も同じ正規化で引く）
+  const questions: Record<string, unknown[]> = {};
+  for (const word of words as string[]) {
+    const rows = listQuizQuestions(word, targetLanguage);
+    if (rows.length > 0) {
+      questions[normalizeWordKey(word)] = rows.map((row) => JSON.parse(row.question_json));
+    }
+  }
+  logger.info(
+    `quiz-questions/query: words=${words.length} hit=${Object.keys(questions).length} targetLanguage=${targetLanguage}`
+  );
+  res.json({ questions });
 });
 
 // 長文はtts.ts側で文単位のチャンクに分割して合成するため、上限は課金・所要時間の歯止めとしての値

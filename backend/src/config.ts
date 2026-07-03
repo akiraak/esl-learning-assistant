@@ -6,6 +6,7 @@ export const config = {
   ocrModel: process.env.ANTHROPIC_MODEL ?? "claude-sonnet-5",
   translateModel: process.env.ANTHROPIC_TRANSLATE_MODEL ?? "claude-haiku-4-5",
   wordInfoModel: process.env.ANTHROPIC_WORD_INFO_MODEL ?? "claude-haiku-4-5",
+  quizQuestionModel: process.env.ANTHROPIC_QUIZ_QUESTION_MODEL ?? "claude-haiku-4-5",
   geminiApiKey: process.env.GEMINI_API_KEY ?? "",
   openaiApiKey: process.env.OPENAI_API_KEY ?? "",
   apiSecret: process.env.API_SECRET ?? "",

@@ -56,11 +56,12 @@ export interface StructuredCallResult<T> {
 export async function callStructured<T>(
   model: string,
   schema: Record<string, unknown>,
-  content: Anthropic.Messages.ContentBlockParam[]
+  content: Anthropic.Messages.ContentBlockParam[],
+  maxTokens = 4096
 ): Promise<StructuredCallResult<T>> {
   const response = await client.messages.create({
     model,
-    max_tokens: 4096,
+    max_tokens: maxTokens,
     thinking: { type: "disabled" },
     output_config: {
       ...(model.includes("haiku") ? {} : { effort: "low" }),

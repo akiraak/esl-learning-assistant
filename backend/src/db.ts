@@ -169,6 +169,26 @@ db.exec(`
   )
 `);
 
+// 復習クイズ問題（docs/plans/quiz-questions-server-storage.md）。
+// 1単語×1形式につき複数バリエーション（variant_index）を保存し、iOS がランダムに選んで出題する。
+// question_json は iOS の ReviewQuestion と 1:1 対応。model はイラスト系のルール生成では "rule"。
+db.exec(`
+  CREATE TABLE IF NOT EXISTS quiz_questions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    word TEXT NOT NULL,
+    target_language TEXT NOT NULL,
+    format TEXT NOT NULL,
+    variant_index INTEGER NOT NULL,
+    question_json TEXT NOT NULL,
+    model TEXT NOT NULL,
+    input_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    cost_usd REAL NOT NULL DEFAULT 0,
+    UNIQUE(word, target_language, format, variant_index)
+  )
+`);
+
 export interface RequestLogInput {
   imageFilename: string | null;
   targetLanguage: string;
@@ -555,6 +575,130 @@ export function upsertWordIllustration(input: {
 
 export function deleteWordIllustration(id: number): void {
   db.prepare("DELETE FROM word_illustrations WHERE id = ?").run(id);
+}
+
+export interface QuizQuestionRow {
+  id: number;
+  created_at: string;
+  word: string;
+  target_language: string;
+  format: string;
+  variant_index: number;
+  question_json: string;
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number;
+}
+
+export interface QuizQuestionInput {
+  word: string;
+  targetLanguage: string;
+  format: string;
+  variantIndex: number;
+  questionJson: string;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+}
+
+const insertQuizQuestionStmt = db.prepare(`
+  INSERT INTO quiz_questions (
+    created_at, word, target_language, format, variant_index,
+    question_json, model, input_tokens, output_tokens, cost_usd
+  ) VALUES (
+    @createdAt, @word, @targetLanguage, @format, @variantIndex,
+    @questionJson, @model, @inputTokens, @outputTokens, @costUsd
+  )
+`);
+
+const deleteQuizQuestionsStmt = db.prepare(
+  "DELETE FROM quiz_questions WHERE word = ? AND target_language = ?"
+);
+
+/// 1単語分の問題を丸ごと置き換える（部分更新はしない。再生成時も同じ経路）
+export const replaceQuizQuestions = db.transaction(
+  (word: string, targetLanguage: string, questions: QuizQuestionInput[]) => {
+    deleteQuizQuestionsStmt.run(normalizeWordKey(word), targetLanguage);
+    const now = new Date().toISOString();
+    for (const question of questions) {
+      insertQuizQuestionStmt.run({
+        createdAt: now,
+        word: normalizeWordKey(question.word),
+        targetLanguage: question.targetLanguage,
+        format: question.format,
+        variantIndex: question.variantIndex,
+        questionJson: question.questionJson,
+        model: question.model,
+        inputTokens: question.inputTokens,
+        outputTokens: question.outputTokens,
+        costUsd: question.costUsd,
+      });
+    }
+  }
+);
+
+export function listQuizQuestions(word: string, targetLanguage: string): QuizQuestionRow[] {
+  return db
+    .prepare(
+      "SELECT * FROM quiz_questions WHERE word = ? AND target_language = ? ORDER BY format, variant_index"
+    )
+    .all(normalizeWordKey(word), targetLanguage) as QuizQuestionRow[];
+}
+
+export function countQuizQuestions(word: string, targetLanguage: string): number {
+  const row = db
+    .prepare("SELECT COUNT(*) AS count FROM quiz_questions WHERE word = ? AND target_language = ?")
+    .get(normalizeWordKey(word), targetLanguage) as { count: number };
+  return row.count;
+}
+
+export function deleteQuizQuestions(word: string, targetLanguage: string): void {
+  deleteQuizQuestionsStmt.run(normalizeWordKey(word), targetLanguage);
+}
+
+export interface QuizQuestionSummaryRow {
+  word: string;
+  target_language: string;
+  question_count: number;
+  format_count: number;
+  total_cost_usd: number;
+  latest_created_at: string;
+}
+
+/// 管理画面用: 単語×言語ごとの問題数・形式数・コスト合計
+export function listQuizQuestionSummaries(): QuizQuestionSummaryRow[] {
+  return db
+    .prepare(`
+      SELECT word, target_language,
+        COUNT(*) AS question_count,
+        COUNT(DISTINCT format) AS format_count,
+        SUM(cost_usd) AS total_cost_usd,
+        MAX(created_at) AS latest_created_at
+      FROM quiz_questions
+      GROUP BY word, target_language
+      ORDER BY latest_created_at DESC
+    `)
+    .all() as QuizQuestionSummaryRow[];
+}
+
+/// イラスト生成済みの単語一覧（イラスト系形式の誤答プール。sense_index は不問）
+export function listIllustratedWords(targetLanguage: string): string[] {
+  return (
+    db
+      .prepare("SELECT DISTINCT word FROM word_illustrations WHERE target_language = ?")
+      .all(targetLanguage) as { word: string }[]
+  ).map((row) => row.word);
+}
+
+/// words テーブルの単語テキスト一覧（イラスト系 IC1 の誤答プール）
+export function listStoredWordTexts(targetLanguage: string): string[] {
+  return (
+    db.prepare("SELECT word FROM words WHERE target_language = ?").all(targetLanguage) as {
+      word: string;
+    }[]
+  ).map((row) => row.word);
 }
 
 export type SystemLogLevel = "info" | "warn" | "error";
