@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 
 struct ClassEditView: View {
+    @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
 
     let schoolClass: Class
@@ -38,6 +39,7 @@ struct ClassEditView: View {
     private func saveClass() {
         guard !trimmedName.isEmpty else { return }
         schoolClass.name = trimmedName
+        try? modelContext.save()
         dismiss()
     }
 }

@@ -80,7 +80,9 @@ struct CaptureView: View {
         isProcessing = true
         let photo = Photo(lesson: lesson, imageFileName: fileName)
         modelContext.insert(photo)
+        try? modelContext.save()
         await ocrTranslationService.process(photo)
+        try? modelContext.save()
         isProcessing = false
         onCaptured(photo)
         dismiss()

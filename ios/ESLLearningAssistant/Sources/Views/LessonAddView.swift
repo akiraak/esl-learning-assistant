@@ -57,6 +57,7 @@ struct LessonAddView: View {
         guard !trimmedTitle.isEmpty, !isDuplicateTitle else { return }
         let lesson = Lesson(schoolClass: schoolClass, title: trimmedTitle)
         modelContext.insert(lesson)
+        try? modelContext.save()
         currentClassID = schoolClass.id
         currentLessonID = lesson.id
         if let onCreated {

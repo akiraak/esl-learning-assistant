@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 
 struct LessonEditView: View {
+    @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
 
     let lesson: Lesson
@@ -53,6 +54,7 @@ struct LessonEditView: View {
     private func saveLesson() {
         guard !trimmedTitle.isEmpty, !isDuplicateTitle else { return }
         lesson.title = trimmedTitle
+        try? modelContext.save()
         dismiss()
     }
 }

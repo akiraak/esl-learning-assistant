@@ -1,5 +1,12 @@
 # DONE
 
+- [x] クラス名・レッスン名編集の保存も明示的に `modelContext.save()` する。
+      `LessonEditView` / `ClassEditView` / `ClassAddView` / `LessonAddView` に加え、
+      同一パターンだった `CaptureView`（写真insert直後とOCR処理完了後）にも
+      `try? modelContext.save()` を追加。autosave任せだと保存直後の強制終了で
+      変更が失われる問題への対応（メモ機能で確認済みのパターンを横展開）
+      [plan](docs/plans/archive/explicit-modelcontext-save.md)（2026-07-02）
+
 - [x] 管理画面のログ時間をシアトルのタイムゾーンにする。DB保存はUTC ISOのまま、
       `admin.ts` に `formatSeattleTime()`（Intl.DateTimeFormat, America/Los_Angeles,
       PST/PDT略称付き）を追加し、全9カ所のタイムスタンプ表示

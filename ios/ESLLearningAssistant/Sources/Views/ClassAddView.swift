@@ -39,6 +39,7 @@ struct ClassAddView: View {
     private func addClass() {
         let newClass = Class(name: trimmedName)
         modelContext.insert(newClass)
+        try? modelContext.save()
         currentClassID = newClass.id
         currentLessonID = nil
         dismiss()
