@@ -1,5 +1,25 @@
 # DONE
 
+- [x] Gemini TTS 料金を DB 保存し定期更新に含める。
+      LiteLLM の価格JSONは TTS モデルに誤値（flash $0.30/$2.50、公式は $0.50/$10.00）を載せて
+      いるため、TTS だけは Google 公式料金ページ（?hl=en + Accept-Language: en で英語版固定、
+      言語指定なしだと機械翻訳版がランダムに返る）を取得元にした。`STATIC_PRICING` を
+      `DEFAULT_TTS_PRICING` に改名して currentPricing に統合し、`applyFetchedTtsPricing()`
+      （タグ除去テキストから Input/Output price を抽出、既存と同じ10倍乖離ガード・失敗時現行値
+      維持）を追加。起動時+24時間ごとに Claude（LiteLLM）→ TTS（Google）を直列チェックし、
+      結果を system_logs に記録、`pricing_state` に全5モデル分を保存。
+      ライブページ10回連続抽出成功・既存TTS行のコスト再計算一致($0.018592)を確認済み。
+      [plan](docs/plans/archive/gemini-tts-pricing-sync.md)（2026-07-03）
+
+- [x] 管理画面の表示をカッコ良く。デザイン例をいくつか作成して検証する。
+      3案（クリーンライトSaaS風 / ダークオプス / サイドバーダッシュボード）のモックアップを
+      作成して比較検証し、「案Bのダーク配色 × 案Cのサイドバーレイアウト」のハイブリッドを採用。
+      `backend/src/admin.ts` を全面リスタイル: ダークテーマ（地#0C1116/アクセント#38BDF8）、
+      左固定サイドバーナビ、一覧ページにサマリーカード（件数・コスト合計・エラー・平均処理時間等）、
+      ステータスピル・カード化テーブル・モノスペース数字を導入。機能・ルーティングは変更なし。
+      全7ページ（一覧5 + 詳細2）を実データ + headless Chrome スクリーンショットで目視確認済み。
+      [plan](docs/plans/archive/admin-ui-design-refresh.md)（2026-07-03）
+
 - [x] アプリ側音声生成に一時停止や早送りなど一般的な再生プレイヤーの機能を入れる。
       `TTSPlaybackService` を拡張（pause/resume/seek/±5秒スキップ/再生速度0.5〜1.5×/進捗タイマー、
       `play(data:)` 追加）し、共通操作パネル `TTSPlayerBar` を新規作成。
