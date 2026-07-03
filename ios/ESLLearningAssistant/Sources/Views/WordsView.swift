@@ -6,6 +6,7 @@ struct WordsView: View {
     @Query(sort: \Word.registeredAt, order: .reverse) private var words: [Word]
 
     @State private var isShowingAdd = false
+    @State private var isShowingReview = false
     @State private var searchText = ""
 
     var body: some View {
@@ -17,6 +18,10 @@ struct WordsView: View {
                     ContentUnavailableView.search(text: searchText)
                 } else {
                     List {
+                        // 検索中は結果に集中させるため復習カードを出さない
+                        if searchText.isEmpty {
+                            todayReviewCard
+                        }
                         // 単語本体の削除は詳細画面の Delete Word ボタンに集約する（スワイプ削除なし）
                         ForEach(filteredWords) { word in
                             NavigationLink {
@@ -37,6 +42,52 @@ struct WordsView: View {
             }
             .sheet(isPresented: $isShowingAdd) {
                 WordAddView()
+            }
+            .fullScreenCover(isPresented: $isShowingReview) {
+                ReviewSessionView(dueWords: dueWords)
+            }
+        }
+    }
+
+    /// 今日の復習対象（dueDate がローカル日付で今日以前の単語）
+    private var dueWords: [Word] {
+        words.filter { ReviewScheduler.isDue($0.reviewState) }
+    }
+
+    /// List 先頭の「今日の復習」カード。対象0件なら完了表示に切り替わる（プラン §3.5）
+    private var todayReviewCard: some View {
+        Section {
+            let dueCount = dueWords.count
+            if dueCount > 0 {
+                HStack(spacing: 12) {
+                    Image(systemName: "square.stack.3d.up.fill")
+                        .font(.title2)
+                        .foregroundStyle(.tint)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Today's Review")
+                            .font(.headline)
+                        Text("\(dueCount) word\(dueCount == 1 ? "" : "s") to review")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("Start") {
+                        isShowingReview = true
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("reviewStartButton")
+                }
+                .padding(.vertical, 4)
+            } else {
+                HStack(spacing: 12) {
+                    Image(systemName: "checkmark.seal.fill")
+                        .font(.title2)
+                        .foregroundStyle(.green)
+                    Text("Today's review is complete 🎉")
+                        .font(.subheadline)
+                        .accessibilityIdentifier("reviewCompleteLabel")
+                }
+                .padding(.vertical, 4)
             }
         }
     }

@@ -174,7 +174,8 @@ VC: 出題音声・回答4択 / VTC: 出題音声+テキスト・回答4択 / VT
 
 - **Phase 1 完了**（commit `357f5e6`）: data-model.md §5 確定・Question 位置づけ注記・app-spec.md §3.2 解消
 - **Phase 2 完了**（commit `f8c7f06`）: 以下を実装済み・ユニットテスト全46件成功
-- **Phase 3 が次**: ReviewSessionView + Words タブ「今日の復習」導線 + タブバッジ
+- **Phase 3 完了**: `Support/ReviewQuestionBuilder.swift`（28形式の問題組み立て + `ReviewAnswerJudge` 入力判定、ユニットテスト22件）、`Views/ReviewSessionView.swift`（出題→回答→フィードバック→サマリー、上限20問、不正解は末尾で再出題・reviewState 反映は初回解答のみ）、WordsView の「今日の復習」カード、ContentView の Words タブバッジ。UI テスト `ReviewSessionUITests` で導線を通し確認済み
+- **Phase 4 が次**: WordDetailView への復習状態表示（次回復習日・ステップ・正答率）・仕上げ・プランのアーカイブ
 
 ### Phase 2 で実装済みの部品（そのまま使う）
 
