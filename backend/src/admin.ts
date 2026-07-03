@@ -37,6 +37,27 @@ const PAGE_STYLE = `
   .status-error { color: #c33; }
 `;
 
+// DBのタイムスタンプはUTCのISO文字列。管理画面ではシアトル時刻（DST自動切替）で表示する。
+const SEATTLE_TZ = "America/Los_Angeles";
+const seattleDateTime = new Intl.DateTimeFormat("sv-SE", {
+  timeZone: SEATTLE_TZ,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hour12: false,
+});
+const seattleZoneName = new Intl.DateTimeFormat("en-US", { timeZone: SEATTLE_TZ, timeZoneName: "short" });
+
+function formatSeattleTime(isoUtc: string): string {
+  const date = new Date(isoUtc);
+  if (Number.isNaN(date.getTime())) return isoUtc;
+  const zone = seattleZoneName.formatToParts(date).find((p) => p.type === "timeZoneName")?.value;
+  return `${seattleDateTime.format(date)}${zone ? ` ${zone}` : ""}`;
+}
+
 function escapeHtml(value: string): string {
   return value
     .replace(/&/g, "&amp;")
@@ -108,7 +129,7 @@ adminRouter.get("/", (_req, res) => {
       return `
         <tr class="log-row">
           <td>${log.id}</td>
-          <td>${escapeHtml(log.created_at)}</td>
+          <td>${escapeHtml(formatSeattleTime(log.created_at))}</td>
           <td>${thumbnail}</td>
           <td>
             OCR: ${escapeHtml(log.ocr_model)} (in:${log.ocr_input_tokens} / out:${log.ocr_output_tokens})<br>
@@ -168,7 +189,7 @@ adminRouter.get("/logs/:id", (req, res) => {
     <p><a href="/admin">← 一覧に戻る</a></p>
     <h1>ログ #${log.id}</h1>
     <table class="meta-table">
-      <tr><th>日時</th><td>${escapeHtml(log.created_at)}</td></tr>
+      <tr><th>日時</th><td>${escapeHtml(formatSeattleTime(log.created_at))}</td></tr>
       <tr><th>翻訳先言語</th><td>${escapeHtml(log.target_language)}</td></tr>
       <tr><th>OCRモデル</th><td>${escapeHtml(log.ocr_model)}（in: ${log.ocr_input_tokens} / out: ${log.ocr_output_tokens}）</td></tr>
       <tr><th>翻訳モデル</th><td>${translateSummary(log)}</td></tr>
@@ -246,7 +267,7 @@ adminRouter.get("/word-info", (_req, res) => {
       (log) => `
         <tr class="log-row">
           <td>${log.id}</td>
-          <td>${escapeHtml(log.created_at)}</td>
+          <td>${escapeHtml(formatSeattleTime(log.created_at))}</td>
           <td><strong>${escapeHtml(log.word)}</strong>${
             log.user_translation ? `<br><span style="color:#666">${escapeHtml(log.user_translation)}</span>` : ""
           }</td>
@@ -373,7 +394,7 @@ adminRouter.get("/word-info/:id", (req, res) => {
     <p><a href="/admin/word-info">← 一覧に戻る</a></p>
     <h1>単語情報ログ #${log.id}: ${escapeHtml(log.word)}</h1>
     <table class="meta-table">
-      <tr><th>日時</th><td>${escapeHtml(log.created_at)}</td></tr>
+      <tr><th>日時</th><td>${escapeHtml(formatSeattleTime(log.created_at))}</td></tr>
       <tr><th>単語</th><td>${escapeHtml(log.word)}</td></tr>
       <tr><th>ユーザー訳語</th><td>${log.user_translation ? escapeHtml(log.user_translation) : "(なし)"}</td></tr>
       <tr><th>母語</th><td>${escapeHtml(log.target_language)}</td></tr>
@@ -443,8 +464,8 @@ adminRouter.get("/words", (_req, res) => {
           <td>${escapeHtml(firstMeaningPreview(row))}</td>
           <td>${escapeHtml(row.model)}</td>
           <td>${row.generation_count}</td>
-          <td>${escapeHtml(row.created_at)}</td>
-          <td>${escapeHtml(row.updated_at)}</td>
+          <td>${escapeHtml(formatSeattleTime(row.created_at))}</td>
+          <td>${escapeHtml(formatSeattleTime(row.updated_at))}</td>
           <td><a href="/admin/words/${row.id}">詳細を見る →</a></td>
         </tr>
       `
@@ -518,8 +539,8 @@ adminRouter.get("/words/:id", (req, res) => {
       <tr><th>ユーザー訳語</th><td>${row.user_translation ? escapeHtml(row.user_translation) : "(なし)"}</td></tr>
       <tr><th>モデル</th><td>${escapeHtml(row.model)}</td></tr>
       <tr><th>生成回数</th><td>${row.generation_count}</td></tr>
-      <tr><th>作成日時</th><td>${escapeHtml(row.created_at)}</td></tr>
-      <tr><th>更新日時</th><td>${escapeHtml(row.updated_at)}</td></tr>
+      <tr><th>作成日時</th><td>${escapeHtml(formatSeattleTime(row.created_at))}</td></tr>
+      <tr><th>更新日時</th><td>${escapeHtml(formatSeattleTime(row.updated_at))}</td></tr>
     </table>
 
     <div class="action-buttons">
@@ -646,7 +667,7 @@ adminRouter.get("/tts", (_req, res) => {
       return `
         <tr class="log-row">
           <td>${row.id}</td>
-          <td>${escapeHtml(row.created_at)}</td>
+          <td>${escapeHtml(formatSeattleTime(row.created_at))}</td>
           <td>${escapeHtml(preview)}</td>
           <td>${escapeHtml(row.voice)}</td>
           <td>${escapeHtml(row.model)}</td>

@@ -1,5 +1,11 @@
 # DONE
 
+- [x] 管理画面のログ時間をシアトルのタイムゾーンにする。DB保存はUTC ISOのまま、
+      `admin.ts` に `formatSeattleTime()`（Intl.DateTimeFormat, America/Los_Angeles,
+      PST/PDT略称付き）を追加し、全9カ所のタイムスタンプ表示
+      （OCRログ一覧/詳細・単語情報ログ一覧/詳細・単語一覧/詳細・TTS一覧）を変換表示に変更
+      [plan](docs/plans/archive/admin-log-seattle-timezone.md)（2026-07-02）
+
 - [x] TTSデータをサーバで保存する機能を入れる。backend に `tts_audio` テーブルと `data/tts/` を
       新設し、`/api/tts` は同一 (voice, model, text)（sha256キー）ならGemini再呼び出しなしで
       保存済みWAVを返す（ファイル欠損時は再合成して自己修復）。管理画面に「TTS一覧」タブを
