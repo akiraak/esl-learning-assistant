@@ -11,6 +11,7 @@ import {
   getWordInfoLog,
   insertWordInfoLog,
   listRecentRequestLogs,
+  listRecentSystemLogs,
   listRecentWordInfoLogs,
   listStoredWords,
   listTtsAudio,
@@ -96,13 +97,14 @@ function statusLabel(log: { status: string }): string {
   return `<span class="${cls}">${escapeHtml(log.status)}</span>`;
 }
 
-function navLinks(active: "ocr" | "word-info" | "words" | "tts"): string {
+function navLinks(active: "ocr" | "word-info" | "words" | "tts" | "logs"): string {
   const ocr = active === "ocr" ? "<strong>OCR・翻訳ログ</strong>" : `<a href="/admin">OCR・翻訳ログ</a>`;
   const wordInfo =
     active === "word-info" ? "<strong>単語情報ログ</strong>" : `<a href="/admin/word-info">単語情報ログ</a>`;
   const words = active === "words" ? "<strong>単語一覧</strong>" : `<a href="/admin/words">単語一覧</a>`;
   const tts = active === "tts" ? "<strong>TTS一覧</strong>" : `<a href="/admin/tts">TTS一覧</a>`;
-  return `<p>${ocr} | ${wordInfo} | ${words} | ${tts}</p>`;
+  const logs = active === "logs" ? "<strong>システムログ</strong>" : `<a href="/admin/system-logs">システムログ</a>`;
+  return `<p>${ocr} | ${wordInfo} | ${words} | ${tts} | ${logs}</p>`;
 }
 
 // OCRモデルと翻訳モデルが同じ場合は1回の統合呼び出しにまとめており、
@@ -700,6 +702,50 @@ adminRouter.get("/tts", (_req, res) => {
             </tr>
           </thead>
           <tbody>${tableRows}</tbody>
+        </table>
+      `
+    )
+  );
+});
+
+// 汎用のシステムイベントログ（料金表更新チェックなどのサーバ内部イベント）。
+// パスは /admin/logs だと既存の OCR ログ詳細 /admin/logs/:id と紛らわしいため system-logs にしている。
+adminRouter.get("/system-logs", (_req, res) => {
+  const logs = listRecentSystemLogs(100);
+
+  const rows = logs
+    .map((log) => {
+      const levelClass = log.level === "error" ? "level-error" : log.level === "warn" ? "level-warn" : "";
+      return `
+        <tr class="log-row ${levelClass}">
+          <td>${log.id}</td>
+          <td>${escapeHtml(formatSeattleTime(log.created_at))}</td>
+          <td>${escapeHtml(log.category)}</td>
+          <td>${escapeHtml(log.level)}</td>
+          <td>${escapeHtml(log.message)}</td>
+        </tr>
+      `;
+    })
+    .join("\n");
+
+  res.type("html").send(
+    renderPage(
+      "ESL Learning Assistant - システムログ",
+      `
+        .level-warn td { color: #96700a; }
+        .level-error td { color: #c33; }
+      `,
+      `
+        <h1>システムログ</h1>
+        ${navLinks("logs")}
+        <p>直近${logs.length}件</p>
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th><th>日時</th><th>カテゴリ</th><th>レベル</th><th>メッセージ</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
         </table>
       `
     )

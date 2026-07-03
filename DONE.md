@@ -1,5 +1,14 @@
 # DONE
 
+- [x] AI料金表の自動更新＋管理画面「システムログ」ページ。
+      LiteLLMの価格JSON（model_prices_and_context_window.json）を起動時＋24時間ごとに取得し、
+      検証ガード（正の数値・既定値から10倍以内）を通った単価だけ `pricing.ts` のメモリ上の
+      単価表に反映（`DEFAULT_PRICING` はフォールバックとして温存、再起動時は `pricing_state` から復元）。
+      チェック結果（成功／変更あり／失敗）は毎回 `system_logs`（汎用テーブル）に記録し、
+      管理画面に「システムログ」ページを新設して表示。パスは既存の `/admin/logs/:id`（OCRログ詳細）
+      との衝突を避け `/admin/system-logs` とした。取得失敗・値破損時も料金計算は従来値で継続する
+      ことを検証済み [plan](docs/plans/archive/pricing-auto-update.md)（2026-07-02）
+
 - [x] サーバ側でのTTS生成は長文でも可能か確認する。できなければ対応。
       実測の結果、8,000文字でも生成自体は可能だが、finishReason=OTHER / HTTP 500 の散発と、
       STOPなのに音声が途中で切れるサイレント打ち切り（4,000文字で観測）があり

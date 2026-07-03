@@ -95,6 +95,26 @@ db.exec(`
   )
 `);
 
+// 汎用のシステムイベントログ。料金チェック以外のイベントも今後ここに記録する。
+db.exec(`
+  CREATE TABLE IF NOT EXISTS system_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    category TEXT NOT NULL,
+    level TEXT NOT NULL,
+    message TEXT NOT NULL
+  )
+`);
+
+// 最後に適用したAI単価表（再起動時の復元と変更有無の比較に使う。1行のみ運用）。
+db.exec(`
+  CREATE TABLE IF NOT EXISTS pricing_state (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    updated_at TEXT NOT NULL,
+    prices_json TEXT NOT NULL
+  )
+`);
+
 // 単語情報の正式な保存先（word_info_requests は通信ログとして温存し役割を分ける）。
 // キャッシュキーは (trim + 小文字化した word, target_language)。
 db.exec(`
@@ -404,4 +424,44 @@ export function upsertTtsAudio(input: {
 
 export function deleteTtsAudio(id: number): void {
   db.prepare("DELETE FROM tts_audio WHERE id = ?").run(id);
+}
+
+export type SystemLogLevel = "info" | "warn" | "error";
+
+export interface SystemLogRow {
+  id: number;
+  created_at: string;
+  category: string;
+  level: string;
+  message: string;
+}
+
+export function insertSystemLog(category: string, level: SystemLogLevel, message: string): void {
+  db.prepare("INSERT INTO system_logs (created_at, category, level, message) VALUES (?, ?, ?, ?)").run(
+    new Date().toISOString(),
+    category,
+    level,
+    message
+  );
+}
+
+export function listRecentSystemLogs(limit: number): SystemLogRow[] {
+  return db.prepare("SELECT * FROM system_logs ORDER BY id DESC LIMIT ?").all(limit) as SystemLogRow[];
+}
+
+export interface PricingStateRow {
+  id: number;
+  updated_at: string;
+  prices_json: string;
+}
+
+export function getPricingState(): PricingStateRow | undefined {
+  return db.prepare("SELECT * FROM pricing_state WHERE id = 1").get() as PricingStateRow | undefined;
+}
+
+export function savePricingState(pricesJson: string): void {
+  db.prepare(`
+    INSERT INTO pricing_state (id, updated_at, prices_json) VALUES (1, @updatedAt, @pricesJson)
+    ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at, prices_json = excluded.prices_json
+  `).run({ updatedAt: new Date().toISOString(), pricesJson });
 }

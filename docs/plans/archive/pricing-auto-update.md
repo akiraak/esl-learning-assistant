@@ -96,7 +96,8 @@ CREATE TABLE IF NOT EXISTS pricing_state (
 ### Step 5: admin.ts — 「システムログ」ページ新設
 
 - `navLinks` の型・リンクに `logs`（表示名「システムログ」）を追加（5タブ目。既存の「OCR・翻訳ログ」「単語情報ログ」はAPIリクエストログなので名前で区別する）
-- `GET /admin/logs`: `listRecentSystemLogs(100)` を新しい順に表示するだけのシンプルなページ
+- `GET /admin/system-logs`: `listRecentSystemLogs(100)` を新しい順に表示するだけのシンプルなページ
+  （実装時変更: 当初案の `/admin/logs` は既存の OCR ログ詳細 `/admin/logs/:id` と紛らわしいため `system-logs` に変更）
   - 各行: 日時（シアトル時刻）／カテゴリ／メッセージ のテキスト表示
   - level に応じた文字色（warn: 黄土色, error: 赤）だけ付け、集計・グラフ・専用セクション等は作らない
 

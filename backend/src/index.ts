@@ -16,6 +16,7 @@ import { adminRouter } from "./admin";
 import { ocrAndTranslate } from "./ocrTranslate";
 import { generateWordInfo } from "./wordInfo";
 import { estimateCostUsd } from "./pricing";
+import { startPricingSync } from "./pricingSync";
 import { logger } from "./logger";
 import { synthesizeSpeech, VOICE_PRESETS, MODEL_PRESETS, type VoiceKey, type ModelKey } from "./tts";
 
@@ -379,4 +380,5 @@ app.listen(config.port, () => {
   logger.info(`ESL Learning Assistant backend listening on http://localhost:${config.port}`);
   logger.info(`Admin dashboard: http://localhost:${config.port}/admin`);
   logger.info(`Log file: ${path.join(config.dataDir, "server.log")}`);
+  startPricingSync();
 });
