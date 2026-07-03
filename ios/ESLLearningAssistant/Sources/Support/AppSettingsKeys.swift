@@ -4,7 +4,6 @@ enum AppSettingsKeys {
     static let backendBaseURL = "backendBaseURL"
     static let apiSecret = "apiSecret"
     static let targetLanguageCode = "targetLanguageCode"
-    static let ttsEngine = "ttsEngine"
     static let ttsVoice = "ttsVoice"
     static let ttsModel = "ttsModel"
 
@@ -29,10 +28,22 @@ enum AppSettingsKeys {
         return ""
     }
     static let defaultTargetLanguageCode = "ja"
-    /// "local"（端末内蔵AVSpeechSynthesizer） or "gemini"（バックエンド経由Gemini TTS）
-    static let defaultTTSEngine = "local"
     /// "chobi"（ちょビ/Leda） or "naruko"（なるこ/Aoede）
     static let defaultTTSVoice = "chobi"
-    /// "flash"（gemini-2.5-flash-preview-tts、高速） or "pro"（gemini-2.5-pro-preview-tts、高音質）
-    static let defaultTTSModel = "flash"
+    /// "local"（端末内蔵AVSpeechSynthesizer）,
+    /// "flash"（gemini-2.5-flash-preview-tts）, "pro"（gemini-2.5-pro-preview-tts）
+    static let defaultTTSModel = "local"
+    /// サーバTTS（/api/tts）は "local" を受け付けないため、送信時はこのモデルに読み替える
+    static let fallbackServerTTSModel = "flash"
+
+    /// 廃止した "ttsEngine"（local/gemini）設定を ttsModel（local/flash/pro）へ一度だけ移行する。
+    static func migrateLegacyTTSEngineIfNeeded(defaults: UserDefaults = .standard) {
+        guard let engine = defaults.string(forKey: "ttsEngine") else { return }
+        if engine == "local" {
+            defaults.set("local", forKey: ttsModel)
+        } else if defaults.string(forKey: ttsModel) == nil {
+            defaults.set("flash", forKey: ttsModel)
+        }
+        defaults.removeObject(forKey: "ttsEngine")
+    }
 }

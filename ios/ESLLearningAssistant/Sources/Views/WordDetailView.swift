@@ -387,7 +387,7 @@ private struct WordAIInfoSections: View {
     }
 }
 
-/// サーバTTS（Gemini）の生成→再生ボタン。ttsEngine 設定には従わないサーバTTS専用ボタン。
+/// サーバTTS（Gemini）の生成→再生ボタン。ttsModel が On-Device でも常にサーバTTSを使う専用ボタン。
 /// 未生成（端末ローカルにファイルなし）なら生成ボタン、生成中はスピナー、
 /// 生成済みなら再生/停止ボタンになる。生成した音声はサーバと端末ローカルの両方に保存され、
 /// 2回目以降の生成はサーバキャッシュ、再訪時の再生は端末ローカルから行われる。
@@ -400,6 +400,11 @@ private struct TTSButton: View {
     @AppStorage(AppSettingsKeys.ttsModel) private var model = AppSettingsKeys.defaultTTSModel
     @State private var isGenerating = false
 
+    /// ttsModel が "local"（On-Device）のときはサーバが受け付けるモデルに読み替える
+    private var serverModel: String {
+        model == "local" ? AppSettingsKeys.fallbackServerTTSModel : model
+    }
+
     private struct RequestBody: Encodable {
         let text: String
         let voice: String
@@ -408,7 +413,7 @@ private struct TTSButton: View {
 
     var body: some View {
         // 存在チェックのみで軽量。voice / model 設定を変えるとキーが変わり「未生成」に戻る
-        let localURL = TTSAudioStore.localURL(text: text, voice: voice, model: model)
+        let localURL = TTSAudioStore.localURL(text: text, voice: voice, model: serverModel)
         if isGenerating {
             ProgressView()
         } else if let localURL {
@@ -446,9 +451,9 @@ private struct TTSButton: View {
             do {
                 let data = try await BackendAPI.post(
                     path: "api/tts",
-                    body: RequestBody(text: text, voice: voice, model: model)
+                    body: RequestBody(text: text, voice: voice, model: serverModel)
                 )
-                try TTSAudioStore.save(data: data, text: text, voice: voice, model: model)
+                try TTSAudioStore.save(data: data, text: text, voice: voice, model: serverModel)
             } catch {
                 errorMessage = error.localizedDescription
             }

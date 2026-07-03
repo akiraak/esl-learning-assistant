@@ -7,7 +7,6 @@ struct PhotoDetailView: View {
     @State private var isRetrying = false
     @StateObject private var speechService = SpeechService()
     @StateObject private var geminiSpeechService = GeminiSpeechService()
-    @AppStorage(AppSettingsKeys.ttsEngine) private var ttsEngine = AppSettingsKeys.defaultTTSEngine
     @AppStorage(AppSettingsKeys.ttsVoice) private var ttsVoice = AppSettingsKeys.defaultTTSVoice
     @AppStorage(AppSettingsKeys.ttsModel) private var ttsModel = AppSettingsKeys.defaultTTSModel
     private let ocrTranslationService: OCRTranslationService = RemoteOCRTranslationService()
@@ -107,7 +106,7 @@ struct PhotoDetailView: View {
         Button {
             if isSpeaking {
                 stopSpeaking()
-            } else if ttsEngine == "gemini" {
+            } else if ttsModel != "local" {
                 geminiSpeechService.speak(plainText(photo.ocrText), voice: ttsVoice, model: ttsModel)
             } else {
                 speechService.speak(plainText(photo.ocrText))

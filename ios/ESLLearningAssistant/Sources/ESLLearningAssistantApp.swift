@@ -2,6 +2,10 @@ import SwiftUI
 
 @main
 struct ESLLearningAssistantApp: App {
+    init() {
+        AppSettingsKeys.migrateLegacyTTSEngineIfNeeded()
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()

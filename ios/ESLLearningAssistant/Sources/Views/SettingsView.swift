@@ -35,8 +35,6 @@ struct SettingsView: View {
     private var backendBaseURL = AppSettingsKeys.defaultBackendBaseURL
     @AppStorage(AppSettingsKeys.apiSecret)
     private var apiSecret = AppSettingsKeys.defaultAPISecret
-    @AppStorage(AppSettingsKeys.ttsEngine)
-    private var ttsEngine = AppSettingsKeys.defaultTTSEngine
     @AppStorage(AppSettingsKeys.ttsVoice)
     private var ttsVoice = AppSettingsKeys.defaultTTSVoice
     @AppStorage(AppSettingsKeys.ttsModel)
@@ -112,28 +110,24 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    Picker("Speech Engine", selection: $ttsEngine) {
+                    Picker("TTS Model", selection: $ttsModel) {
                         Text("On-Device").tag("local")
-                        Text("Gemini").tag("gemini")
+                        Text("Gemini 2.5 Flash TTS").tag("flash")
+                        Text("Gemini 2.5 Pro TTS").tag("pro")
                     }
                     Picker("Voice", selection: $ttsVoice) {
                         Text("Chobi").tag("chobi")
                         Text("Naruko").tag("naruko")
                     }
-                    .disabled(ttsEngine != "gemini")
-                    Picker("TTS Model", selection: $ttsModel) {
-                        Text("Fast").tag("flash")
-                        Text("High Quality").tag("pro")
-                    }
-                    .disabled(ttsEngine != "gemini")
+                    .disabled(ttsModel == "local")
                 } header: {
                     Text("Text-to-Speech")
                 } footer: {
                     Text(
-                        "Voice used to read the OCR result (English) aloud. On-Device plays "
-                            + "instantly without network access; Gemini generates more natural "
-                            + "speech via the backend (voice and model selectable). "
-                            + "High Quality may take longer to generate."
+                        "Model used to read the OCR result (English) aloud. On-Device plays "
+                            + "instantly without network access. Gemini 2.5 Flash TTS is fast; "
+                            + "Gemini 2.5 Pro TTS sounds more natural but may take longer to "
+                            + "generate. Voice applies to the Gemini models only."
                     )
                 }
 

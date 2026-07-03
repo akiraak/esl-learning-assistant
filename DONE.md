@@ -1,5 +1,14 @@
 # DONE
 
+- [x] アプリSettingからSpeechEngineを削除。TTS Modelだけで選択できるように。
+      `ttsEngine`（local/gemini）キーを廃止し `ttsModel` に統合（local / flash / pro の3択）。
+      Settings の TTS Model ピッカーに On-Device / Gemini 2.5 Flash TTS / Gemini 2.5 Pro TTS を表示。
+      Voice ピッカーは On-Device 選択時のみ無効化。OCR読み上げの分岐は `ttsModel != "local"` に変更。
+      単語詳細のサーバTTSボタンは On-Device 選択時 flash に読み替えて送信（キャッシュキーも従来と互換）。
+      旧 `ttsEngine` 設定はアプリ起動時に `ttsModel` へ一度だけ移行して削除。バックエンドは変更なし。
+      シミュレータ向けビルドが通ることを確認済み
+      [plan](docs/plans/archive/remove-speech-engine-setting.md)（2026-07-03）
+
 - [x] 管理画面TTS一覧に音声の長さと生成料金を表示。
       長さはWAVフォーマット固定（24kHz/16bit/mono）を利用して `byte_size` から算出（既存行も表示可）。
       料金は Gemini レスポンスの `usageMetadata` からトークン数を取得しチャンク合算で
