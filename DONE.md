@@ -1,5 +1,14 @@
 # DONE
 
+- [x] サーバ側でのTTS生成は長文でも可能か確認する。できなければ対応。
+      実測の結果、8,000文字でも生成自体は可能だが、finishReason=OTHER / HTTP 500 の散発と、
+      STOPなのに音声が途中で切れるサイレント打ち切り（4,000文字で観測）があり
+      一括合成は実用に耐えないと判明。`tts.ts` に文境界チャンク分割（最大1,500文字）＋
+      チャンク単位リトライ（打ち切り検知含む）＋3並列合成→PCM連結を実装し、
+      `/api/tts` の上限を2,000→20,000文字に引き上げ。4,000文字で約310秒の
+      正常な音声が約2.5分で生成できることを確認（検証: `backend/scripts/tts-long-check.ts`）
+      [plan](docs/plans/archive/tts-long-text.md)（2026-07-02）
+
 - [x] クラス名・レッスン名編集の保存も明示的に `modelContext.save()` する。
       `LessonEditView` / `ClassEditView` / `ClassAddView` / `LessonAddView` に加え、
       同一パターンだった `CaptureView`（写真insert直後とOCR処理完了後）にも

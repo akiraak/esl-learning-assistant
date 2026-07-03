@@ -305,7 +305,8 @@ app.post("/api/word-info", async (req, res) => {
   }
 });
 
-const TTS_TEXT_MAX_LENGTH = 2000;
+// 長文はtts.ts側で文単位のチャンクに分割して合成するため、上限は課金・所要時間の歯止めとしての値
+const TTS_TEXT_MAX_LENGTH = 20000;
 
 app.post("/api/tts", async (req, res) => {
   const { text, voice, model } = req.body ?? {};
