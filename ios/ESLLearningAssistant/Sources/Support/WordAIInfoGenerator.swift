@@ -51,6 +51,15 @@ final class WordAIInfoGenerator {
             if word.translation.isEmpty, let firstMeaning = response.wordInfo.senses.first?.meaning {
                 word.translation = firstMeaning
             }
+            // 復習クイズ問題をサーバで事前生成しておく（保存はサーバ側。fire-and-forget で、
+            // 失敗しても単語情報の成功表示には影響させない。未生成のままでも復習セッション
+            // 開始時の自己修復トリガで再度生成がかかる）
+            let wordText = word.text
+            Task.detached {
+                try? await RemoteQuizQuestionService().triggerGeneration(
+                    word: wordText, targetLanguage: targetLanguage, regenerate: regenerate
+                )
+            }
         } catch {
             word.aiInfoStatus = .failed
             word.aiInfoErrorMessage = error.localizedDescription

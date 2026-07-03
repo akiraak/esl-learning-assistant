@@ -5,6 +5,11 @@ import SwiftData
 /// 上限は1セッション20問（超過分は次セッションで続けられる）。
 /// セッション内で不正解だった単語は最後にもう一度出題する。reviewState への反映は
 /// 各単語の初回解答のみで、再出題は表示のみ（ReviewScheduler.reviewed を二重適用しない）。
+///
+/// 問題はサーバ保存のもののみを使う（docs/plans/quiz-questions-server-storage.md）。
+/// セッション開始時に /api/quiz-questions/query でまとめて取得し、単語ごとに
+/// 比率調整（FormatSelector）で形式を選び、その形式の複数バリエーションから
+/// ランダムに1問を出題する。サーバに問題が無い単語は出題せずスキップする。
 struct ReviewSessionView: View {
     /// 今日の復習対象（呼び出し側で ReviewScheduler.isDue フィルタ済み）
     let dueWords: [Word]
@@ -14,7 +19,7 @@ struct ReviewSessionView: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
-    // 誤答選択肢は復習対象に限らず単語帳全体から取る（プラン §3.3）
+    // イラスト4択の誤答単語など、出題対象外の単語のイラスト・言語解決に使う
     @Query private var allWords: [Word]
 
     @StateObject private var speechService = SpeechService()
@@ -23,6 +28,11 @@ struct ReviewSessionView: View {
     @AppStorage(AppSettingsKeys.ttsModel) private var ttsModel = AppSettingsKeys.defaultTTSModel
 
     @State private var hasStarted = false
+    @State private var isLoading = true
+    @State private var loadErrorMessage: String?
+    @State private var questionsByWordID: [UUID: [ReviewQuestion]] = [:]
+    /// サーバに問題が無くスキップした due 単語の数（サマリーで知らせる）
+    @State private var skippedWordCount = 0
     @State private var mainQueue: [Word] = []
     @State private var retryQueue: [Word] = []
     @State private var current: CurrentQuestion?
@@ -52,7 +62,11 @@ struct ReviewSessionView: View {
     var body: some View {
         NavigationStack {
             Group {
-                if isFinished {
+                if isLoading {
+                    loadingView
+                } else if let loadErrorMessage {
+                    loadFailedView(loadErrorMessage)
+                } else if isFinished {
                     summaryView
                 } else if let current {
                     questionView(current)
@@ -77,6 +91,41 @@ struct ReviewSessionView: View {
             speechService.stop()
             ttsPlayback.stop()
         }
+    }
+
+    // MARK: - ローディング・取得失敗
+
+    private var loadingView: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+            Text("Loading questions…")
+                .foregroundStyle(.secondary)
+        }
+        .accessibilityIdentifier("reviewLoadingLabel")
+    }
+
+    private func loadFailedView(_ message: String) -> some View {
+        VStack(spacing: 16) {
+            Image(systemName: "wifi.exclamationmark")
+                .font(.system(size: 48))
+                .foregroundStyle(.secondary)
+            Text("Couldn't Load Questions")
+                .font(.title3)
+                .fontWeight(.semibold)
+            Text(message)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+            Button("Retry") {
+                isLoading = true
+                loadErrorMessage = nil
+                Task { await loadQuestions() }
+            }
+            .buttonStyle(.borderedProminent)
+            .accessibilityIdentifier("reviewRetryLoadButton")
+        }
+        .padding()
     }
 
     // MARK: - 出題画面
@@ -344,33 +393,66 @@ struct ReviewSessionView: View {
 
     // MARK: - サマリー
 
+    @ViewBuilder
     private var summaryView: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "checkmark.seal.fill")
-                .font(.system(size: 56))
-                .foregroundStyle(.green)
-            Text("Session Complete")
-                .font(.title2)
-                .fontWeight(.semibold)
-            if firstAnswerCount > 0 {
-                Text("\(firstCorrectCount) of \(firstAnswerCount) correct")
+        if firstAnswerCount == 0 && skippedWordCount > 0 {
+            // 全単語がスキップ（問題未生成）だった場合。自己修復トリガ済みなので時間を置けば出題できる
+            VStack(spacing: 16) {
+                Image(systemName: "hourglass")
+                    .font(.system(size: 56))
                     .foregroundStyle(.secondary)
-            }
-            if dueWords.count > Self.sessionLimit {
-                Text("\(dueWords.count - Self.sessionLimit) more words are still due today.")
+                Text("Preparing Questions")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+                    .accessibilityIdentifier("reviewPreparingLabel")
+                Text("Questions for today's words are being generated on the server. Please try again in a moment.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+                Button {
+                    dismiss()
+                } label: {
+                    Text("Close")
+                        .frame(maxWidth: 200)
+                }
+                .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("reviewDoneButton")
             }
-            Button {
-                dismiss()
-            } label: {
-                Text("Done")
-                    .frame(maxWidth: 200)
+            .padding()
+        } else {
+            VStack(spacing: 16) {
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.system(size: 56))
+                    .foregroundStyle(.green)
+                Text("Session Complete")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+                if firstAnswerCount > 0 {
+                    Text("\(firstCorrectCount) of \(firstAnswerCount) correct")
+                        .foregroundStyle(.secondary)
+                }
+                if skippedWordCount > 0 {
+                    Text("\(skippedWordCount) word\(skippedWordCount == 1 ? "" : "s") skipped (questions being prepared)")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                if dueWords.count > Self.sessionLimit {
+                    Text("\(dueWords.count - Self.sessionLimit) more words are still due today.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                Button {
+                    dismiss()
+                } label: {
+                    Text("Done")
+                        .frame(maxWidth: 200)
+                }
+                .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("reviewDoneButton")
             }
-            .buttonStyle(.borderedProminent)
-            .accessibilityIdentifier("reviewDoneButton")
+            .padding()
         }
-        .padding()
     }
 
     // MARK: - セッション進行
@@ -378,7 +460,60 @@ struct ReviewSessionView: View {
     private func startSession() {
         guard !hasStarted else { return }
         hasStarted = true
-        mainQueue = Array(dueWords.prefix(Self.sessionLimit))
+        Task { await loadQuestions() }
+    }
+
+    /// セッション対象（上限20語）の問題をサーバからまとめて取得する。
+    /// 問題が無い単語はスキップし、サーバ生成の自己修復トリガだけ投げておく。
+    private func loadQuestions() async {
+        let candidates = Array(dueWords.prefix(Self.sessionLimit))
+        guard !candidates.isEmpty else {
+            isLoading = false
+            isFinished = true
+            return
+        }
+
+        // 単語の言語（aiInfoLanguage）ごとにまとめて取得する（通常は1言語）
+        var wordsByLanguage: [String: [Word]] = [:]
+        for word in candidates {
+            wordsByLanguage[targetLanguage(for: word), default: []].append(word)
+        }
+
+        var fetched: [UUID: [ReviewQuestion]] = [:]
+        do {
+            let service = RemoteQuizQuestionService()
+            for (language, words) in wordsByLanguage {
+                let questions = try await service.fetchQuestions(
+                    words: words.map(\.text), targetLanguage: language
+                )
+                for word in words {
+                    if let wordQuestions = questions[RemoteQuizQuestionService.normalizeWordKey(word.text)] {
+                        fetched[word.id] = wordQuestions
+                    }
+                }
+            }
+        } catch {
+            loadErrorMessage = error.localizedDescription
+            isLoading = false
+            return
+        }
+
+        questionsByWordID = fetched
+        let ready = candidates.filter { fetched[$0.id] != nil }
+        skippedWordCount = candidates.count - ready.count
+
+        // 問題が無かった単語（過去の生成失敗・機能追加前の登録語）はサーバ生成をトリガしておく。
+        // 生成には時間がかかるため今回は出題せず、次回セッションから出題可能になる
+        for word in candidates where fetched[word.id] == nil {
+            let text = word.text
+            let language = targetLanguage(for: word)
+            Task.detached {
+                try? await RemoteQuizQuestionService().triggerGeneration(word: text, targetLanguage: language)
+            }
+        }
+
+        mainQueue = ready
+        isLoading = false
         advance()
     }
 
@@ -394,65 +529,42 @@ struct ReviewSessionView: View {
         typedAnswer = ""
         current = nil
 
-        let isRetry: Bool
-        let word: Word
-        if !mainQueue.isEmpty {
-            word = mainQueue.removeFirst()
-            isRetry = false
-        } else if !retryQueue.isEmpty {
-            word = retryQueue.removeFirst()
-            isRetry = true
-        } else {
-            isFinished = true
+        while true {
+            let isRetry: Bool
+            let word: Word
+            if !mainQueue.isEmpty {
+                word = mainQueue.removeFirst()
+                isRetry = false
+            } else if !retryQueue.isEmpty {
+                word = retryQueue.removeFirst()
+                isRetry = true
+            } else {
+                isFinished = true
+                return
+            }
+
+            // 取得済みの問題から比率調整で形式を選び、バリエーションをランダムに1問引く
+            guard let question = pickQuestion(for: word) else { continue }
+            sessionCounts[question.format, default: 0] += 1
+            current = CurrentQuestion(word: word, question: question, isRetry: isRetry)
+
+            // 音声出題は表示と同時に1回自動再生する
+            if let audioText = question.audioText {
+                playAudio(audioText)
+            }
             return
-        }
-
-        let question = makeQuestion(for: word)
-        sessionCounts[question.format, default: 0] += 1
-        current = CurrentQuestion(word: word, question: question, isRetry: isRetry)
-
-        // 音声出題は表示と同時に1回自動再生する
-        if let audioText = question.audioText {
-            playAudio(audioText)
         }
     }
 
-    /// 比率調整付きで形式を選び、実データで組めない形式は除外して選び直す。
-    /// TC9（スペリング4択）は text だけで必ず組めるため最終フォールバックになる。
-    private func makeQuestion(for word: Word) -> ReviewQuestion {
-        let distractorMaterials = allWords
-            .filter { $0.id != word.id }
-            .map(makeDistractorMaterial)
-        let material = ReviewWordMaterial(
-            text: word.text,
-            aiInfo: word.aiInfo,
-            hasIllustration: illustrationURL(for: word) != nil,
-            distractors: ReviewDistractorPool(materials: distractorMaterials)
-        )
-
-        var available = FormatSelector.availableFormats(for: material)
-        while let format = FormatSelector.select(
+    /// サーバ保存問題からの出題選択:
+    /// 形式は FormatSelector の比率調整で選び、同形式の複数バリエーションからランダムに1件。
+    private func pickQuestion(for word: Word) -> ReviewQuestion? {
+        guard let questions = questionsByWordID[word.id], !questions.isEmpty else { return nil }
+        let available = Set(questions.map(\.format))
+        guard let format = FormatSelector.select(
             availableFormats: available, sessionCounts: sessionCounts
-        ) {
-            if let question = ReviewQuestionBuilder.build(
-                format: format, material: material, distractors: distractorMaterials
-            ) {
-                return question
-            }
-            available.remove(format)
-        }
-        // ここに来るのは全形式が組めなかった場合のみ。tc9 は誤答を機械生成するため必ず組める
-        var generator = SystemRandomNumberGenerator()
-        return ReviewQuestionBuilder.build(
-            format: .tc9, material: material, distractors: distractorMaterials, using: &generator
-        ) ?? ReviewQuestion(
-            format: .tc9,
-            instruction: "Which spelling is correct?",
-            displayText: nil,
-            audioText: nil,
-            promptIllustrationWord: nil,
-            answer: .choices(options: [word.text], correctIndex: 0)
-        )
+        ) else { return nil }
+        return questions.filter { $0.format == format }.randomElement()
     }
 
     // MARK: - 解答処理
@@ -519,19 +631,6 @@ struct ReviewSessionView: View {
         word.aiInfoLanguage
             ?? UserDefaults.standard.string(forKey: AppSettingsKeys.targetLanguageCode)
             ?? AppSettingsKeys.defaultTargetLanguageCode
-    }
-
-    private func makeDistractorMaterial(_ word: Word) -> ReviewDistractorMaterial {
-        ReviewDistractorMaterial(
-            text: word.text,
-            englishDefinition: word.aiInfo?.senses.first(where: { !$0.englishDefinition.isEmpty })?.englishDefinition,
-            example: word.aiInfo?.examples.first?.english,
-            hasIllustration: illustrationURL(for: word) != nil,
-            partOfSpeechEnglish: word.aiInfo?.senses.first.flatMap {
-                GrammarLabelMapping.englishPartOfSpeech(for: $0.partOfSpeech)
-            },
-            cefrLevel: word.aiInfo?.cefrLevel
-        )
     }
 }
 

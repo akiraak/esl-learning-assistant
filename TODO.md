@@ -12,7 +12,7 @@
 
 - [ ] 復習クイズの問題をサーバで AI 生成・保存し、複数バリエーションからランダム出題する [plan](docs/plans/quiz-questions-server-storage.md)
   - [x] Phase A: backend — quiz_questions テーブル + 生成/取得 API + curl 確認
-  - [ ] Phase B: iOS — サーバ問題での出題化・ローカル生成コード削除
+  - [x] Phase B: iOS — サーバ問題での出題化・ローカル生成コード削除
   - [ ] Phase C: 管理画面 + docs 更新 + 通し確認
 
 - [ ] 英文の単語をタップすると単語一覧に追加できるようにする

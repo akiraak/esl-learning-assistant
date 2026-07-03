@@ -5,49 +5,100 @@ final class ReviewSessionUITests: XCTestCase {
         continueAfterFailure = false
     }
 
-    /// Words タブの「今日の復習」カード → ReviewSessionView の出題 → 回答 →
-    /// フィードバック → サマリー → 完了表示、の一連の導線を通す。
-    /// 出題形式は比率調整付きのランダム選定のため、4択・タイプ入力のどちらが来ても
-    /// 進められるように分岐して回答する（正誤は問わない）。
-    func testTodayReviewFlowFromWordsTab() throws {
+    /// サーバに到達できないときの挙動: 「今日の復習」カードから開始すると
+    /// 取得失敗画面（Retry 付き）になり、reviewState は変化しない（カードの件数が減らない）。
+    /// 問題はサーバ保存のもののみを使うため、オフラインでは出題されないのが仕様。
+    func testReviewShowsLoadFailureWhenServerUnreachable() throws {
         let app = XCUIApplication()
+        // 到達不能なURLを UserDefaults の引数ドメインへ注入して確実に取得失敗させる
+        app.launchArguments += ["-backendBaseURL", "http://127.0.0.1:1"]
         app.launch()
 
         clearAllData(app)
 
-        // 単語を4件登録する（4択の誤答選択肢が組める最小構成）
         app.tabBars.buttons["Words"].tap()
-        for word in ["apple", "banana", "orange", "grape"] {
+        for word in ["apple", "banana"] {
             addWord(app, text: word)
         }
 
-        // 新規登録語は当日から復習対象 → カードに件数が出る
         let startButton = app.buttons["reviewStartButton"]
         XCTAssertTrue(startButton.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["4 words to review"].exists)
-        attach(app, "01-today-review-card")
-
+        XCTAssertTrue(app.staticTexts["2 words to review"].exists)
         startButton.tap()
 
-        // セッション: サマリーが出るまで出題→回答→次へ を繰り返す
-        // （初回不正解の単語は最後に再出題されるため最大8問 + 余裕）
+        // 取得失敗画面（Retry あり）。出題も reviewState 更新もされない
+        let retryButton = app.buttons["reviewRetryLoadButton"]
+        XCTAssertTrue(retryButton.waitForExistence(timeout: 10))
+        attach(app, "01-load-failed")
+
+        app.buttons["reviewCloseButton"].tap()
+        XCTAssertTrue(app.staticTexts["2 words to review"].waitForExistence(timeout: 5))
+        attach(app, "02-card-unchanged")
+    }
+
+    /// サーバ問題での通し確認（要ローカルサーバ）。既定ではスキップされる。
+    /// 実行方法:
+    ///   TEST_RUNNER_REVIEW_E2E_BASE_URL=http://127.0.0.1:8899 \
+    ///   TEST_RUNNER_REVIEW_E2E_API_SECRET=<backend/.env の API_SECRET> \
+    ///   xcodebuild test ... -only-testing:ESLLearningAssistantUITests/ReviewSessionUITests/testTodayReviewFlowWithServerQuestions
+    /// 単語情報→問題の生成に時間がかかるため、「Preparing Questions」なら待って再入場する。
+    func testTodayReviewFlowWithServerQuestions() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let baseURL = environment["REVIEW_E2E_BASE_URL"],
+              let apiSecret = environment["REVIEW_E2E_API_SECRET"] else {
+            throw XCTSkip("REVIEW_E2E_BASE_URL / REVIEW_E2E_API_SECRET 未設定のためスキップ")
+        }
+
+        let app = XCUIApplication()
+        app.launchArguments += [
+            "-backendBaseURL", baseURL,
+            "-apiSecret", apiSecret,
+        ]
+        app.launch()
+
+        clearAllData(app)
+
+        // 単語登録 → AI情報生成の成功後に問題生成がサーバへトリガされる
+        app.tabBars.buttons["Words"].tap()
+        for word in ["apple", "banana"] {
+            addWord(app, text: word)
+        }
+
+        let startButton = app.buttons["reviewStartButton"]
+        XCTAssertTrue(startButton.waitForExistence(timeout: 5))
+        attach(app, "01-today-review-card")
+
+        // 問題生成が終わるまで「Preparing Questions」→ 閉じて待つ、を繰り返して入場する
         let doneButton = app.buttons["reviewDoneButton"]
+        var entered = false
+        for _ in 0..<12 {
+            startButton.tap()
+            if app.buttons["reviewChoiceButton0"].waitForExistence(timeout: 15)
+                || app.textFields["reviewTypedAnswerField"].exists {
+                entered = true
+                break
+            }
+            // 未生成（Preparing Questions）または全スキップ → 閉じて生成完了を待つ
+            XCTAssertTrue(doneButton.waitForExistence(timeout: 10), "出題も準備中表示も出ない")
+            attach(app, "02-preparing")
+            doneButton.tap()
+            XCTAssertTrue(startButton.waitForExistence(timeout: 5))
+            Thread.sleep(forTimeInterval: 10)
+        }
+        XCTAssertTrue(entered, "問題生成が完了せず出題に到達できない")
+        attach(app, "03-first-question")
+
+        // サマリーまで 出題→回答→次へ を繰り返す（形式はランダムのため分岐して回答）
         var screenshotTaken = false
         for turn in 0..<20 {
             if doneButton.waitForExistence(timeout: 3) {
                 break
             }
-
             let choiceButton = app.buttons["reviewChoiceButton0"]
             let answerField = app.textFields["reviewTypedAnswerField"]
             if choiceButton.waitForExistence(timeout: 5) {
-                if !screenshotTaken {
-                    attach(app, "02-question-choices")
-                    screenshotTaken = true
-                }
                 choiceButton.tap()
             } else if answerField.waitForExistence(timeout: 2) {
-                attach(app, "02b-question-typing")
                 answerField.tap()
                 answerField.typeText("apple")
                 let submitButton = app.buttons["reviewSubmitButton"]
@@ -57,30 +108,24 @@ final class ReviewSessionUITests: XCTestCase {
                 XCTFail("出題画面に回答UIが見つからない (turn \(turn))")
             }
 
-            // 正誤フィードバックが表示され、Next で次の問題へ進む
             let nextButton = app.buttons["reviewNextButton"]
             XCTAssertTrue(nextButton.waitForExistence(timeout: 5), "フィードバックが表示されない (turn \(turn))")
-            XCTAssertTrue(
-                app.staticTexts["Correct!"].exists || app.staticTexts["Incorrect"].exists,
-                "正誤表示が見つからない (turn \(turn))"
-            )
-            if turn == 0 {
-                attach(app, "03-feedback")
+            if !screenshotTaken {
+                attach(app, "04-feedback")
+                screenshotTaken = true
             }
             nextButton.tap()
         }
 
-        // サマリー表示 → Done でセッションを閉じる
         XCTAssertTrue(doneButton.waitForExistence(timeout: 5), "サマリーが表示されない")
         XCTAssertTrue(app.staticTexts["Session Complete"].exists)
-        attach(app, "04-session-summary")
+        attach(app, "05-session-summary")
         doneButton.tap()
 
-        // 全単語が解答済み（正解は+3日以降、不正解も+3日）→ 今日の復習は完了表示
+        // 全単語が解答済み → 今日の復習は完了表示
         let completeLabel = app.staticTexts["reviewCompleteLabel"]
         XCTAssertTrue(completeLabel.waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["reviewStartButton"].exists)
-        attach(app, "05-review-complete-card")
+        attach(app, "06-review-complete-card")
     }
 
     /// Words タブの通常追加シートで単語を1件登録する
