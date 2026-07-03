@@ -6,7 +6,7 @@
   - [x] 音声入力を使った問題作成がどのようにできるか調査をする
     - → 調査済み: 発話回答型（単語を言い当てる）はオンデバイス音声認識で無料実装可。発音の採点は汎用ASRでは原理的に不可で Azure Pronunciation Assessment が本命。LLMに音声を直接採点させるのは精度不安定（詳細はプラン §7）
   - [x] Phase 1: 設計確定・スペック更新（data-model.md の WordReviewState/Question 位置づけ + app-spec.md §3.2 の保留事項解消）
-  - [ ] Phase 2: ReviewScheduler・FormatSelector（比率調整） + WordReviewState 拡張 + ユニットテスト
+  - [x] Phase 2: ReviewScheduler・FormatSelector（比率調整） + WordReviewState 拡張 + ユニットテスト
   - [ ] Phase 3: ReviewSessionView（確定した出題形式）と Words タブの「今日の復習」導線
   - [ ] Phase 4: WordDetailView への復習状態表示・仕上げ
 

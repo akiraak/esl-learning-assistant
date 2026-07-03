@@ -118,14 +118,42 @@ struct WordAIInfo: Codable {
     var commonMistakes: String?
 }
 
+/// 間隔反復の復習状態（docs/specs/data-model.md §5）。更新ロジックは ReviewScheduler。
 struct WordReviewState: Codable {
     var dueDate: Date
     var lastReviewedAt: Date?
     var reviewCount: Int
+    /// 現在の復習ステップ（ReviewScheduler.stepIntervalsInDays のインデックス）
+    var stepIndex: Int
+    /// 累計正解数
+    var correctCount: Int
+    /// 不正解でステップ0にリセットされた回数
+    var lapseCount: Int
 
-    init(dueDate: Date, lastReviewedAt: Date? = nil, reviewCount: Int = 0) {
+    init(
+        dueDate: Date,
+        lastReviewedAt: Date? = nil,
+        reviewCount: Int = 0,
+        stepIndex: Int = 0,
+        correctCount: Int = 0,
+        lapseCount: Int = 0
+    ) {
         self.dueDate = dueDate
         self.lastReviewedAt = lastReviewedAt
         self.reviewCount = reviewCount
+        self.stepIndex = stepIndex
+        self.correctCount = correctCount
+        self.lapseCount = lapseCount
+    }
+
+    // stepIndex / correctCount / lapseCount 追加前に保存されたデータをデフォルト値0で読む
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        dueDate = try container.decode(Date.self, forKey: .dueDate)
+        lastReviewedAt = try container.decodeIfPresent(Date.self, forKey: .lastReviewedAt)
+        reviewCount = try container.decodeIfPresent(Int.self, forKey: .reviewCount) ?? 0
+        stepIndex = try container.decodeIfPresent(Int.self, forKey: .stepIndex) ?? 0
+        correctCount = try container.decodeIfPresent(Int.self, forKey: .correctCount) ?? 0
+        lapseCount = try container.decodeIfPresent(Int.self, forKey: .lapseCount) ?? 0
     }
 }
