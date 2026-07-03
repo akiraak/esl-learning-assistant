@@ -230,9 +230,11 @@ Word                                          (Lessonに従属しない独立エ
 
 教科書内容から AI が自動生成する練習問題（仕様書3.3章）。
 
-> **位置づけ**: `Question` / `QuizResult` は **AI 生成問題（v2、仕様書3.3章）用**のモデル。
-> 単語帳の復習クイズ（仕様書3.2章）はレッスンに紐づかず問題をローカルで動的に生成するため、
-> `Question` レコードは作成せず、結果は `Word.reviewState` の更新のみで記録する。
+> **位置づけ**: `Question` / `QuizResult` は **AI 生成問題（v2、仕様書3.3章、レッスン紐づけ）用**のモデル。
+> 単語帳の復習クイズ（仕様書3.2章）はレッスンに紐づかず、問題は backend が AI 生成して
+> サーバ（`quiz_questions` テーブル）に保存したものを取得して出題するため、端末側では
+> `Question` レコードを作成せず、結果は `Word.reviewState` の更新のみで記録する
+> （設計: [docs/plans/quiz-questions-server-storage.md](../plans/archive/quiz-questions-server-storage.md)）。
 
 | フィールド | 型 | 説明 |
 |---|---|---|

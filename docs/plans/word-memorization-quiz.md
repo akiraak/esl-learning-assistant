@@ -55,6 +55,11 @@ TODO の疑問「記憶は1日後3日後7日後と間を伸ばしてテストす
 
 ### 3.3 出題形式（v1 はローカル生成、AI 不要）
 
+> **2026-07-03 更新**: 問題の生成・保存は本節の「ローカル生成」から**サーバでの AI 生成・保存**
+> （1単語×1形式につき複数バリエーション、出題時にランダム選択）へ移行した。
+> 現行の設計は [quiz-questions-server-storage.md](archive/quiz-questions-server-storage.md) を参照。
+> 本節の28形式の定義・形式 ID・比率調整（FormatSelector）はそのまま有効。
+
 **方針（確定）**:
 
 - **問題文・選択肢はすべて英語**。日本語 translation は問題には使わない（正解後のフィードバック表示にのみ使用可）。
@@ -174,7 +179,8 @@ VC: 出題音声・回答4択 / VTC: 出題音声+テキスト・回答4択 / VT
 
 - **Phase 1 完了**（commit `357f5e6`）: data-model.md §5 確定・Question 位置づけ注記・app-spec.md §3.2 解消
 - **Phase 2 完了**（commit `f8c7f06`）: 以下を実装済み・ユニットテスト全46件成功
-- **Phase 3 完了**: `Support/ReviewQuestionBuilder.swift`（28形式の問題組み立て + `ReviewAnswerJudge` 入力判定、ユニットテスト22件）、`Views/ReviewSessionView.swift`（出題→回答→フィードバック→サマリー、上限20問、不正解は末尾で再出題・reviewState 反映は初回解答のみ）、WordsView の「今日の復習」カード、ContentView の Words タブバッジ。UI テスト `ReviewSessionUITests` で導線を通し確認済み
+- **Phase 3 完了**: `Views/ReviewSessionView.swift`（出題→回答→フィードバック→サマリー、上限20問、不正解は末尾で再出題・reviewState 反映は初回解答のみ）、WordsView の「今日の復習」カード、ContentView の Words タブバッジ。UI テスト `ReviewSessionUITests` で導線を通し確認済み。
+  ※当初のローカル生成（ReviewQuestionBuilder）はその後 [quiz-questions-server-storage.md](archive/quiz-questions-server-storage.md) でサーバ AI 生成・保存に置き換え（判定 `ReviewAnswerJudge` と比率選定 `FormatSelector.select` は存続）
 - **Phase 4 が次**: WordDetailView への復習状態表示（次回復習日・ステップ・正答率）・仕上げ・プランのアーカイブ
 
 ### Phase 2 で実装済みの部品（そのまま使う）

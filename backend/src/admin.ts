@@ -3,22 +3,29 @@ import { Router } from "express";
 import { marked } from "marked";
 import fs from "fs";
 import {
+  deleteQuizQuestions,
   deleteStoredWord,
   deleteTtsAudio,
   deleteWordIllustration,
   getPricingState,
   getRequestLog,
+  getStoredWord,
   getStoredWordById,
   getTtsAudioById,
   getWordIllustrationById,
   getWordInfoLog,
   insertWordInfoLog,
+  listIllustratedWords,
+  listQuizQuestions,
+  listQuizQuestionSummaries,
   listRecentRequestLogs,
   listRecentSystemLogs,
   listRecentWordInfoLogs,
   listStoredWords,
+  listStoredWordTexts,
   listTtsAudio,
   listWordIllustrations,
+  replaceQuizQuestions,
   RequestLogRow,
   StoredWordRow,
   upsertStoredWord,
@@ -27,6 +34,7 @@ import {
 } from "./db";
 import { config } from "./config";
 import { generateWordInfo, type WordInfo } from "./wordInfo";
+import { generateQuizQuestions, type QuizQuestion } from "./quizQuestions";
 import { generateIllustration, ILLUSTRATION_MODEL } from "./illustration";
 import { DEFAULT_IMAGE_PRICING, DEFAULT_PRICING, DEFAULT_TTS_PRICING, estimateCostUsd, getCurrentPricing } from "./pricing";
 import { fetchAndApplyPricing, fetchAndApplyTtsPricing } from "./pricingSync";
@@ -149,12 +157,13 @@ function renderMarkdown(value: string | null): string {
   return marked.parse(escaped, { async: false, breaks: true }) as string;
 }
 
-type NavSection = "ocr" | "word-info" | "words" | "tts" | "illustrations" | "pricing" | "logs";
+type NavSection = "ocr" | "word-info" | "words" | "quiz-questions" | "tts" | "illustrations" | "pricing" | "logs";
 
 const NAV_ITEMS: Array<[NavSection, string, string]> = [
   ["ocr", "/admin", "OCR・翻訳ログ"],
   ["word-info", "/admin/word-info", "単語情報ログ"],
   ["words", "/admin/words", "単語一覧"],
+  ["quiz-questions", "/admin/quiz-questions", "クイズ問題"],
   ["tts", "/admin/tts", "TTS一覧"],
   ["illustrations", "/admin/illustrations", "単語イラスト"],
   ["pricing", "/admin/pricing", "AI料金"],
@@ -1130,4 +1139,216 @@ adminRouter.post("/tts/:id/delete", (req, res) => {
   deleteTtsAudio(id);
   logger.info(`admin: deleted tts audio #${id} (${row.voice}/${row.model}, ${row.byte_size} bytes)`);
   res.redirect("/admin/tts");
+});
+
+// ---- 復習クイズ問題（docs/plans/quiz-questions-server-storage.md）----
+
+/// 詳細・削除・再生成の対象指定は (word, targetLanguage) をクエリパラメータで受ける
+function quizItemQuery(word: string, targetLanguage: string): string {
+  return `word=${encodeURIComponent(word)}&targetLanguage=${encodeURIComponent(targetLanguage)}`;
+}
+
+adminRouter.get("/quiz-questions", (_req, res) => {
+  const summaries = listQuizQuestionSummaries();
+  const totalQuestions = summaries.reduce((sum, row) => sum + row.question_count, 0);
+  const totalCost = summaries.reduce((sum, row) => sum + row.total_cost_usd, 0);
+
+  const rows = summaries
+    .map(
+      (row) => `
+        <tr class="log-row">
+          <td><strong>${escapeHtml(row.word)}</strong></td>
+          <td>${escapeHtml(row.target_language)}</td>
+          <td class="mono">${row.question_count}</td>
+          <td class="mono">${row.format_count}</td>
+          <td class="mono">$${row.total_cost_usd.toFixed(4)}</td>
+          <td class="mono dim">${escapeHtml(formatSeattleTime(row.latest_created_at))}</td>
+          <td><a href="/admin/quiz-questions/item?${quizItemQuery(row.word, row.target_language)}">詳細 →</a></td>
+        </tr>
+      `
+    )
+    .join("\n");
+
+  res.type("html").send(
+    renderPage(
+      "ESL Assistant - クイズ問題",
+      "",
+      `
+        <h1>復習クイズ問題</h1>
+        <p class="page-sub">単語×言語ごとに、形式（tc1〜vt2）別の複数バリエーションを保存。iOS はこの中からランダムに出題する</p>
+        <div class="stats">
+          <div class="stat"><div class="lbl">単語数</div><div class="val">${summaries.length}</div></div>
+          <div class="stat"><div class="lbl">問題数</div><div class="val">${totalQuestions}</div></div>
+          <div class="stat"><div class="lbl">生成コスト合計</div><div class="val">$${totalCost.toFixed(4)}</div></div>
+        </div>
+        <div class="card">
+          <table>
+            <thead>
+              <tr>
+                <th>単語</th><th>母語</th><th>問題数</th><th>形式数</th><th>コスト</th><th>最終生成</th><th></th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      `,
+      "quiz-questions"
+    )
+  );
+});
+
+/// 回答内容の一覧表示用サマリー（4択は正解に✓）
+function quizAnswerSummary(question: QuizQuestion): string {
+  const answer = question.answer;
+  if (answer.type === "typing") {
+    const threshold = answer.matchRateThreshold != null ? ` <span class="faint">(一致率 ≥ ${answer.matchRateThreshold})</span>` : "";
+    return `入力: ${escapeHtml((answer.acceptedAnswers ?? []).join(" / "))}${threshold}`;
+  }
+  const options = (answer.options ?? [])
+    .map((option, index) =>
+      index === answer.correctIndex
+        ? `<span class="ok-text">✓ ${escapeHtml(option)}</span>`
+        : escapeHtml(option)
+    )
+    .join("<br>");
+  return options;
+}
+
+adminRouter.get("/quiz-questions/item", (req, res) => {
+  const word = String(req.query.word ?? "");
+  const targetLanguage = String(req.query.targetLanguage ?? "");
+  const rows = listQuizQuestions(word, targetLanguage);
+  if (rows.length === 0) {
+    res.status(404).type("html").send(
+      renderPage(
+        "クイズ問題が見つかりません",
+        "",
+        '<p>指定された単語の問題は存在しません。</p><p><a href="/admin/quiz-questions">← 一覧に戻る</a></p>'
+      )
+    );
+    return;
+  }
+
+  const totalCost = rows.reduce((sum, row) => sum + row.cost_usd, 0);
+  const tableRows = rows
+    .map((row) => {
+      const question = JSON.parse(row.question_json) as QuizQuestion;
+      const prompt = [
+        question.displayText ? `表示: ${escapeHtml(question.displayText)}` : "",
+        question.audioText ? `<span class="dim">音声: ${escapeHtml(question.audioText)}</span>` : "",
+        question.promptIllustrationWord
+          ? `<span class="dim">イラスト: ${escapeHtml(question.promptIllustrationWord)}</span>`
+          : "",
+      ]
+        .filter(Boolean)
+        .join("<br>");
+      return `
+        <tr class="log-row">
+          <td class="mono"><strong>${escapeHtml(row.format)}</strong> <span class="faint">v${row.variant_index}</span></td>
+          <td>${escapeHtml(question.instruction)}${prompt ? `<br>${prompt}` : ""}</td>
+          <td>${quizAnswerSummary(question)}</td>
+          <td class="dim">${escapeHtml(row.model)}</td>
+          <td class="mono dim">$${row.cost_usd.toFixed(4)}</td>
+        </tr>
+      `;
+    })
+    .join("\n");
+
+  const body = `
+    <p><a href="/admin/quiz-questions">← 一覧に戻る</a></p>
+    <h1>クイズ問題: ${escapeHtml(rows[0].word)} <span class="dim">(${escapeHtml(targetLanguage)})</span></h1>
+    <p class="page-sub">全${rows.length}問 / 生成コスト $${totalCost.toFixed(4)} / 最終生成 ${escapeHtml(formatSeattleTime(rows[0].created_at))}</p>
+
+    <div class="action-buttons" style="display:flex; gap:12px; margin:16px 0 24px;">
+      <form method="post" action="/admin/quiz-questions/regenerate?${quizItemQuery(rows[0].word, targetLanguage)}"
+            onsubmit="return confirm('この単語の問題を再生成します。現在の問題は置き換えられます。よろしいですか？')">
+        <button type="submit" class="btn btn-primary">再生成する</button>
+      </form>
+      <form method="post" action="/admin/quiz-questions/delete?${quizItemQuery(rows[0].word, targetLanguage)}"
+            onsubmit="return confirm('この単語の問題を削除します。よろしいですか？（アプリの復習開始時に自動で再生成されます）')">
+        <button type="submit" class="btn btn-danger">削除する</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <table>
+        <thead>
+          <tr><th>形式</th><th>問題</th><th>回答</th><th>モデル</th><th>コスト</th></tr>
+        </thead>
+        <tbody>${tableRows}</tbody>
+      </table>
+    </div>
+  `;
+  res.type("html").send(renderPage(`クイズ問題: ${rows[0].word} - ESL Assistant`, "", body, "quiz-questions"));
+});
+
+adminRouter.post("/quiz-questions/delete", (req, res) => {
+  const word = String(req.query.word ?? "");
+  const targetLanguage = String(req.query.targetLanguage ?? "");
+  deleteQuizQuestions(word, targetLanguage);
+  logger.info(`admin: deleted quiz questions "${word}" (${targetLanguage})`);
+  res.redirect("/admin/quiz-questions");
+});
+
+adminRouter.post("/quiz-questions/regenerate", async (req, res) => {
+  const word = String(req.query.word ?? "");
+  const targetLanguage = String(req.query.targetLanguage ?? "");
+  const stored = getStoredWord(word, targetLanguage);
+  if (!stored) {
+    res.status(404).type("html").send(
+      renderPage(
+        "単語情報が見つかりません",
+        "",
+        '<p>素材となる単語情報がありません。先に単語情報を生成してください。</p><p><a href="/admin/quiz-questions">← 一覧に戻る</a></p>'
+      )
+    );
+    return;
+  }
+
+  const startedAt = Date.now();
+  logger.info(`admin: regenerate quiz questions "${word}" (${targetLanguage})`);
+  try {
+    const wordInfo = JSON.parse(stored.word_info_json) as WordInfo;
+    const result = await generateQuizQuestions(
+      word,
+      wordInfo,
+      listIllustratedWords(targetLanguage),
+      listStoredWordTexts(targetLanguage)
+    );
+    if (result.questions.length === 0) {
+      throw new Error(result.errors.join(" / ") || "no questions generated");
+    }
+    replaceQuizQuestions(
+      word,
+      targetLanguage,
+      result.questions.map((generated) => ({
+        word,
+        targetLanguage,
+        format: generated.question.format,
+        variantIndex: generated.variantIndex,
+        questionJson: JSON.stringify(generated.question),
+        model: generated.model,
+        inputTokens: generated.inputTokens,
+        outputTokens: generated.outputTokens,
+        costUsd:
+          generated.model === "rule"
+            ? 0
+            : estimateCostUsd(generated.model, generated.inputTokens, generated.outputTokens),
+      }))
+    );
+    logger.info(
+      `admin: regenerated quiz questions "${word}" count=${result.questions.length} latencyMs=${Date.now() - startedAt}`
+    );
+    res.redirect(`/admin/quiz-questions/item?${quizItemQuery(word, targetLanguage)}`);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`admin: regenerate quiz questions failed "${word}" error=${errorMessage}`);
+    res.status(500).type("html").send(
+      renderPage(
+        "再生成に失敗しました",
+        "",
+        `<p>${escapeHtml(errorMessage)}</p><p><a href="/admin/quiz-questions">← 一覧に戻る</a></p>`
+      )
+    );
+  }
 });

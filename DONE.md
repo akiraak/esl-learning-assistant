@@ -1,5 +1,16 @@
 # DONE
 
+- [x] 2026-07-03 復習クイズの問題をサーバで AI 生成・保存し、複数バリエーションからランダム出題する
+      [plan](docs/plans/archive/quiz-questions-server-storage.md)
+      backend: quiz_questions テーブル + quizQuestions.ts（24形式を形式グループ並列の
+      callStructured で生成・構造検証、イラスト系4形式はルール生成）、
+      POST /api/quiz-questions/generate・/query、管理画面 /admin/quiz-questions
+      （一覧・詳細・再生成・削除）。生成コスト実測 約$0.036/単語（haiku・1形式3バリエーション）。
+      iOS: ReviewQuestion を Codable 化しサーバ問題のみで出題（形式は FormatSelector の
+      比率調整、同形式のバリエーションからランダム選択）。単語情報の生成成功後に自動生成
+      トリガ + セッション開始時の自己修復トリガ。ローカル生成（ReviewQuestionBuilder・
+      GrammarLabelMapping）は削除。オフライン時はリトライ画面、未生成は Preparing 表示。
+      ユニットテスト47件 + オフラインUIテスト + ローカルサーバE2E（TEST_RUNNER_REVIEW_E2E_*）で確認。
 - [x] 2026-07-03 アイコンとアプリ名の変更 [plan](docs/plans/archive/change-app-icon-and-name.md)
       表示名を「ESL Assistant」に変更（project.yml に CFBundleDisplayName 追加、
       ターゲット名・スキーム名・Bundle ID は不変で run-ios-device.sh 無修正）。
