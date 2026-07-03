@@ -660,12 +660,27 @@ adminRouter.post("/words/:id/regenerate", async (req, res) => {
   }
 });
 
+// WAVフォーマットは固定（24kHz/16bit/mono、tts.ts）のため、ヘッダ44バイトを除いた
+// PCMバイト数から再生時間を算出できる（48,000 bytes/sec）。
+function formatTtsDuration(byteSize: number): string {
+  const totalSeconds = Math.max(0, byteSize - 44) / 48000;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = Math.round(totalSeconds % 60);
+  if (seconds === 60) return `${minutes + 1}:00`;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
 adminRouter.get("/tts", (_req, res) => {
   const rows = listTtsAudio();
+  // input_tokens = output_tokens = 0 はトークン記録前（マイグレーション前）の既存行とみなす
+  const hasCostRecord = (row: { input_tokens: number; output_tokens: number }) =>
+    row.input_tokens !== 0 || row.output_tokens !== 0;
+  const totalCostUsd = rows.filter(hasCostRecord).reduce((sum, row) => sum + row.cost_usd, 0);
 
   const tableRows = rows
     .map((row) => {
       const preview = row.text.length > 80 ? `${row.text.slice(0, 80)}…` : row.text;
+      const cost = hasCostRecord(row) ? `$${row.cost_usd.toFixed(4)}` : "—";
       return `
         <tr class="log-row">
           <td>${row.id}</td>
@@ -674,6 +689,8 @@ adminRouter.get("/tts", (_req, res) => {
           <td>${escapeHtml(row.voice)}</td>
           <td>${escapeHtml(row.model)}</td>
           <td>${(row.byte_size / 1024).toFixed(0)} KB</td>
+          <td>${formatTtsDuration(row.byte_size)}</td>
+          <td>${cost}</td>
           <td><audio controls preload="none" src="/admin/tts/${row.id}/audio" style="width:220px;height:32px;"></audio></td>
           <td>
             <form method="post" action="/admin/tts/${row.id}/delete"
@@ -693,12 +710,12 @@ adminRouter.get("/tts", (_req, res) => {
       `
         <h1>保存済みTTS音声一覧</h1>
         ${navLinks("tts")}
-        <p>全${rows.length}件</p>
+        <p>全${rows.length}件 ／ 料金合計 $${totalCostUsd.toFixed(4)}（トークン記録のある行のみの合算）</p>
         <table>
           <thead>
             <tr>
               <th>ID</th><th>作成日時</th><th>テキスト</th><th>声</th><th>モデル</th>
-              <th>サイズ</th><th>試聴</th><th></th>
+              <th>サイズ</th><th>長さ</th><th>料金</th><th>試聴</th><th></th>
             </tr>
           </thead>
           <tbody>${tableRows}</tbody>

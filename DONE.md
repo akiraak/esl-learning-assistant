@@ -1,5 +1,16 @@
 # DONE
 
+- [x] 管理画面TTS一覧に音声の長さと生成料金を表示。
+      長さはWAVフォーマット固定（24kHz/16bit/mono）を利用して `byte_size` から算出（既存行も表示可）。
+      料金は Gemini レスポンスの `usageMetadata` からトークン数を取得しチャンク合算で
+      `tts_audio` に記録（`input_tokens`/`output_tokens`/`cost_usd` 列を後方互換マイグレーションで追加）。
+      単価は Google 公式（flash: $0.50/$10.00、pro: $1.00/$20.00 per 1M tokens）を確認して反映。
+      LiteLLM の価格JSONはTTSモデルに通常テキストモデルの単価を載せており不正確なため、
+      Gemini TTS は自動更新の対象外とし `pricing.ts` の固定テーブル（STATIC_PRICING）で持つ。
+      新規合成でトークン・料金が記録されること、キャッシュヒットで二重計上されないこと、
+      表示秒数が実際の音声長（afinfo実測3.13秒→表示0:03）と一致することを検証済み
+      [plan](docs/plans/archive/tts-admin-duration-cost.md)（2026-07-02）
+
 - [x] AI料金表の自動更新＋管理画面「システムログ」ページ。
       LiteLLMの価格JSON（model_prices_and_context_window.json）を起動時＋24時間ごとに取得し、
       検証ガード（正の数値・既定値から10倍以内）を通った単価だけ `pricing.ts` のメモリ上の

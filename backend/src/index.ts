@@ -352,11 +352,14 @@ app.post("/api/tts", async (req, res) => {
 
   logger.info(`tts: start voice=${voice} model=${model} textLength=${text.length}`);
   try {
-    const wav = await synthesizeSpeech(text, voice as VoiceKey, model as ModelKey);
+    const { wav, inputTokens, outputTokens } = await synthesizeSpeech(text, voice as VoiceKey, model as ModelKey);
+    const costUsd = estimateCostUsd(MODEL_PRESETS[model as ModelKey], inputTokens, outputTokens);
     const filename = `${textHash}.wav`;
     fs.writeFileSync(path.join(config.ttsDir, filename), wav);
-    upsertTtsAudio({ text, voice, model, textHash, filename, byteSize: wav.length });
-    logger.info(`tts: success voice=${voice} model=${model} latencyMs=${Date.now() - startedAt}`);
+    upsertTtsAudio({ text, voice, model, textHash, filename, byteSize: wav.length, inputTokens, outputTokens, costUsd });
+    logger.info(
+      `tts: success voice=${voice} model=${model} tokens=in:${inputTokens}/out:${outputTokens} cost=$${costUsd.toFixed(4)} latencyMs=${Date.now() - startedAt}`
+    );
     res.set("Content-Type", "audio/wav");
     res.send(wav);
   } catch (error) {

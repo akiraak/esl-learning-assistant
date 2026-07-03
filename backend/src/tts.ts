@@ -56,6 +56,13 @@ interface GeminiResponse {
     finishReason?: string;
     content?: { parts?: Array<{ inlineData?: { data?: string } }> };
   }>;
+  usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
+}
+
+interface ChunkResult {
+  pcm: Buffer;
+  inputTokens: number;
+  outputTokens: number;
 }
 
 // 長文を一括で投げると finishReason=OTHER / HTTP 500 / STOPなのに音声が途中で切れる
@@ -105,7 +112,7 @@ export function splitTextIntoChunks(text: string, maxChars: number = CHUNK_MAX_C
   return chunks;
 }
 
-async function synthesizeChunk(chunk: string, preset: VoicePreset, model: string): Promise<Buffer> {
+async function synthesizeChunk(chunk: string, preset: VoicePreset, model: string): Promise<ChunkResult> {
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
   const body = {
     contents: [{ parts: [{ text: `${preset.style}: ${chunk}` }] }],
@@ -156,7 +163,11 @@ async function synthesizeChunk(chunk: string, preset: VoicePreset, model: string
         lastError = `audio too short (${seconds.toFixed(1)}s for ${chunk.length} chars) — likely truncated`;
         continue;
       }
-      return pcm;
+      return {
+        pcm,
+        inputTokens: json.usageMetadata?.promptTokenCount ?? 0,
+        outputTokens: json.usageMetadata?.candidatesTokenCount ?? 0,
+      };
     } catch (error) {
       lastError = error instanceof Error ? error.message : String(error);
     }
@@ -164,7 +175,14 @@ async function synthesizeChunk(chunk: string, preset: VoicePreset, model: string
   throw new Error(`gemini tts: chunk failed after ${CHUNK_RETRIES} attempts: ${lastError}`);
 }
 
-export async function synthesizeSpeech(text: string, voiceKey: VoiceKey, modelKey: ModelKey): Promise<Buffer> {
+export interface SynthesisResult {
+  wav: Buffer;
+  // 全チャンクの合算（リトライで失敗した試行分は計上しない割り切り）
+  inputTokens: number;
+  outputTokens: number;
+}
+
+export async function synthesizeSpeech(text: string, voiceKey: VoiceKey, modelKey: ModelKey): Promise<SynthesisResult> {
   if (!config.geminiApiKey) {
     throw new Error("GEMINI_API_KEY is not set");
   }
@@ -173,14 +191,18 @@ export async function synthesizeSpeech(text: string, voiceKey: VoiceKey, modelKe
   const model = MODEL_PRESETS[modelKey];
   // チャンクは独立に合成できるため並列化してレイテンシを抑える（結合順は元の順序を維持）
   const chunks = splitTextIntoChunks(text);
-  const pcmBuffers: Buffer[] = new Array(chunks.length);
+  const results: ChunkResult[] = new Array(chunks.length);
   let nextIndex = 0;
   const workers = Array.from({ length: Math.min(CHUNK_CONCURRENCY, chunks.length) }, async () => {
     while (nextIndex < chunks.length) {
       const index = nextIndex++;
-      pcmBuffers[index] = await synthesizeChunk(chunks[index], preset, model);
+      results[index] = await synthesizeChunk(chunks[index], preset, model);
     }
   });
   await Promise.all(workers);
-  return pcmToWav(Buffer.concat(pcmBuffers));
+  return {
+    wav: pcmToWav(Buffer.concat(results.map((r) => r.pcm))),
+    inputTokens: results.reduce((sum, r) => sum + r.inputTokens, 0),
+    outputTokens: results.reduce((sum, r) => sum + r.outputTokens, 0),
+  };
 }

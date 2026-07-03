@@ -91,9 +91,23 @@ db.exec(`
     model TEXT NOT NULL,
     text_hash TEXT NOT NULL UNIQUE,
     filename TEXT NOT NULL,
-    byte_size INTEGER NOT NULL
+    byte_size INTEGER NOT NULL,
+    input_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    cost_usd REAL NOT NULL DEFAULT 0
   )
 `);
+
+// トークン・料金記録前のDBにはこれらの列が無いため後方互換マイグレーション。
+// 既存行は input_tokens = output_tokens = 0 のままとなり「料金未記録」として扱う。
+const ttsColumns = new Set(
+  (db.prepare("PRAGMA table_info(tts_audio)").all() as { name: string }[]).map((c) => c.name)
+);
+if (!ttsColumns.has("input_tokens")) {
+  db.exec("ALTER TABLE tts_audio ADD COLUMN input_tokens INTEGER NOT NULL DEFAULT 0");
+  db.exec("ALTER TABLE tts_audio ADD COLUMN output_tokens INTEGER NOT NULL DEFAULT 0");
+  db.exec("ALTER TABLE tts_audio ADD COLUMN cost_usd REAL NOT NULL DEFAULT 0");
+}
 
 // 汎用のシステムイベントログ。料金チェック以外のイベントも今後ここに記録する。
 db.exec(`
@@ -380,6 +394,9 @@ export interface TtsAudioRow {
   text_hash: string;
   filename: string;
   byte_size: number;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number;
 }
 
 export function getTtsAudioByHash(textHash: string): TtsAudioRow | undefined {
@@ -395,14 +412,18 @@ export function listTtsAudio(): TtsAudioRow[] {
 }
 
 const upsertTtsAudioStmt = db.prepare(`
-  INSERT INTO tts_audio (created_at, text, voice, model, text_hash, filename, byte_size)
-  VALUES (@createdAt, @text, @voice, @model, @textHash, @filename, @byteSize)
+  INSERT INTO tts_audio (created_at, text, voice, model, text_hash, filename, byte_size, input_tokens, output_tokens, cost_usd)
+  VALUES (@createdAt, @text, @voice, @model, @textHash, @filename, @byteSize, @inputTokens, @outputTokens, @costUsd)
   ON CONFLICT(text_hash) DO UPDATE SET
     created_at = excluded.created_at,
-    byte_size = excluded.byte_size
+    byte_size = excluded.byte_size,
+    input_tokens = excluded.input_tokens,
+    output_tokens = excluded.output_tokens,
+    cost_usd = excluded.cost_usd
 `);
 
-/// 合成結果のメタデータを保存する。ファイル欠損からの自己修復（再合成）時は既存行を更新する。
+/// 合成結果のメタデータを保存する。ファイル欠損からの自己修復（再合成）時は既存行を更新する
+/// （トークン数・料金も再合成時の値で上書きする）。
 export function upsertTtsAudio(input: {
   text: string;
   voice: string;
@@ -410,6 +431,9 @@ export function upsertTtsAudio(input: {
   textHash: string;
   filename: string;
   byteSize: number;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
 }): void {
   upsertTtsAudioStmt.run({
     createdAt: new Date().toISOString(),
@@ -419,6 +443,9 @@ export function upsertTtsAudio(input: {
     textHash: input.textHash,
     filename: input.filename,
     byteSize: input.byteSize,
+    inputTokens: input.inputTokens,
+    outputTokens: input.outputTokens,
+    costUsd: input.costUsd,
   });
 }
 

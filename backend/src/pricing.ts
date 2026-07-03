@@ -15,6 +15,15 @@ export const DEFAULT_PRICING: PricingTable = {
   "claude-haiku-4-5": { input: 1.0, output: 5.0 },
 };
 
+// Gemini TTS の100万トークンあたり単価（USD）。LiteLLM の価格JSONはTTSモデルに
+// 通常テキストモデルの単価を載せており不正確（音声出力 $10/$20 に対し $2.50/$10）なため、
+// 自動更新の対象外として固定値で持つ。
+// 参照: https://ai.google.dev/gemini-api/docs/pricing（2026-07-02 確認）
+const STATIC_PRICING: PricingTable = {
+  "gemini-2.5-flash-preview-tts": { input: 0.5, output: 10.0 },
+  "gemini-2.5-pro-preview-tts": { input: 1.0, output: 20.0 },
+};
+
 // 検証ガード: 既定値からの乖離がこの倍率を超える取得値は壊れているとみなして採用しない
 const MAX_DEVIATION_FACTOR = 10;
 
@@ -22,7 +31,7 @@ const MAX_DEVIATION_FACTOR = 10;
 let currentPricing: PricingTable = structuredClone(DEFAULT_PRICING);
 
 export function estimateCostUsd(model: string, inputTokens: number, outputTokens: number): number {
-  const pricing = currentPricing[model];
+  const pricing = currentPricing[model] ?? STATIC_PRICING[model];
   if (!pricing) return 0;
   return (inputTokens * pricing.input + outputTokens * pricing.output) / 1_000_000;
 }
