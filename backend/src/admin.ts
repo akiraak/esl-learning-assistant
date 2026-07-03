@@ -27,15 +27,82 @@ import { logger } from "./logger";
 
 export const adminRouter = Router();
 
+// ダーク基調 + 左サイドバーの共通テーマ。配色トークン:
+//   地 #0C1116 / パネル #111820 / 枠線 #1F2A35 / 行区切り #18212C
+//   文字 #E6EDF3 / 補助 #8B98A5 / 弱 #66737F / アクセント #38BDF8
+//   success #3FB950 / error #F85149 / warn #D29922
 const PAGE_STYLE = `
-  body { font-family: sans-serif; margin: 24px; }
-  a { color: #06c; }
-  table { border-collapse: collapse; width: 100%; }
-  th, td { border: 1px solid #ccc; padding: 8px; font-size: 13px; vertical-align: top; }
-  th { background: #f0f0f0; text-align: left; }
-  tr.log-row:hover { background: #f7fbff; }
-  .status-success { color: #2a7; }
-  .status-error { color: #c33; }
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: #0C1116; color: #E6EDF3; font-size: 14px;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Segoe UI", sans-serif;
+  }
+  a { color: #38BDF8; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .layout { display: flex; min-height: 100vh; }
+  .sidebar {
+    flex: 0 0 200px; background: #0E141B; border-right: 1px solid #1F2A35;
+    padding: 18px 0; display: flex; flex-direction: column;
+    position: sticky; top: 0; height: 100vh;
+  }
+  .sidebar .brand { color: #fff; font-weight: 700; font-size: 14px; padding: 4px 20px 18px; }
+  .sidebar .brand small { display: block; font-weight: 400; font-size: 10px; color: #66737F; letter-spacing: 0.12em; margin-top: 2px; }
+  .sidebar nav { display: flex; flex-direction: column; gap: 2px; }
+  .sidebar nav a { color: #8B98A5; font-size: 13px; padding: 9px 20px; border-left: 3px solid transparent; }
+  .sidebar nav a:hover { color: #E6EDF3; background: rgba(255,255,255,0.03); text-decoration: none; }
+  .sidebar nav a.active { color: #fff; background: rgba(56,189,248,0.12); border-left-color: #38BDF8; font-weight: 600; }
+  .sidebar .foot { margin-top: auto; padding: 16px 20px 4px; font-size: 11px; color: #66737F; }
+  main { flex: 1; padding: 24px 28px 48px; min-width: 0; }
+  h1 { font-size: 19px; margin: 0 0 4px; font-weight: 600; }
+  h2 { font-size: 15px; margin: 24px 0 10px; }
+  .page-sub { color: #8B98A5; font-size: 12px; margin: 0 0 18px; }
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  .dim { color: #8B98A5; }
+  .faint { color: #66737F; }
+  .ok-text { color: #3FB950; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; margin: 0 0 18px; max-width: 980px; }
+  .stat { background: #111820; border: 1px solid #1F2A35; border-radius: 10px; padding: 13px 16px; }
+  .stat .lbl { font-size: 11px; letter-spacing: 0.08em; color: #8B98A5; font-weight: 600; }
+  .stat .val { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .stat .val small { font-size: 12px; font-weight: 500; color: #8B98A5; margin-left: 2px; }
+  .stat.alert .val { color: #F85149; }
+  .card { background: #111820; border: 1px solid #1F2A35; border-radius: 10px; overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  th {
+    text-align: left; font-size: 11px; letter-spacing: 0.08em; color: #8B98A5; font-weight: 600;
+    padding: 9px 12px; border-bottom: 1px solid #1F2A35; background: #0E141B; white-space: nowrap;
+  }
+  td { padding: 10px 12px; border-bottom: 1px solid #18212C; vertical-align: top; font-variant-numeric: tabular-nums; }
+  td a { white-space: nowrap; }
+  td.mono { white-space: nowrap; }
+  tbody tr:last-child td { border-bottom: none; }
+  tr.log-row:hover { background: #141D28; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 600;
+    padding: 2px 9px; border-radius: 4px; white-space: nowrap;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  .status-success { color: #3FB950; background: rgba(63,185,80,0.12); border: 1px solid rgba(63,185,80,0.35); }
+  .status-error { color: #F85149; background: rgba(248,81,73,0.12); border: 1px solid rgba(248,81,73,0.35); }
+  .err-note { font-size: 11px; color: #F85149; margin-top: 4px; max-width: 420px; word-break: break-all; }
+  .btn { font: inherit; font-size: 12.5px; font-weight: 600; padding: 6px 15px; border-radius: 6px; cursor: pointer; border: 1px solid transparent; }
+  .btn-primary { background: #1F6FEB; color: #fff; }
+  .btn-danger { background: transparent; color: #F85149; border-color: rgba(248,81,73,0.45); }
+  img.thumb { border: 1px solid #2A3644; border-radius: 4px; }
+  .meta-table { border-collapse: collapse; margin: 12px 0 24px; width: auto; }
+  .meta-table th, .meta-table td { border: 1px solid #1F2A35; padding: 6px 12px; font-size: 12.5px; text-align: left; }
+  .meta-table th { background: #0E141B; white-space: nowrap; }
+  .markdown-block {
+    font-size: 14px; line-height: 1.7; border: 1px solid #1F2A35; border-radius: 8px;
+    padding: 16px 20px; margin-bottom: 24px; background: #111820;
+  }
+  .markdown-block h1, .markdown-block h2, .markdown-block h3 { margin: 0.6em 0 0.3em; font-size: 1.1em; }
+  .markdown-block p { margin: 0.6em 0; }
+  .markdown-block ul, .markdown-block ol { margin: 0.3em 0; padding-left: 1.6em; }
+  .markdown-block code { background: #1B2632; padding: 0 4px; border-radius: 3px; }
+  pre { background: #0E141B; border: 1px solid #1F2A35; padding: 12px; border-radius: 8px; overflow-x: auto; }
+  .nav-links { margin-top: 16px; }
 `;
 
 // DBのタイムスタンプはUTCのISO文字列。管理画面ではシアトル時刻（DST自動切替）で表示する。
@@ -75,36 +142,55 @@ function renderMarkdown(value: string | null): string {
   return marked.parse(escaped, { async: false, breaks: true }) as string;
 }
 
-function renderPage(title: string, extraStyle: string, body: string): string {
+type NavSection = "ocr" | "word-info" | "words" | "tts" | "logs";
+
+const NAV_ITEMS: Array<[NavSection, string, string]> = [
+  ["ocr", "/admin", "OCR・翻訳ログ"],
+  ["word-info", "/admin/word-info", "単語情報ログ"],
+  ["words", "/admin/words", "単語一覧"],
+  ["tts", "/admin/tts", "TTS一覧"],
+  ["logs", "/admin/system-logs", "システムログ"],
+];
+
+function sidebar(active?: NavSection): string {
+  const links = NAV_ITEMS.map(
+    ([key, href, label]) => `<a href="${href}"${key === active ? ' class="active"' : ""}>${label}</a>`
+  ).join("\n");
+  return `
+    <aside class="sidebar">
+      <div class="brand">ESL Assistant<small>ADMIN CONSOLE</small></div>
+      <nav>${links}</nav>
+      <div class="foot">${SEATTLE_TZ}</div>
+    </aside>
+  `;
+}
+
+function renderPage(title: string, extraStyle: string, body: string, active?: NavSection): string {
   return `
     <!DOCTYPE html>
     <html lang="ja">
     <head>
       <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1">
       <title>${escapeHtml(title)}</title>
       <style>
         ${PAGE_STYLE}
         ${extraStyle}
       </style>
     </head>
-    <body>${body}</body>
+    <body>
+      <div class="layout">
+        ${sidebar(active)}
+        <main>${body}</main>
+      </div>
+    </body>
     </html>
   `;
 }
 
 function statusLabel(log: { status: string }): string {
-  const cls = log.status === "success" ? "status-success" : "status-error";
-  return `<span class="${cls}">${escapeHtml(log.status)}</span>`;
-}
-
-function navLinks(active: "ocr" | "word-info" | "words" | "tts" | "logs"): string {
-  const ocr = active === "ocr" ? "<strong>OCR・翻訳ログ</strong>" : `<a href="/admin">OCR・翻訳ログ</a>`;
-  const wordInfo =
-    active === "word-info" ? "<strong>単語情報ログ</strong>" : `<a href="/admin/word-info">単語情報ログ</a>`;
-  const words = active === "words" ? "<strong>単語一覧</strong>" : `<a href="/admin/words">単語一覧</a>`;
-  const tts = active === "tts" ? "<strong>TTS一覧</strong>" : `<a href="/admin/tts">TTS一覧</a>`;
-  const logs = active === "logs" ? "<strong>システムログ</strong>" : `<a href="/admin/system-logs">システムログ</a>`;
-  return `<p>${ocr} | ${wordInfo} | ${words} | ${tts} | ${logs}</p>`;
+  const ok = log.status === "success";
+  return `<span class="pill ${ok ? "status-success" : "status-error"}">${ok ? "✓" : "✗"} ${escapeHtml(log.status)}</span>`;
 }
 
 // OCRモデルと翻訳モデルが同じ場合は1回の統合呼び出しにまとめており、
@@ -123,28 +209,31 @@ function translateSummary(log: RequestLogRow): string {
 adminRouter.get("/", (_req, res) => {
   const logs = listRecentRequestLogs(100);
 
+  const totalCostUsd = logs.reduce((sum, log) => sum + log.cost_usd, 0);
+  const errorCount = logs.filter((log) => log.status !== "success").length;
+  const avgLatencySec = logs.length ? logs.reduce((sum, log) => sum + log.latency_ms, 0) / logs.length / 1000 : 0;
+
   const rows = logs
     .map((log) => {
       const thumbnail = log.image_filename
-        ? `<img src="/admin/logs/${log.id}/image" alt="photo" style="max-width:80px;max-height:80px;">`
-        : "(なし)";
+        ? `<img class="thumb" src="/admin/logs/${log.id}/image" alt="photo" style="max-width:80px;max-height:80px;">`
+        : `<span class="faint">(なし)</span>`;
       return `
         <tr class="log-row">
-          <td>${log.id}</td>
-          <td>${escapeHtml(formatSeattleTime(log.created_at))}</td>
+          <td class="mono dim">#${log.id}</td>
+          <td class="mono dim">${escapeHtml(formatSeattleTime(log.created_at))}</td>
           <td>${thumbnail}</td>
           <td>
-            OCR: ${escapeHtml(log.ocr_model)} (in:${log.ocr_input_tokens} / out:${log.ocr_output_tokens})<br>
+            OCR: <strong>${escapeHtml(log.ocr_model)}</strong> <span class="dim">(in:${log.ocr_input_tokens} / out:${log.ocr_output_tokens})</span><br>
             翻訳: ${translateSummary(log)}
           </td>
-          <td>
-            OCR: $${log.ocr_cost_usd.toFixed(5)}<br>
-            翻訳: $${log.translate_cost_usd.toFixed(5)}<br>
-            合計: $${log.cost_usd.toFixed(5)}
+          <td class="mono">
+            <strong>$${log.cost_usd.toFixed(5)}</strong><br>
+            <span class="faint">OCR $${log.ocr_cost_usd.toFixed(5)} / 翻訳 $${log.translate_cost_usd.toFixed(5)}</span>
           </td>
-          <td>${statusLabel(log)}${log.error_message ? `<br>${escapeHtml(log.error_message)}` : ""}</td>
-          <td>${log.latency_ms}ms</td>
-          <td><a href="/admin/logs/${log.id}">詳細を見る →</a></td>
+          <td>${statusLabel(log)}${log.error_message ? `<div class="err-note">${escapeHtml(log.error_message)}</div>` : ""}</td>
+          <td class="mono dim">${log.latency_ms}ms</td>
+          <td><a href="/admin/logs/${log.id}">詳細 →</a></td>
         </tr>
       `;
     })
@@ -156,18 +245,26 @@ adminRouter.get("/", (_req, res) => {
       "",
       `
         <h1>Claude API 通信ログ</h1>
-        ${navLinks("ocr")}
-        <p>直近${logs.length}件</p>
-        <table>
-          <thead>
-            <tr>
-              <th>ID</th><th>日時</th><th>画像</th>
-              <th>モデル/トークン数</th><th>コスト</th><th>状態</th><th>処理時間</th><th></th>
-            </tr>
-          </thead>
-          <tbody>${rows}</tbody>
-        </table>
-      `
+        <p class="page-sub">直近${logs.length}件のOCR・翻訳リクエスト</p>
+        <div class="stats">
+          <div class="stat"><div class="lbl">直近件数</div><div class="val">${logs.length}<small>件</small></div></div>
+          <div class="stat"><div class="lbl">コスト合計</div><div class="val">$${totalCostUsd.toFixed(2)}</div></div>
+          <div class="stat${errorCount > 0 ? " alert" : ""}"><div class="lbl">エラー</div><div class="val">${errorCount}<small>件</small></div></div>
+          <div class="stat"><div class="lbl">平均処理時間</div><div class="val">${avgLatencySec.toFixed(1)}<small>s</small></div></div>
+        </div>
+        <div class="card">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th><th>日時</th><th>画像</th>
+                <th>モデル / トークン</th><th>コスト</th><th>状態</th><th>処理時間</th><th></th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      `,
+      "ocr"
     )
   );
 });
@@ -224,29 +321,14 @@ adminRouter.get("/logs/:id", (req, res) => {
     renderPage(
       `ログ #${log.id} - ESL Learning Assistant`,
       `
-        .meta-table { border-collapse: collapse; margin: 12px 0 24px; }
-        .meta-table th, .meta-table td { border: 1px solid #ccc; padding: 6px 12px; font-size: 13px; text-align: left; }
-        .meta-table th { background: #f0f0f0; }
         .detail-columns { display: flex; gap: 32px; flex-wrap: wrap; align-items: flex-start; }
         .detail-image-col { flex: 0 0 auto; }
-        .detail-image { max-width: 480px; max-height: 640px; border: 1px solid #ccc; }
+        .detail-image { max-width: 480px; max-height: 640px; border: 1px solid #2A3644; border-radius: 4px; }
         .detail-text-col { flex: 1 1 480px; min-width: 320px; }
-        .markdown-block {
-          font-size: 16px;
-          line-height: 1.7;
-          border: 1px solid #ddd;
-          border-radius: 6px;
-          padding: 16px 20px;
-          margin-bottom: 24px;
-          background: #fafafa;
-        }
-        .markdown-block h1, .markdown-block h2, .markdown-block h3 { margin: 0.6em 0 0.3em; }
-        .markdown-block p { margin: 0.6em 0; }
-        .markdown-block ul, .markdown-block ol { margin: 0.3em 0; padding-left: 1.6em; }
-        .markdown-block code { background: #eee; padding: 0 4px; border-radius: 3px; }
-        .nav-links { margin-top: 16px; }
+        .detail-text-col .markdown-block { font-size: 16px; }
       `,
-      body
+      body,
+      "ocr"
     )
   );
 });
@@ -264,22 +346,26 @@ adminRouter.get("/logs/:id/image", (req, res) => {
 adminRouter.get("/word-info", (_req, res) => {
   const logs = listRecentWordInfoLogs(100);
 
+  const totalCostUsd = logs.reduce((sum, log) => sum + log.cost_usd, 0);
+  const cacheHits = logs.filter((log) => log.cache_hit).length;
+  const errorCount = logs.filter((log) => log.status !== "success").length;
+
   const rows = logs
     .map(
       (log) => `
         <tr class="log-row">
-          <td>${log.id}</td>
-          <td>${escapeHtml(formatSeattleTime(log.created_at))}</td>
+          <td class="mono dim">#${log.id}</td>
+          <td class="mono dim">${escapeHtml(formatSeattleTime(log.created_at))}</td>
           <td><strong>${escapeHtml(log.word)}</strong>${
-            log.user_translation ? `<br><span style="color:#666">${escapeHtml(log.user_translation)}</span>` : ""
+            log.user_translation ? `<br><span class="dim">${escapeHtml(log.user_translation)}</span>` : ""
           }</td>
           <td>${escapeHtml(log.target_language)}</td>
-          <td>${log.context ? "あり" : "なし"}</td>
-          <td>${log.cache_hit ? '<span style="color:#2a7">キャッシュ返却</span><br>' : ""}${escapeHtml(log.model)} (in:${log.input_tokens} / out:${log.output_tokens})</td>
-          <td>$${log.cost_usd.toFixed(5)}</td>
-          <td>${statusLabel(log)}${log.error_message ? `<br>${escapeHtml(log.error_message)}` : ""}</td>
-          <td>${log.latency_ms}ms</td>
-          <td><a href="/admin/word-info/${log.id}">詳細を見る →</a></td>
+          <td>${log.context ? "あり" : `<span class="faint">なし</span>`}</td>
+          <td>${log.cache_hit ? '<span class="ok-text">キャッシュ返却</span><br>' : ""}<strong>${escapeHtml(log.model)}</strong> <span class="dim">(in:${log.input_tokens} / out:${log.output_tokens})</span></td>
+          <td class="mono">$${log.cost_usd.toFixed(5)}</td>
+          <td>${statusLabel(log)}${log.error_message ? `<div class="err-note">${escapeHtml(log.error_message)}</div>` : ""}</td>
+          <td class="mono dim">${log.latency_ms}ms</td>
+          <td><a href="/admin/word-info/${log.id}">詳細 →</a></td>
         </tr>
       `
     )
@@ -291,18 +377,26 @@ adminRouter.get("/word-info", (_req, res) => {
       "",
       `
         <h1>単語情報生成ログ</h1>
-        ${navLinks("word-info")}
-        <p>直近${logs.length}件</p>
-        <table>
-          <thead>
-            <tr>
-              <th>ID</th><th>日時</th><th>単語</th><th>母語</th><th>文脈</th>
-              <th>モデル/トークン数</th><th>コスト</th><th>状態</th><th>処理時間</th><th></th>
-            </tr>
-          </thead>
-          <tbody>${rows}</tbody>
-        </table>
-      `
+        <p class="page-sub">直近${logs.length}件の単語情報リクエスト</p>
+        <div class="stats">
+          <div class="stat"><div class="lbl">直近件数</div><div class="val">${logs.length}<small>件</small></div></div>
+          <div class="stat"><div class="lbl">コスト合計</div><div class="val">$${totalCostUsd.toFixed(2)}</div></div>
+          <div class="stat"><div class="lbl">キャッシュ返却</div><div class="val">${cacheHits}<small>件</small></div></div>
+          <div class="stat${errorCount > 0 ? " alert" : ""}"><div class="lbl">エラー</div><div class="val">${errorCount}<small>件</small></div></div>
+        </div>
+        <div class="card">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th><th>日時</th><th>単語</th><th>母語</th><th>文脈</th>
+                <th>モデル / トークン</th><th>コスト</th><th>状態</th><th>処理時間</th><th></th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      `,
+      "word-info"
     )
   );
 });
@@ -323,7 +417,7 @@ function renderWordInfoBlock(row: { word_info_json: string | null }): string {
     .map(
       (sense, i) => `
         <tr>
-          <td>${i + 1}</td>
+          <td class="dim">${i + 1}</td>
           <td>${escapeHtml(sense.partOfSpeech)}</td>
           <td>${escapeHtml(sense.meaning)}</td>
           <td>${escapeHtml(sense.englishDefinition)}</td>
@@ -334,7 +428,7 @@ function renderWordInfoBlock(row: { word_info_json: string | null }): string {
     .join("\n");
 
   const examples = info.examples
-    .map((ex) => `<li>${escapeHtml(ex.english)}<br><span style="color:#666">${escapeHtml(ex.translation)}</span></li>`)
+    .map((ex) => `<li>${escapeHtml(ex.english)}<br><span class="dim">${escapeHtml(ex.translation)}</span></li>`)
     .join("\n");
 
   const inflections = info.inflections
@@ -346,10 +440,12 @@ function renderWordInfoBlock(row: { word_info_json: string | null }): string {
 
   return `
     <h2>語義</h2>
-    <table>
-      <thead><tr><th>#</th><th>品詞</th><th>意味</th><th>英語定義</th><th>ニュアンス</th></tr></thead>
-      <tbody>${senses}</tbody>
-    </table>
+    <div class="card">
+      <table>
+        <thead><tr><th>#</th><th>品詞</th><th>意味</th><th>英語定義</th><th>ニュアンス</th></tr></thead>
+        <tbody>${senses}</tbody>
+      </table>
+    </div>
     <h2>例文</h2>
     <ul>${examples}</ul>
     <h2>その他</h2>
@@ -419,28 +515,7 @@ adminRouter.get("/word-info/:id", (req, res) => {
     </p>
   `;
 
-  res.type("html").send(
-    renderPage(
-      `単語情報ログ #${log.id} - ESL Learning Assistant`,
-      `
-        .meta-table { border-collapse: collapse; margin: 12px 0 24px; width: auto; }
-        .meta-table th, .meta-table td { border: 1px solid #ccc; padding: 6px 12px; font-size: 13px; text-align: left; }
-        .meta-table th { background: #f0f0f0; white-space: nowrap; }
-        .markdown-block {
-          font-size: 14px;
-          line-height: 1.7;
-          border: 1px solid #ddd;
-          border-radius: 6px;
-          padding: 16px 20px;
-          margin-bottom: 24px;
-          background: #fafafa;
-        }
-        pre { background: #f5f5f5; padding: 12px; border-radius: 6px; overflow-x: auto; }
-        .nav-links { margin-top: 16px; }
-      `,
-      body
-    )
-  );
+  res.type("html").send(renderPage(`単語情報ログ #${log.id} - ESL Learning Assistant`, "", body, "word-info"));
 });
 
 /// 一覧プレビュー用に先頭語義を取り出す（パース不能なら空文字）
@@ -460,15 +535,15 @@ adminRouter.get("/words", (_req, res) => {
     .map(
       (row) => `
         <tr class="log-row">
-          <td>${row.id}</td>
+          <td class="mono dim">#${row.id}</td>
           <td><strong>${escapeHtml(row.word)}</strong></td>
           <td>${escapeHtml(row.target_language)}</td>
           <td>${escapeHtml(firstMeaningPreview(row))}</td>
-          <td>${escapeHtml(row.model)}</td>
-          <td>${row.generation_count}</td>
-          <td>${escapeHtml(formatSeattleTime(row.created_at))}</td>
-          <td>${escapeHtml(formatSeattleTime(row.updated_at))}</td>
-          <td><a href="/admin/words/${row.id}">詳細を見る →</a></td>
+          <td class="dim">${escapeHtml(row.model)}</td>
+          <td class="mono dim">${row.generation_count}</td>
+          <td class="mono dim">${escapeHtml(formatSeattleTime(row.created_at))}</td>
+          <td class="mono dim">${escapeHtml(formatSeattleTime(row.updated_at))}</td>
+          <td><a href="/admin/words/${row.id}">詳細 →</a></td>
         </tr>
       `
     )
@@ -480,39 +555,26 @@ adminRouter.get("/words", (_req, res) => {
       "",
       `
         <h1>保存済み単語一覧</h1>
-        ${navLinks("words")}
-        <p>全${words.length}件</p>
-        <table>
-          <thead>
-            <tr>
-              <th>ID</th><th>単語</th><th>母語</th><th>先頭語義</th>
-              <th>モデル</th><th>生成回数</th><th>作成日時</th><th>更新日時</th><th></th>
-            </tr>
-          </thead>
-          <tbody>${rows}</tbody>
-        </table>
-      `
+        <p class="page-sub">全${words.length}件</p>
+        <div class="card">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th><th>単語</th><th>母語</th><th>先頭語義</th>
+                <th>モデル</th><th>生成回数</th><th>作成日時</th><th>更新日時</th><th></th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      `,
+      "words"
     )
   );
 });
 
 const WORD_DETAIL_STYLE = `
-  .meta-table { border-collapse: collapse; margin: 12px 0 24px; width: auto; }
-  .meta-table th, .meta-table td { border: 1px solid #ccc; padding: 6px 12px; font-size: 13px; text-align: left; }
-  .meta-table th { background: #f0f0f0; white-space: nowrap; }
-  .markdown-block {
-    font-size: 14px;
-    line-height: 1.7;
-    border: 1px solid #ddd;
-    border-radius: 6px;
-    padding: 16px 20px;
-    margin-bottom: 24px;
-    background: #fafafa;
-  }
-  pre { background: #f5f5f5; padding: 12px; border-radius: 6px; overflow-x: auto; }
   .action-buttons { display: flex; gap: 12px; margin: 16px 0 24px; }
-  .action-buttons button { padding: 8px 16px; font-size: 14px; cursor: pointer; }
-  .danger-button { color: #c33; }
 `;
 
 adminRouter.get("/words/:id", (req, res) => {
@@ -548,11 +610,11 @@ adminRouter.get("/words/:id", (req, res) => {
     <div class="action-buttons">
       <form method="post" action="/admin/words/${row.id}/regenerate"
             onsubmit="return confirm('AI情報を再生成します。現在の内容は上書きされます。よろしいですか？')">
-        <button type="submit">再生成する</button>
+        <button type="submit" class="btn btn-primary">再生成する</button>
       </form>
       <form method="post" action="/admin/words/${row.id}/delete"
             onsubmit="return confirm('この単語の保存データを削除します。よろしいですか？（アプリから再リクエストされれば再生成されます）')">
-        <button type="submit" class="danger-button">削除する</button>
+        <button type="submit" class="btn btn-danger">削除する</button>
       </form>
     </div>
 
@@ -562,7 +624,7 @@ adminRouter.get("/words/:id", (req, res) => {
     ${row.context ? `<div class="markdown-block">${renderMarkdown(row.context)}</div>` : "<p>(なし)</p>"}
   `;
 
-  res.type("html").send(renderPage(`単語 #${row.id}: ${row.word} - ESL Learning Assistant`, WORD_DETAIL_STYLE, body));
+  res.type("html").send(renderPage(`単語 #${row.id}: ${row.word} - ESL Learning Assistant`, WORD_DETAIL_STYLE, body, "words"));
 });
 
 adminRouter.post("/words/:id/delete", (req, res) => {
@@ -677,25 +739,27 @@ adminRouter.get("/tts", (_req, res) => {
     row.input_tokens !== 0 || row.output_tokens !== 0;
   const totalCostUsd = rows.filter(hasCostRecord).reduce((sum, row) => sum + row.cost_usd, 0);
 
+  const totalBytes = rows.reduce((sum, row) => sum + row.byte_size, 0);
+
   const tableRows = rows
     .map((row) => {
       const preview = row.text.length > 80 ? `${row.text.slice(0, 80)}…` : row.text;
-      const cost = hasCostRecord(row) ? `$${row.cost_usd.toFixed(4)}` : "—";
+      const cost = hasCostRecord(row) ? `$${row.cost_usd.toFixed(4)}` : `<span class="faint">—</span>`;
       return `
         <tr class="log-row">
-          <td>${row.id}</td>
-          <td>${escapeHtml(formatSeattleTime(row.created_at))}</td>
+          <td class="mono dim">#${row.id}</td>
+          <td class="mono dim">${escapeHtml(formatSeattleTime(row.created_at))}</td>
           <td>${escapeHtml(preview)}</td>
           <td>${escapeHtml(row.voice)}</td>
-          <td>${escapeHtml(row.model)}</td>
-          <td>${(row.byte_size / 1024).toFixed(0)} KB</td>
-          <td>${formatTtsDuration(row.byte_size)}</td>
-          <td>${cost}</td>
+          <td class="dim">${escapeHtml(row.model)}</td>
+          <td class="mono dim">${(row.byte_size / 1024).toFixed(0)} KB</td>
+          <td class="mono dim">${formatTtsDuration(row.byte_size)}</td>
+          <td class="mono">${cost}</td>
           <td><audio controls preload="none" src="/admin/tts/${row.id}/audio" style="width:220px;height:32px;"></audio></td>
           <td>
             <form method="post" action="/admin/tts/${row.id}/delete"
                   onsubmit="return confirm('このTTS音声を削除します。よろしいですか？（同じテキストが再生されれば再合成されます）')">
-              <button type="submit" style="color:#c33;cursor:pointer;">削除</button>
+              <button type="submit" class="btn btn-danger">削除</button>
             </form>
           </td>
         </tr>
@@ -709,18 +773,25 @@ adminRouter.get("/tts", (_req, res) => {
       "",
       `
         <h1>保存済みTTS音声一覧</h1>
-        ${navLinks("tts")}
-        <p>全${rows.length}件 ／ 料金合計 $${totalCostUsd.toFixed(4)}（トークン記録のある行のみの合算）</p>
-        <table>
-          <thead>
-            <tr>
-              <th>ID</th><th>作成日時</th><th>テキスト</th><th>声</th><th>モデル</th>
-              <th>サイズ</th><th>長さ</th><th>料金</th><th>試聴</th><th></th>
-            </tr>
-          </thead>
-          <tbody>${tableRows}</tbody>
-        </table>
-      `
+        <p class="page-sub">料金合計はトークン記録のある行のみの合算</p>
+        <div class="stats">
+          <div class="stat"><div class="lbl">保存件数</div><div class="val">${rows.length}<small>件</small></div></div>
+          <div class="stat"><div class="lbl">料金合計</div><div class="val">$${totalCostUsd.toFixed(4)}</div></div>
+          <div class="stat"><div class="lbl">合計サイズ</div><div class="val">${(totalBytes / 1024 / 1024).toFixed(1)}<small>MB</small></div></div>
+        </div>
+        <div class="card">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th><th>作成日時</th><th>テキスト</th><th>声</th><th>モデル</th>
+                <th>サイズ</th><th>長さ</th><th>料金</th><th>試聴</th><th></th>
+              </tr>
+            </thead>
+            <tbody>${tableRows}</tbody>
+          </table>
+        </div>
+      `,
+      "tts"
     )
   );
 });
@@ -735,10 +806,10 @@ adminRouter.get("/system-logs", (_req, res) => {
       const levelClass = log.level === "error" ? "level-error" : log.level === "warn" ? "level-warn" : "";
       return `
         <tr class="log-row ${levelClass}">
-          <td>${log.id}</td>
-          <td>${escapeHtml(formatSeattleTime(log.created_at))}</td>
-          <td>${escapeHtml(log.category)}</td>
-          <td>${escapeHtml(log.level)}</td>
+          <td class="mono dim">#${log.id}</td>
+          <td class="mono dim">${escapeHtml(formatSeattleTime(log.created_at))}</td>
+          <td class="mono">${escapeHtml(log.category)}</td>
+          <td class="mono level-cell">${escapeHtml(log.level)}</td>
           <td>${escapeHtml(log.message)}</td>
         </tr>
       `;
@@ -749,22 +820,24 @@ adminRouter.get("/system-logs", (_req, res) => {
     renderPage(
       "ESL Learning Assistant - システムログ",
       `
-        .level-warn td { color: #96700a; }
-        .level-error td { color: #c33; }
+        .level-warn .level-cell, .level-warn td:last-child { color: #D29922; }
+        .level-error .level-cell, .level-error td:last-child { color: #F85149; }
       `,
       `
         <h1>システムログ</h1>
-        ${navLinks("logs")}
-        <p>直近${logs.length}件</p>
-        <table>
-          <thead>
-            <tr>
-              <th>ID</th><th>日時</th><th>カテゴリ</th><th>レベル</th><th>メッセージ</th>
-            </tr>
-          </thead>
-          <tbody>${rows}</tbody>
-        </table>
-      `
+        <p class="page-sub">直近${logs.length}件のサーバ内部イベント</p>
+        <div class="card">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th><th>日時</th><th>カテゴリ</th><th>レベル</th><th>メッセージ</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      `,
+      "logs"
     )
   );
 });
