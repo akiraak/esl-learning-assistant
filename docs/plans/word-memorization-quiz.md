@@ -163,7 +163,9 @@ VC: 出題音声・回答4択 / VTC: 出題音声+テキスト・回答4択 / VT
 - Phase 1: 設計確定・スペック更新（本プラン + `data-model.md` の WordReviewState/Question 位置づけ更新 + `app-spec.md` §3.2 の保留事項解消）
 - Phase 2: `ReviewScheduler`・`FormatSelector`（比率調整） + `WordReviewState` 拡張 + ユニットテスト
 - Phase 3: ReviewSessionView（確定した出題形式）と Words タブの「今日の復習」導線
-- Phase 4: WordDetailView への復習状態表示・仕上げ（動作確認、DONE 移動・プランのアーカイブ）
+- Phase 4: WordDetailView への復習状態表示・仕上げ（動作確認、DONE 移動・プランのアーカイブ。
+  アーカイブ時に `docs/specs/data-model.md`・`docs/specs/app-spec.md` から本プランへのリンクを
+  `docs/plans/archive/` のパスへ更新する）
 
 ## 7. 調査: 音声入力を使った問題作成はどのようにできるか（AI 音声認識を含む）
 

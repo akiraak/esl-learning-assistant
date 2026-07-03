@@ -16,7 +16,8 @@
   教科書に出てきても 1つの `Word` レコードに統合され、復習状態（`reviewState`）も共有される
 - 本資料は **スキーマ**を確定するもの。以下は仕様書9章に残課題として残り、本資料のスコープ外
   - 対応言語（母語）の具体的なリスト
-  - 単語帳の間隔反復アルゴリズムの詳細（`Word` には最小限のフィールドのみ用意し、計算ロジックは別途検討）
+- 単語帳の間隔反復アルゴリズムは固定ステップの Leitner 方式で確定した（§5 参照。
+  策定経緯: [docs/plans/word-memorization-quiz.md](../plans/word-memorization-quiz.md)）
 
 ## 1. エンティティ関連図（概要）
 
@@ -84,7 +85,10 @@ Word                                          (Lessonに従属しない独立エ
 ├─ reviewState: WordReviewState               (埋め込み、全レッスン共有)
 │   ├─ dueDate
 │   ├─ lastReviewedAt?
-│   └─ reviewCount
+│   ├─ reviewCount
+│   ├─ stepIndex
+│   ├─ correctCount
+│   └─ lapseCount
 └─ occurrences: [WordOccurrence]              (1 Word - * WordOccurrence)
 ```
 
@@ -180,18 +184,29 @@ Word                                          (Lessonに従属しない独立エ
 | textbook | 教科書からの抜粋 |
 | aiGenerated | AI 生成 |
 
-### WordReviewState（埋め込み構造体・暫定）
+### WordReviewState（埋め込み構造体）
 
-フラッシュカード／間隔反復（仕様書3.2章）に使う最小限の状態のみ定義する。
-アルゴリズム（間隔の計算式・難易度係数の更新方法など）は未確定のため、
-実装時に詳細が変わる前提の暫定フィールドとする。レッスンをまたいでも同じ単語であれば
-この状態を共有する（レッスンごとに復習履歴が分散しない）。
+復習クイズ／間隔反復（仕様書3.2章）に使う状態。アルゴリズムは**固定ステップの Leitner 方式**で
+確定した（策定経緯: [docs/plans/word-memorization-quiz.md](../plans/word-memorization-quiz.md) §3.1）。
+レッスンをまたいでも同じ単語であればこの状態を共有する（レッスンごとに復習履歴が分散しない）。
+
+- 復習ステップ: `[3日, 7日, 14日, 30日, 90日]`（stepIndex 0〜4）。90日到達後は 90日間隔を維持
+- 正解 → 次のステップへ進み `dueDate = 今日 + 次ステップ日数`。
+  不正解 → stepIndex 0 に戻し `dueDate = 今日 + 3日`（同日中の再出題はセッション内のみ）
+- 判定はローカル日付（Calendar）基準。`dueDate <= 今日` の単語が「今日の復習」対象
+- 計算ロジックはモデルから分離した純関数 `ReviewScheduler` に置く（SM-2 / FSRS への将来差し替えを想定）
 
 | フィールド | 型 | 説明 |
 |---|---|---|
 | dueDate | Date | 次回復習予定日（初期値: 登録日） |
 | lastReviewedAt | Date? | 直近の復習日時 |
 | reviewCount | Int | 復習回数（初期値 0） |
+| stepIndex | Int | 現在の復習ステップ（初期値 0） |
+| correctCount | Int | 累計正解数（初期値 0） |
+| lapseCount | Int | 不正解でリセットされた回数（初期値 0） |
+
+- 既存レコードには追加フィールドをデフォルト値（0）で吸収する（SwiftData 埋め込み構造体のため
+  マイグレーション不要）
 
 ## 6. WordOccurrence（出現記録）
 
@@ -213,6 +228,10 @@ Word                                          (Lessonに従属しない独立エ
 ## 7. Question（問題）
 
 教科書内容から AI が自動生成する練習問題（仕様書3.3章）。
+
+> **位置づけ**: `Question` / `QuizResult` は **AI 生成問題（v2、仕様書3.3章）用**のモデル。
+> 単語帳の復習クイズ（仕様書3.2章）はレッスンに紐づかず問題をローカルで動的に生成するため、
+> `Question` レコードは作成せず、結果は `Word.reviewState` の更新のみで記録する。
 
 | フィールド | 型 | 説明 |
 |---|---|---|
@@ -254,8 +273,10 @@ Word                                          (Lessonに従属しない独立エ
 
 ## 9. 今後の検討事項
 
-- `WordReviewState` の間隔反復アルゴリズム確定後、フィールド追加・見直しが必要
-  （例: easeFactor 等のアルゴリズム固有パラメータ）
+- 間隔反復アルゴリズムを SM-2 / FSRS へ差し替える場合、`WordReviewState` への
+  アルゴリズム固有パラメータ（easeFactor 等）の追加が必要
+- 復習履歴のグラフ化等が必要になった時点で、解答1回分の記録エンティティ
+  `WordReviewLog`（word / answeredAt / isCorrect / stepIndex）の追加を検討
 - 対応言語リスト確定後、`translationLanguage` 等の言語コード値域を確定する
 - 通信ログ（仕様書5.2章: トークン数・コスト等）は管理画面向けのバックエンド側データのため、
   本資料（iOSローカルモデル）の対象外。別途バックエンド側のスキーマとして検討する
