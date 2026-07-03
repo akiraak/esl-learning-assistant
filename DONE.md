@@ -1,5 +1,12 @@
 # DONE
 
+- [x] 2026-07-03 アイコンとアプリ名の変更 [plan](docs/plans/archive/change-app-icon-and-name.md)
+      表示名を「ESL Assistant」に変更（project.yml に CFBundleDisplayName 追加、
+      ターゲット名・スキーム名・Bundle ID は不変で run-ios-device.sh 無修正）。
+      支給画像を 1024x1024 にリサイズして AppIcon.appiconset に配置、
+      ASSETCATALOG_COMPILER_APPICON_NAME の typo 修正。
+      管理画面ページタイトル・起動ログ・README も「ESL Assistant」に統一。
+      xcodebuild / tsc で検証済み。
 - [x] 単語詳細に意味が直感的に分かりやすいようなイラストをAIで生成して表示する。
       OpenAI GPT Image 2（`gpt-image-2`、1024x1024/low）で第1義のイラストを生成する
       `POST /api/word-illustration` を追加（tts.ts パターン踏襲: raw fetch + リトライ、

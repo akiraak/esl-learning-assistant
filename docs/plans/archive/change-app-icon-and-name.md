@@ -30,7 +30,7 @@
 
 - [x] **新しいアプリ表示名**: `ESL Assistant`
 - [x] **アイコンのデザイン方針**: 支給画像（緑背景に本・鉛筆・吹き出し・"E" の 3D イラスト、1254x1254 PNG）を 1024x1024 にリサイズして使用
-- [ ] 管理画面（backend）の名称も合わせて変えるか（ブランド表記は既に `ESL Assistant`。ページタイトル 7 箇所が `ESL Learning Assistant` のまま）
+- [x] 管理画面（backend）の名称も合わせて変える → Phase 3 実施（ページタイトル・起動ログ・README を `ESL Assistant` に統一）
 
 ### Phase 1: アプリ表示名の変更
 

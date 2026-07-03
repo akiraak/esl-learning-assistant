@@ -250,7 +250,7 @@ adminRouter.get("/", (_req, res) => {
 
   res.type("html").send(
     renderPage(
-      "ESL Learning Assistant - 通信ログ",
+      "ESL Assistant - 通信ログ",
       "",
       `
         <h1>Claude API 通信ログ</h1>
@@ -328,7 +328,7 @@ adminRouter.get("/logs/:id", (req, res) => {
 
   res.type("html").send(
     renderPage(
-      `ログ #${log.id} - ESL Learning Assistant`,
+      `ログ #${log.id} - ESL Assistant`,
       `
         .detail-columns { display: flex; gap: 32px; flex-wrap: wrap; align-items: flex-start; }
         .detail-image-col { flex: 0 0 auto; }
@@ -382,7 +382,7 @@ adminRouter.get("/word-info", (_req, res) => {
 
   res.type("html").send(
     renderPage(
-      "ESL Learning Assistant - 単語情報ログ",
+      "ESL Assistant - 単語情報ログ",
       "",
       `
         <h1>単語情報生成ログ</h1>
@@ -524,7 +524,7 @@ adminRouter.get("/word-info/:id", (req, res) => {
     </p>
   `;
 
-  res.type("html").send(renderPage(`単語情報ログ #${log.id} - ESL Learning Assistant`, "", body, "word-info"));
+  res.type("html").send(renderPage(`単語情報ログ #${log.id} - ESL Assistant`, "", body, "word-info"));
 });
 
 /// 一覧プレビュー用に先頭語義を取り出す（パース不能なら空文字）
@@ -560,7 +560,7 @@ adminRouter.get("/words", (_req, res) => {
 
   res.type("html").send(
     renderPage(
-      "ESL Learning Assistant - 単語一覧",
+      "ESL Assistant - 単語一覧",
       "",
       `
         <h1>保存済み単語一覧</h1>
@@ -633,7 +633,7 @@ adminRouter.get("/words/:id", (req, res) => {
     ${row.context ? `<div class="markdown-block">${renderMarkdown(row.context)}</div>` : "<p>(なし)</p>"}
   `;
 
-  res.type("html").send(renderPage(`単語 #${row.id}: ${row.word} - ESL Learning Assistant`, WORD_DETAIL_STYLE, body, "words"));
+  res.type("html").send(renderPage(`単語 #${row.id}: ${row.word} - ESL Assistant`, WORD_DETAIL_STYLE, body, "words"));
 });
 
 adminRouter.post("/words/:id/delete", (req, res) => {
@@ -778,7 +778,7 @@ adminRouter.get("/tts", (_req, res) => {
 
   res.type("html").send(
     renderPage(
-      "ESL Learning Assistant - TTS一覧",
+      "ESL Assistant - TTS一覧",
       "",
       `
         <h1>保存済みTTS音声一覧</h1>
@@ -841,7 +841,7 @@ adminRouter.get("/illustrations", (_req, res) => {
 
   res.type("html").send(
     renderPage(
-      "ESL Learning Assistant - 単語イラスト",
+      "ESL Assistant - 単語イラスト",
       `
         .prompt-cell { max-width: 380px; font-size: 11.5px; word-break: break-word; }
         .row-actions { display: flex; flex-direction: column; gap: 8px; }
@@ -1003,7 +1003,7 @@ adminRouter.get("/pricing", (_req, res) => {
 
   res.type("html").send(
     renderPage(
-      "ESL Learning Assistant - AI料金",
+      "ESL Assistant - AI料金",
       `
         .price-cell { text-align: right; white-space: nowrap; }
         .price-cell.changed { color: #D29922; }
@@ -1082,7 +1082,7 @@ adminRouter.get("/system-logs", (_req, res) => {
 
   res.type("html").send(
     renderPage(
-      "ESL Learning Assistant - システムログ",
+      "ESL Assistant - システムログ",
       `
         .level-warn .level-cell, .level-warn td:last-child { color: #D29922; }
         .level-error .level-cell, .level-error td:last-child { color: #F85149; }

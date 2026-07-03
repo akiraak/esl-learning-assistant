@@ -492,7 +492,7 @@ app.listen(config.port, () => {
   if (!config.openaiApiKey) {
     logger.warn("OPENAI_API_KEY is not set. /api/word-illustration will fail.");
   }
-  logger.info(`ESL Learning Assistant backend listening on http://localhost:${config.port}`);
+  logger.info(`ESL Assistant backend listening on http://localhost:${config.port}`);
   logger.info(`Admin dashboard: http://localhost:${config.port}/admin`);
   logger.info(`Log file: ${path.join(config.dataDir, "server.log")}`);
   startPricingSync();
