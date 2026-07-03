@@ -1,5 +1,15 @@
 # DONE
 
+- [x] アプリ側音声生成に一時停止や早送りなど一般的な再生プレイヤーの機能を入れる。
+      `TTSPlaybackService` を拡張（pause/resume/seek/±5秒スキップ/再生速度0.5〜1.5×/進捗タイマー、
+      `play(data:)` 追加）し、共通操作パネル `TTSPlayerBar` を新規作成。
+      WordDetailView / PhotoDetailView の `.safeAreaInset(edge: .bottom)` に配置し、
+      再生中だけ画面下部に出てコンテンツを隠さない（画面を見ながら聞ける）。
+      PhotoDetailView の `GeminiSpeechService` は音声取得専任にし再生を playback 側へ共通化。
+      `TTSPlaybackServiceTests`（実WAV生成で pause/seek/クランプ/rate維持を検証）を追加、
+      全24ユニットテスト成功・シミュレータビルド/起動確認済み。実機での操作感の確認は未実施。
+      [plan](docs/plans/archive/tts-player-controls.md)（2026-07-03）
+
 - [x] アプリSettingからSpeechEngineを削除。TTS Modelだけで選択できるように。
       `ttsEngine`（local/gemini）キーを廃止し `ttsModel` に統合（local / flash / pro の3択）。
       Settings の TTS Model ピッカーに On-Device / Gemini 2.5 Flash TTS / Gemini 2.5 Pro TTS を表示。

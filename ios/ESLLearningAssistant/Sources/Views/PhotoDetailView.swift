@@ -7,6 +7,7 @@ struct PhotoDetailView: View {
     @State private var isRetrying = false
     @StateObject private var speechService = SpeechService()
     @StateObject private var geminiSpeechService = GeminiSpeechService()
+    @StateObject private var ttsPlayback = TTSPlaybackService()
     @AppStorage(AppSettingsKeys.ttsVoice) private var ttsVoice = AppSettingsKeys.defaultTTSVoice
     @AppStorage(AppSettingsKeys.ttsModel) private var ttsModel = AppSettingsKeys.defaultTTSModel
     private let ocrTranslationService: OCRTranslationService = RemoteOCRTranslationService()
@@ -72,6 +73,12 @@ struct PhotoDetailView: View {
         }
         .navigationTitle("Photo Detail")
         .navigationBarTitleDisplayMode(.inline)
+        .safeAreaInset(edge: .bottom) {
+            if ttsPlayback.isActive {
+                TTSPlayerBar(playback: ttsPlayback)
+            }
+        }
+        .animation(.snappy(duration: 0.2), value: ttsPlayback.isActive)
         .task(id: photo.id) {
             stopSpeaking()
             guard photo.processingStatus == .pending else { return }
@@ -94,12 +101,12 @@ struct PhotoDetailView: View {
     }
 
     private var isSpeaking: Bool {
-        speechService.isSpeaking || geminiSpeechService.isSpeaking
+        speechService.isSpeaking || ttsPlayback.isActive
     }
 
     private func stopSpeaking() {
         speechService.stop()
-        geminiSpeechService.stop()
+        ttsPlayback.stop()
     }
 
     private var speechButton: some View {
@@ -107,7 +114,7 @@ struct PhotoDetailView: View {
             if isSpeaking {
                 stopSpeaking()
             } else if ttsModel != "local" {
-                geminiSpeechService.speak(plainText(photo.ocrText), voice: ttsVoice, model: ttsModel)
+                geminiSpeechService.speak(plainText(photo.ocrText), voice: ttsVoice, model: ttsModel, playback: ttsPlayback)
             } else {
                 speechService.speak(plainText(photo.ocrText))
             }

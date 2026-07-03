@@ -108,6 +108,12 @@ struct WordDetailView: View {
             }
         }
         .navigationTitle(word.text)
+        .safeAreaInset(edge: .bottom) {
+            if ttsPlayback.isActive {
+                TTSPlayerBar(playback: ttsPlayback)
+            }
+        }
+        .animation(.snappy(duration: 0.2), value: ttsPlayback.isActive)
         .onDisappear {
             speechService.stop()
             ttsPlayback.stop()
@@ -417,19 +423,20 @@ private struct TTSButton: View {
         if isGenerating {
             ProgressView()
         } else if let localURL {
-            let isPlaying = playback.playingURL == localURL
+            // 一時停止中もこの行の音源がロードされたままなので、停止（アンロード）ボタンを出す
+            let isActive = playback.currentURL == localURL
             Button {
-                if isPlaying {
+                if isActive {
                     playback.stop()
                 } else {
                     playback.play(url: localURL)
                 }
             } label: {
-                Image(systemName: isPlaying ? "stop.fill" : "speaker.wave.2.fill")
+                Image(systemName: isActive ? "stop.fill" : "speaker.wave.2.fill")
                     .foregroundStyle(.tint)
             }
             .buttonStyle(.borderless)
-            .accessibilityLabel(isPlaying ? "Stop" : "Play AI Audio")
+            .accessibilityLabel(isActive ? "Stop" : "Play AI Audio")
         } else {
             Button {
                 generate()
