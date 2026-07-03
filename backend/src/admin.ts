@@ -5,6 +5,7 @@ import fs from "fs";
 import {
   deleteStoredWord,
   deleteTtsAudio,
+  getPricingState,
   getRequestLog,
   getStoredWordById,
   getTtsAudioById,
@@ -22,7 +23,8 @@ import {
 } from "./db";
 import { config } from "./config";
 import { generateWordInfo, type WordInfo } from "./wordInfo";
-import { estimateCostUsd } from "./pricing";
+import { DEFAULT_PRICING, DEFAULT_TTS_PRICING, estimateCostUsd, getCurrentPricing } from "./pricing";
+import { fetchAndApplyPricing, fetchAndApplyTtsPricing } from "./pricingSync";
 import { logger } from "./logger";
 
 export const adminRouter = Router();
@@ -142,13 +144,14 @@ function renderMarkdown(value: string | null): string {
   return marked.parse(escaped, { async: false, breaks: true }) as string;
 }
 
-type NavSection = "ocr" | "word-info" | "words" | "tts" | "logs";
+type NavSection = "ocr" | "word-info" | "words" | "tts" | "pricing" | "logs";
 
 const NAV_ITEMS: Array<[NavSection, string, string]> = [
   ["ocr", "/admin", "OCR・翻訳ログ"],
   ["word-info", "/admin/word-info", "単語情報ログ"],
   ["words", "/admin/words", "単語一覧"],
   ["tts", "/admin/tts", "TTS一覧"],
+  ["pricing", "/admin/pricing", "AI料金"],
   ["logs", "/admin/system-logs", "システムログ"],
 ];
 
@@ -794,6 +797,122 @@ adminRouter.get("/tts", (_req, res) => {
       "tts"
     )
   );
+});
+
+// このアプリでの各モデルの用途（設定値から逆引き）。料金ページの表示用
+function modelUsage(model: string): string {
+  const usages: string[] = [];
+  if (model === config.ocrModel) usages.push("OCR");
+  if (model === config.translateModel) usages.push("翻訳");
+  if (model === config.wordInfoModel) usages.push("単語情報");
+  if (model === "gemini-2.5-flash-preview-tts") usages.push("TTS (flash)");
+  if (model === "gemini-2.5-pro-preview-tts") usages.push("TTS (pro)");
+  return usages.join(" / ");
+}
+
+adminRouter.get("/pricing", (_req, res) => {
+  const pricing = getCurrentPricing();
+  const state = getPricingState();
+  const historyRows = listRecentSystemLogs(100)
+    .filter((log) => log.category === "pricing")
+    .slice(0, 10);
+
+  // Claude（LiteLLM自動更新）→ Gemini TTS（Google公式ページ自動更新）の順に表示する
+  const groups: Array<{ source: string; defaults: Record<string, { input: number; output: number }> }> = [
+    { source: "LiteLLM（24時間ごと自動更新）", defaults: DEFAULT_PRICING },
+    { source: "Google公式ページ（24時間ごと自動更新）", defaults: DEFAULT_TTS_PRICING },
+  ];
+
+  const priceCell = (value: number, defaultValue: number) =>
+    value === defaultValue
+      ? `<td class="mono price-cell">$${value.toFixed(2)}</td>`
+      : `<td class="mono price-cell changed">$${value.toFixed(2)} <span class="faint">(既定 $${defaultValue.toFixed(2)})</span></td>`;
+
+  const tableRows = groups
+    .flatMap(({ source, defaults }) =>
+      Object.keys(defaults).map((model) => {
+        const current = pricing[model] ?? defaults[model];
+        return `
+          <tr class="log-row">
+            <td class="mono"><strong>${escapeHtml(model)}</strong></td>
+            <td>${escapeHtml(modelUsage(model))}</td>
+            <td class="dim">${escapeHtml(source)}</td>
+            ${priceCell(current.input, defaults[model].input)}
+            ${priceCell(current.output, defaults[model].output)}
+          </tr>
+        `;
+      })
+    )
+    .join("\n");
+
+  const history = historyRows
+    .map(
+      (log) => `
+        <tr class="log-row ${log.level === "error" ? "level-error" : log.level === "warn" ? "level-warn" : ""}">
+          <td class="mono dim">${escapeHtml(formatSeattleTime(log.created_at))}</td>
+          <td class="history-msg">${escapeHtml(log.message)}</td>
+        </tr>
+      `
+    )
+    .join("\n");
+
+  res.type("html").send(
+    renderPage(
+      "ESL Learning Assistant - AI料金",
+      `
+        .price-cell { text-align: right; white-space: nowrap; }
+        .price-cell.changed { color: #D29922; }
+        .level-warn td { color: #D29922; }
+        .level-error td { color: #F85149; }
+        .refresh-bar { display: flex; align-items: center; gap: 12px; margin: 0 0 18px; }
+        .history-msg { word-break: break-all; }
+      `,
+      `
+        <h1>AIモデル料金</h1>
+        <p class="page-sub">適用中の単価（100万トークンあたり・USD）。取得失敗時や検証ガード不合格時は直前の値を維持する</p>
+        <div class="stats">
+          <div class="stat"><div class="lbl">登録モデル数</div><div class="val">${Object.keys(pricing).length}<small>件</small></div></div>
+          <div class="stat"><div class="lbl">最終更新</div><div class="val" style="font-size:16px; line-height:2;">${
+            state ? escapeHtml(formatSeattleTime(state.updated_at)) : "（未取得）"
+          }</div></div>
+        </div>
+        <div class="refresh-bar">
+          <form method="post" action="/admin/pricing/refresh">
+            <button type="submit" class="btn btn-primary">今すぐ更新チェック</button>
+          </form>
+          <span class="faint">LiteLLM と Google 公式ページを即時チェックし、結果を更新履歴に記録します</span>
+        </div>
+        <div class="card">
+          <table>
+            <thead>
+              <tr>
+                <th>モデル</th><th>用途</th><th>取得元</th>
+                <th style="text-align:right">Input / 1M</th><th style="text-align:right">Output / 1M</th>
+              </tr>
+            </thead>
+            <tbody>${tableRows}</tbody>
+          </table>
+        </div>
+        <h2>更新履歴（直近${historyRows.length}件）</h2>
+        <div class="card">
+          <table>
+            <thead>
+              <tr><th>日時</th><th>結果</th></tr>
+            </thead>
+            <tbody>${history || '<tr><td colspan="2" class="faint">（記録なし）</td></tr>'}</tbody>
+          </table>
+        </div>
+      `,
+      "pricing"
+    )
+  );
+});
+
+adminRouter.post("/pricing/refresh", async (_req, res) => {
+  logger.info("admin: manual pricing refresh requested");
+  await fetchAndApplyPricing();
+  await fetchAndApplyTtsPricing();
+  res.redirect("/admin/pricing");
 });
 
 // 汎用のシステムイベントログ（料金表更新チェックなどのサーバ内部イベント）。

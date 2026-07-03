@@ -1,5 +1,15 @@
 # DONE
 
+- [x] 管理画面にAIモデルの料金ページを作成。
+      `/admin/pricing` を追加（サイドバー「AI料金」）。適用中の単価（per 1M・USD）を
+      モデル / 用途（config から逆引き: OCR・翻訳・単語情報・TTS）/ 取得元
+      （LiteLLM・Google公式ページ）付きで一覧し、既定値と異なる適用値は注意色 + 既定値併記。
+      サマリーカード（登録モデル数・pricing_state の最終更新日時）、category=pricing の
+      system_logs 直近10件の更新履歴、「今すぐ更新チェック」ボタン
+      （POST /admin/pricing/refresh → LiteLLM と Google を即時チェック）を実装。
+      実データで表示・更新ボタン（302 + system_logs 2行追加）を確認済み。
+      [plan](docs/plans/archive/admin-pricing-page.md)（2026-07-03）
+
 - [x] Gemini TTS 料金を DB 保存し定期更新に含める。
       LiteLLM の価格JSONは TTS モデルに誤値（flash $0.30/$2.50、公式は $0.50/$10.00）を載せて
       いるため、TTS だけは Google 公式料金ページ（?hl=en + Accept-Language: en で英語版固定、
