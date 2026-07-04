@@ -1,5 +1,14 @@
 # DONE
 
+- [x] 2026-07-04 単語クイズで正解しても Mastery が保存されず 0% のままでクリアできないバグを修正 [plan](docs/plans/archive/review-mastery-persistence-fix.md)
+      原因は WordReviewState の CodingKeys リネーム（masteryPercentStorage → "masteryPercent" 等）。
+      SwiftData は埋め込み Codable のカラムを実プロパティ名（ZMASTERYPERCENTSTORAGE）で作る一方、
+      読み書きは CodingKeys 名で行うためキーが一致せず、値がエラーなく黙って捨てられていた。
+      導入時から stepIndex / correctCount / lapseCount も同じ理由で未永続化だった。
+      キー名を実プロパティ名に揃えて修正（既存カラム名と一致するためスキーマ変更・マイグレーション
+      不要）。ストア経由ラウンドトリップの回帰テスト WordReviewStatePersistenceTests を追加
+      （修正前は失敗を確認済み）。ユニットテスト全件成功、旧ストア上での起動確認済み。
+
 - [x] 2026-07-04 単語クイズを習熟度（正解率）方式にする [plan](docs/plans/archive/review-mastery-progress.md)
       1単語1問クリアでは練習量が少ないため、単語ごとに masteryPercent（0〜100%、日をまたいで
       永続）を導入。正解+25%/不正解−25%で、100%到達時のみクリアとして Leitner 間隔

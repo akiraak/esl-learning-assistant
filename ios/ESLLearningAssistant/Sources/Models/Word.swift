@@ -155,15 +155,17 @@ struct WordReviewState: Codable {
         set { masteryPercentStorage = newValue }
     }
 
+    // キー名は実プロパティ名と必ず一致させること。SwiftData は埋め込み Codable を
+    // 実プロパティ名ベースで管理するため、CodingKeys でリネームすると読み書きのキーが
+    // 一致せず、値が保存されない・常に既定値で読まれる（エラーにならず黙って壊れる）。
     enum CodingKeys: String, CodingKey {
         case dueDate
         case lastReviewedAt
         case reviewCount
-        // 追加フィールド導入時のキー名を維持する（保存済みデータとの互換のため変更しない）
-        case stepIndexStorage = "stepIndex"
-        case correctCountStorage = "correctCount"
-        case lapseCountStorage = "lapseCount"
-        case masteryPercentStorage = "masteryPercent"
+        case stepIndexStorage
+        case correctCountStorage
+        case lapseCountStorage
+        case masteryPercentStorage
     }
 
     init(
