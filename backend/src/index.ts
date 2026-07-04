@@ -316,7 +316,7 @@ app.post("/api/word-info", async (req, res) => {
   }
 });
 
-// 復習クイズ問題の生成（docs/plans/quiz-questions-server-storage.md）。
+// 復習クイズ問題の生成（docs/plans/archive/quiz-questions-server-storage.md）。
 // 単語情報（words テーブル）を素材に、1単語分の問題（形式×バリエーション）を生成して保存する。
 // iOS は単語情報の生成成功後にこれを fire-and-forget で呼ぶ。
 app.post("/api/quiz-questions/generate", async (req, res) => {

@@ -1141,7 +1141,7 @@ adminRouter.post("/tts/:id/delete", (req, res) => {
   res.redirect("/admin/tts");
 });
 
-// ---- 復習クイズ問題（docs/plans/quiz-questions-server-storage.md）----
+// ---- 復習クイズ問題（docs/plans/archive/quiz-questions-server-storage.md）----
 
 /// 詳細・削除・再生成の対象指定は (word, targetLanguage) をクエリパラメータで受ける
 function quizItemQuery(word: string, targetLanguage: string): string {

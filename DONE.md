@@ -1,5 +1,17 @@
 # DONE
 
+- [x] 2026-07-03 単語を覚える問題機能を設計・実装する [plan](docs/plans/archive/word-memorization-quiz.md)
+      間隔反復の復習クイズ機能一式。調査2件（拡張間隔の科学的根拠 / 音声入力の実現方法）、
+      Phase 1: スペック確定（固定ステップ Leitner 方式・28出題形式・Question の位置づけ注記）、
+      Phase 2: ReviewScheduler・FormatSelector（出題/回答モダリティの比率調整）・
+      WordReviewState 拡張（stepIndex/correctCount/lapseCount）+ ユニットテスト、
+      Phase 3: ReviewSessionView（出題→回答→フィードバック→サマリー、上限20問・
+      不正解は末尾再出題）・Words タブ「今日の復習」カード・タブバッジ、
+      Phase 4: WordDetailView に Review セクション（次回復習日 Due today 表示・
+      ステップ・回数・正答率・最終復習日）。
+      ※問題の生成・保存は途中でサーバ AI 生成方式
+      （[plan](docs/plans/archive/quiz-questions-server-storage.md)）へ移行。
+      音声入力形式（TV/IV/VV 系）は将来の拡張候補としてプラン §7 に整理済み。
 - [x] 2026-07-03 復習クイズの問題をサーバで AI 生成・保存し、複数バリエーションからランダム出題する
       [plan](docs/plans/archive/quiz-questions-server-storage.md)
       backend: quiz_questions テーブル + quizQuestions.ts（24形式を形式グループ並列の

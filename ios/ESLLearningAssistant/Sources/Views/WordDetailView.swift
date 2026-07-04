@@ -76,11 +76,12 @@ struct WordDetailView: View {
                 }
             }
 
+            reviewStatusSection
+
             Section("Details") {
                 LabeledContent("Added") {
                     Text(word.registeredAt, style: .date)
                 }
-                LabeledContent("Reviews", value: "\(word.reviewState.reviewCount)")
             }
 
             Section {
@@ -151,6 +152,43 @@ struct WordDetailView: View {
             }
         } message: {
             Text("The word will be removed from the word list and all lessons.")
+        }
+    }
+
+    /// 復習クイズの状態（docs/plans/archive/word-memorization-quiz.md §3.5 Phase 4）。
+    /// 次回復習日・ステップ・回数・正答率・最終復習日時を表示する
+    private var reviewStatusSection: some View {
+        let state = word.reviewState
+        return Section("Review") {
+            LabeledContent("Next Review") {
+                if ReviewScheduler.isDue(state) {
+                    Text("Due today")
+                        .foregroundStyle(.orange)
+                        .fontWeight(.medium)
+                } else {
+                    Text(state.dueDate, style: .date)
+                }
+            }
+            .accessibilityIdentifier("wordReviewNextRow")
+            // stepIndex は「次の正解で適用される間隔」のインデックス（0始まり）
+            let step = min(state.stepIndex, ReviewScheduler.stepIntervalsInDays.count - 1)
+            LabeledContent(
+                "Step",
+                value: "\(step + 1) / \(ReviewScheduler.stepIntervalsInDays.count)"
+                    + " (+\(ReviewScheduler.stepIntervalsInDays[step]) days)"
+            )
+            .accessibilityIdentifier("wordReviewStepRow")
+            LabeledContent("Reviews", value: "\(state.reviewCount)")
+            if state.reviewCount > 0 {
+                let percent = Int((Double(state.correctCount) / Double(state.reviewCount) * 100).rounded())
+                LabeledContent("Accuracy", value: "\(percent)% (\(state.correctCount)/\(state.reviewCount))")
+                    .accessibilityIdentifier("wordReviewAccuracyRow")
+                if let lastReviewedAt = state.lastReviewedAt {
+                    LabeledContent("Last Reviewed") {
+                        Text(lastReviewedAt, style: .date)
+                    }
+                }
+            }
         }
     }
 

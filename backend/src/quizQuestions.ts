@@ -2,7 +2,7 @@ import { config } from "./config";
 import { callStructured } from "./ocrTranslate";
 import type { WordInfo } from "./wordInfo";
 
-// 復習クイズ問題のサーバ生成（docs/plans/quiz-questions-server-storage.md）。
+// 復習クイズ問題のサーバ生成（docs/plans/archive/quiz-questions-server-storage.md）。
 // 1単語 × 1形式につき VARIANTS_PER_FORMAT 件のバリエーションを生成して保存し、
 // iOS はその中からランダムに1件を出題する。
 // question_json は iOS の ReviewQuestion（ReviewQuestion.swift）と 1:1 対応。

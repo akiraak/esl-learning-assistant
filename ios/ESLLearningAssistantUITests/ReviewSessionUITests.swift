@@ -128,6 +128,33 @@ final class ReviewSessionUITests: XCTestCase {
         attach(app, "06-review-complete-card")
     }
 
+    /// WordDetailView の Review セクション: 新規登録語は「Due today」・Step 1/5・Reviews 0 を表示する
+    /// （Phase 4: docs/plans/archive/word-memorization-quiz.md §3.5）
+    func testWordDetailShowsReviewStatus() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["-backendBaseURL", "http://127.0.0.1:1"]
+        app.launch()
+
+        clearAllData(app)
+        app.tabBars.buttons["Words"].tap()
+        addWord(app, text: "apple")
+
+        app.staticTexts["apple"].tap()
+
+        // Review セクションは画面下部にあり List の遅延生成で最初は存在しないため、見えるまでスクロールする。
+        // LabeledContent はラベルと値が1つのアクセシビリティ要素に結合されるため identifier で参照する
+        let nextRow = app.staticTexts["wordReviewNextRow"]
+        for _ in 0..<6 where !nextRow.exists {
+            app.swipeUp()
+        }
+        XCTAssertTrue(nextRow.waitForExistence(timeout: 5), "Next Review 行が見つからない")
+        XCTAssertTrue(nextRow.label.contains("Due today"), "新規登録語は当日が復習日: \(nextRow.label)")
+        let stepRow = app.staticTexts["wordReviewStepRow"]
+        XCTAssertTrue(stepRow.exists)
+        XCTAssertTrue(stepRow.label.contains("1 / 5 (+3 days)"), "Step 表示: \(stepRow.label)")
+        attach(app, "word-detail-review-status")
+    }
+
     /// Words タブの通常追加シートで単語を1件登録する
     private func addWord(_ app: XCUIApplication, text: String) {
         app.buttons["wordAddButton"].tap()

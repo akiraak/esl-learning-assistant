@@ -1,7 +1,7 @@
 import Foundation
 
 /// 復習クイズの出題形式（28形式）。ID 表記: `[出題][回答] + 連番`
-/// （T=テキスト, V=音声, I=イラスト, C=4択。一覧: docs/plans/word-memorization-quiz.md §3.3）。
+/// （T=テキスト, V=音声, I=イラスト, C=4択。一覧: docs/plans/archive/word-memorization-quiz.md §3.3）。
 /// rawValue はサーバ保存問題（quiz_questions.format）と一致する。
 enum ReviewQuestionFormat: String, CaseIterable, Codable, Sendable {
     // 出題テキスト・回答4択
@@ -78,7 +78,7 @@ enum ReviewAnswerBucket: CaseIterable, Sendable {
     case illustrationChoice
 }
 
-/// 出題形式の目標比率（docs/plans/word-memorization-quiz.md §3.3「出題形式の選定と比率調整」）
+/// 出題形式の目標比率（docs/plans/archive/word-memorization-quiz.md §3.3「出題形式の選定と比率調整」）
 struct FormatRatioTargets: Sendable {
     var prompt: [ReviewPromptBucket: Double]
     var answer: [ReviewAnswerBucket: Double]
@@ -91,9 +91,9 @@ struct FormatRatioTargets: Sendable {
     )
 }
 
-/// 比率調整付きの出題形式選定（純関数）。docs/plans/word-memorization-quiz.md §3.3。
+/// 比率調整付きの出題形式選定（純関数）。docs/plans/archive/word-memorization-quiz.md §3.3。
 /// 出題可能な形式の集合はサーバ保存問題の有無で決まる
-/// （その単語に保存された問題の形式一覧。docs/plans/quiz-questions-server-storage.md）。
+/// （その単語に保存された問題の形式一覧。docs/plans/archive/quiz-questions-server-storage.md）。
 enum FormatSelector {
     /// セッション実績と目標比率の乖離（不足分）が最大の枠を満たせる形式を選ぶ（貪欲法）。
     /// 出題・回答2軸の不足分の合計をスコアとし、最大スコアの形式から無作為に1つ返す。

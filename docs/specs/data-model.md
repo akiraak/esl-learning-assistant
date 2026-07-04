@@ -17,7 +17,7 @@
 - 本資料は **スキーマ**を確定するもの。以下は仕様書9章に残課題として残り、本資料のスコープ外
   - 対応言語（母語）の具体的なリスト
 - 単語帳の間隔反復アルゴリズムは固定ステップの Leitner 方式で確定した（§5 参照。
-  策定経緯: [docs/plans/word-memorization-quiz.md](../plans/word-memorization-quiz.md)）
+  策定経緯: [docs/plans/archive/word-memorization-quiz.md](../plans/archive/word-memorization-quiz.md)）
 
 ## 1. エンティティ関連図（概要）
 
@@ -187,7 +187,7 @@ Word                                          (Lessonに従属しない独立エ
 ### WordReviewState（埋め込み構造体）
 
 復習クイズ／間隔反復（仕様書3.2章）に使う状態。アルゴリズムは**固定ステップの Leitner 方式**で
-確定した（策定経緯: [docs/plans/word-memorization-quiz.md](../plans/word-memorization-quiz.md) §3.1）。
+確定した（策定経緯: [docs/plans/archive/word-memorization-quiz.md](../plans/archive/word-memorization-quiz.md) §3.1）。
 レッスンをまたいでも同じ単語であればこの状態を共有する（レッスンごとに復習履歴が分散しない）。
 
 - 復習ステップ: `[3日, 7日, 14日, 30日, 90日]`（stepIndex 0〜4）。90日到達後は 90日間隔を維持

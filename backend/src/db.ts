@@ -169,7 +169,7 @@ db.exec(`
   )
 `);
 
-// 復習クイズ問題（docs/plans/quiz-questions-server-storage.md）。
+// 復習クイズ問題（docs/plans/archive/quiz-questions-server-storage.md）。
 // 1単語×1形式につき複数バリエーション（variant_index）を保存し、iOS がランダムに選んで出題する。
 // question_json は iOS の ReviewQuestion と 1:1 対応。model はイラスト系のルール生成では "rule"。
 db.exec(`

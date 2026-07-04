@@ -1,7 +1,7 @@
 import Foundation
 
 /// 単語復習の間隔反復スケジューラ（固定ステップの Leitner 方式）。
-/// docs/specs/data-model.md §5 / docs/plans/word-memorization-quiz.md §3.1。
+/// docs/specs/data-model.md §5 / docs/plans/archive/word-memorization-quiz.md §3.1。
 /// SM-2 / FSRS への将来差し替えを想定し、モデルから分離した純関数として実装する。
 enum ReviewScheduler {
     /// 復習ステップの間隔（日）。最終ステップ到達後は90日間隔を維持する。

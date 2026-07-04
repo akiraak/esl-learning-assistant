@@ -6,7 +6,7 @@ import SwiftData
 /// セッション内で不正解だった単語は最後にもう一度出題する。reviewState への反映は
 /// 各単語の初回解答のみで、再出題は表示のみ（ReviewScheduler.reviewed を二重適用しない）。
 ///
-/// 問題はサーバ保存のもののみを使う（docs/plans/quiz-questions-server-storage.md）。
+/// 問題はサーバ保存のもののみを使う（docs/plans/archive/quiz-questions-server-storage.md）。
 /// セッション開始時に /api/quiz-questions/query でまとめて取得し、単語ごとに
 /// 比率調整（FormatSelector）で形式を選び、その形式の複数バリエーションから
 /// ランダムに1問を出題する。サーバに問題が無い単語は出題せずスキップする。
