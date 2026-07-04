@@ -1,5 +1,13 @@
 # DONE
 
+- [x] 2026-07-03 単語問題の音声生成をAIで行う [plan](docs/plans/archive/quiz-audio-ai-generation.md)
+      クイズ問題の生成成功直後（/api/quiz-questions/generate と管理画面 regenerate の2経路）に、
+      サーバ側で全 audioText を fire-and-forget で一括プリ合成するようにした（並列2・モデルは flash 固定）。
+      /api/tts のキャッシュ検索→合成→保存処理は新規 ttsStore.ts の getOrSynthesizeTtsAudio に関数化
+      （/api/tts の挙動は不変）。iOS はクイズ音声を AppSettingsKeys.quizTTSModel = "flash" 固定で参照し、
+      ReviewSessionView の ttsModel 設定依存を削除（端末内蔵TTSフォールバックは存続）。
+      banana（API経路・20件）/ apple（管理画面経路・19件）で全件合成成功・キャッシュヒット時の
+      Gemini 非呼び出し・iOS 側キー（sha256("flash|text")）一致を確認済み。
 - [x] 2026-07-03 TTSはキャラクター2人をランダムで選択して生成する。アプリのSettingのキャラ選択は削除 [plan](docs/plans/archive/tts-random-voice.md)
       音声キャラの決定をサーバに一元化。/api/tts が生成時に chobi/naruko からランダム選択し、
       キャッシュキーを sha256("model|text") に変更（同一テキストは初回に選ばれたキャラで固定＝キャッシュ有効）。

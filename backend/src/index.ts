@@ -7,7 +7,6 @@ import { config } from "./config";
 import {
   countQuizQuestions,
   getStoredWord,
-  getTtsAudioByHash,
   getWordIllustrationByHash,
   insertRequestLog,
   insertWordInfoLog,
@@ -17,7 +16,6 @@ import {
   normalizeWordKey,
   replaceQuizQuestions,
   upsertStoredWord,
-  upsertTtsAudio,
   upsertWordIllustration,
 } from "./db";
 import { adminRouter } from "./admin";
@@ -27,7 +25,8 @@ import { generateQuizQuestions } from "./quizQuestions";
 import { estimateCostUsd } from "./pricing";
 import { startPricingSync } from "./pricingSync";
 import { logger } from "./logger";
-import { synthesizeSpeech, VOICE_PRESETS, MODEL_PRESETS, type VoiceKey, type ModelKey } from "./tts";
+import { MODEL_PRESETS, type ModelKey } from "./tts";
+import { getOrSynthesizeTtsAudio, pregenerateQuizAudio } from "./ttsStore";
 import { buildIllustrationPrompt, generateIllustration, ILLUSTRATION_MODEL } from "./illustration";
 
 process.on("uncaughtException", (error) => {
@@ -404,6 +403,13 @@ app.post("/api/quiz-questions/generate", async (req, res) => {
       }))
     );
 
+    // 音声出題用の audioText をサーバ側で AI 生成しておく（レスポンスはブロックしない）。
+    // 失敗分はセッション開始時の /api/tts キャッシュミス合成で自己修復される。
+    void pregenerateQuizAudio(
+      result.questions.map((generated) => generated.question),
+      trimmedWord
+    );
+
     const totalCostUsd = estimateCostUsd(
       config.quizQuestionModel,
       result.totalInputTokens,
@@ -484,45 +490,13 @@ app.post("/api/tts", async (req, res) => {
     return;
   }
 
-  const startedAt = Date.now();
-
-  // 同一 (model, text) は保存済みWAVを返す（Gemini再呼び出しなし）。
-  // キャラは初回生成時にランダム選択され、キャッシュにより同一テキストでは固定される。
-  // ファイルが欠損していた場合は再合成して自己修復する（その際キャラは選び直し）。
-  const textHash = crypto.createHash("sha256").update(`${model}|${text}`).digest("hex");
-  const cached = getTtsAudioByHash(textHash);
-  if (cached) {
-    const cachedPath = path.join(config.ttsDir, cached.filename);
-    if (fs.existsSync(cachedPath)) {
-      logger.info(`tts: cache hit hash=${textHash.slice(0, 12)} latencyMs=${Date.now() - startedAt}`);
-      res.set("Content-Type", "audio/wav");
-      res.send(fs.readFileSync(cachedPath));
-      return;
-    }
-    logger.warn(`tts: cached file missing, re-synthesizing hash=${textHash.slice(0, 12)}`);
-  }
-
-  // キャラ（音声）は2人からランダム選択（ユーザー設定は廃止）
-  const voiceKeys = Object.keys(VOICE_PRESETS) as VoiceKey[];
-  const voice = voiceKeys[Math.floor(Math.random() * voiceKeys.length)];
-
-  logger.info(`tts: start voice=${voice} model=${model} textLength=${text.length}`);
+  // キャッシュ検索→合成→保存の実体は ttsStore.ts（ログもそちらで出力する）
   try {
-    const { wav, inputTokens, outputTokens } = await synthesizeSpeech(text, voice, model as ModelKey);
-    const costUsd = estimateCostUsd(MODEL_PRESETS[model as ModelKey], inputTokens, outputTokens);
-    const filename = `${textHash}.wav`;
-    fs.writeFileSync(path.join(config.ttsDir, filename), wav);
-    upsertTtsAudio({ text, voice, model, textHash, filename, byteSize: wav.length, inputTokens, outputTokens, costUsd });
-    logger.info(
-      `tts: success voice=${voice} model=${model} tokens=in:${inputTokens}/out:${outputTokens} cost=$${costUsd.toFixed(4)} latencyMs=${Date.now() - startedAt}`
-    );
+    const { wav } = await getOrSynthesizeTtsAudio(text, model as ModelKey);
     res.set("Content-Type", "audio/wav");
     res.send(wav);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    logger.error(
-      `tts: failed voice=${voice} model=${model} latencyMs=${Date.now() - startedAt} error=${errorMessage}`
-    );
     res.status(500).json({ error: errorMessage });
   }
 });

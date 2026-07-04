@@ -32,6 +32,9 @@ enum AppSettingsKeys {
     static let defaultTTSModel = "local"
     /// サーバTTS（/api/tts）は "local" を受け付けないため、送信時はこのモデルに読み替える
     static let fallbackServerTTSModel = "flash"
+    /// クイズ音声のモデル。サーバがプリ合成に使う QUIZ_TTS_MODEL（backend/src/ttsStore.ts）と
+    /// 一致させること。キャッシュキーが sha256("model|text") のため、ずれるとプリ合成が無駄になる。
+    static let quizTTSModel = "flash"
 
     /// 廃止した "ttsEngine"（local/gemini）設定を ttsModel（local/flash/pro）へ一度だけ移行する。
     /// あわせて、廃止した "ttsVoice"（音声キャラ選択。サーバ側のランダム選択に移行）も掃除する。

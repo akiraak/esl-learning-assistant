@@ -40,6 +40,7 @@ import { generateIllustration, ILLUSTRATION_MODEL } from "./illustration";
 import { DEFAULT_IMAGE_PRICING, DEFAULT_PRICING, DEFAULT_TTS_PRICING, estimateCostUsd, getCurrentPricing } from "./pricing";
 import { fetchAndApplyPricing, fetchAndApplyTtsPricing } from "./pricingSync";
 import { logger } from "./logger";
+import { pregenerateQuizAudio } from "./ttsStore";
 
 export const adminRouter = Router();
 
@@ -1354,6 +1355,11 @@ adminRouter.post("/quiz-questions/regenerate", async (req, res) => {
             ? 0
             : estimateCostUsd(generated.model, generated.inputTokens, generated.outputTokens),
       }))
+    );
+    // 音声出題用の audioText をサーバ側で AI 生成しておく（レスポンスはブロックしない）
+    void pregenerateQuizAudio(
+      result.questions.map((generated) => generated.question),
+      word
     );
     logger.info(
       `admin: regenerated quiz questions "${word}" count=${result.questions.length} latencyMs=${Date.now() - startedAt}`

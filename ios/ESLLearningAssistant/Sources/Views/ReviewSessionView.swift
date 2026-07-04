@@ -24,7 +24,6 @@ struct ReviewSessionView: View {
 
     @StateObject private var speechService = SpeechService()
     @StateObject private var ttsPlayback = TTSPlaybackService()
-    @AppStorage(AppSettingsKeys.ttsModel) private var ttsModel = AppSettingsKeys.defaultTTSModel
 
     @State private var hasStarted = false
     @State private var isLoading = true
@@ -605,10 +604,10 @@ struct ReviewSessionView: View {
     // MARK: - 音声・イラスト
 
     /// 生成済みのサーバTTSがあればそれを再生し、無ければ端末内蔵TTSへフォールバックする
-    /// （出題テンポを保つため、この画面ではサーバ生成を待たない）
+    /// （出題テンポを保つため、この画面ではサーバ生成を待たない）。
+    /// モデルはサーバのプリ合成と揃えて flash 固定（ユーザー設定 ttsModel は使わない）。
     private func playAudio(_ text: String) {
-        let serverModel = ttsModel == "local" ? AppSettingsKeys.fallbackServerTTSModel : ttsModel
-        if let url = TTSAudioStore.localURL(text: text, model: serverModel) {
+        if let url = TTSAudioStore.localURL(text: text, model: AppSettingsKeys.quizTTSModel) {
             ttsPlayback.play(url: url)
         } else {
             speechService.speak(text)
