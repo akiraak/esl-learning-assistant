@@ -592,7 +592,7 @@ struct ReviewSessionView: View {
         // reviewState への反映は初回解答のみ。再出題（retry）は表示だけ
         if !item.isRetry {
             item.word.reviewState = ReviewScheduler.reviewed(item.word.reviewState, isCorrect: isCorrect)
-            try? modelContext.save()
+            modelContext.saveOrLog()
             firstAnswerCount += 1
             if isCorrect {
                 firstCorrectCount += 1

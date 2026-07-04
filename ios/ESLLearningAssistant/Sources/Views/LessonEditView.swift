@@ -54,7 +54,7 @@ struct LessonEditView: View {
     private func saveLesson() {
         guard !trimmedTitle.isEmpty, !isDuplicateTitle else { return }
         lesson.title = trimmedTitle
-        try? modelContext.save()
+        modelContext.saveOrLog()
         dismiss()
     }
 }

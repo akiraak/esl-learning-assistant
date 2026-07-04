@@ -94,7 +94,7 @@ struct WordAddView: View {
             link(word, to: lesson)
         }
         // autosave任せだと直後にアプリを強制終了された場合に失われるため明示的に保存する
-        try? modelContext.save()
+        modelContext.saveOrLog()
 
         // AI単語情報を未生成なら生成開始（画面は閉じてバックグラウンドで継続）
         if word.aiInfoStatus == .none || word.aiInfoStatus == .failed {

@@ -1,5 +1,13 @@
 # DONE
 
+- [x] 2026-07-03 WordReviewState 追加フィールドによるマイグレーション失敗を修正（実機で「クラスを作成しても表示されない」バグ） [plan](docs/plans/archive/fix-reviewstate-migration-failure.md)
+      原因: 復習クイズ Phase 2 で埋め込み Codable の WordReviewState に非オプショナルの
+      stepIndex/correctCount/lapseCount を追加したため、既存 Word 行を持つストア（実機）で
+      ライトウェイトマイグレーションが失敗しストア自体が開けなくなっていた。
+      修正: ストレージをオプショナル（nullable カラム）にして公開 API は computed で 0 既定値に。
+      あわせて ModelContainer 生成失敗時のエラー画面（StoreLoadErrorView）と
+      save() 失敗をログする ModelContext.saveOrLog() を追加（try? save 11箇所を置換）。
+      実機ストアのコピーで旧スキーマ→新スキーマのマイグレーション成功・データ維持を検証済み。
 - [x] 2026-07-03 単語を覚える問題機能を設計・実装する [plan](docs/plans/archive/word-memorization-quiz.md)
       間隔反復の復習クイズ機能一式。調査2件（拡張間隔の科学的根拠 / 音声入力の実現方法）、
       Phase 1: スペック確定（固定ステップ Leitner 方式・28出題形式・Question の位置づけ注記）、

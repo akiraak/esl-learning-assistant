@@ -123,12 +123,40 @@ struct WordReviewState: Codable {
     var dueDate: Date
     var lastReviewedAt: Date?
     var reviewCount: Int
+    // stepIndex / correctCount / lapseCount は初期リリース後に追加したフィールド。
+    // SwiftData は埋め込み Codable を個別カラムに展開するため、非オプショナルだと
+    // 既存 Word 行を持つストアのライトウェイトマイグレーションが
+    // 「mandatory destination attribute に値が無い」エラーで失敗しストアが開けなくなる。
+    // ストレージをオプショナルにして nullable カラムとし、公開 API は computed で 0 を既定値にする。
+    private var stepIndexStorage: Int?
+    private var correctCountStorage: Int?
+    private var lapseCountStorage: Int?
+
     /// 現在の復習ステップ（ReviewScheduler.stepIntervalsInDays のインデックス）
-    var stepIndex: Int
+    var stepIndex: Int {
+        get { stepIndexStorage ?? 0 }
+        set { stepIndexStorage = newValue }
+    }
     /// 累計正解数
-    var correctCount: Int
+    var correctCount: Int {
+        get { correctCountStorage ?? 0 }
+        set { correctCountStorage = newValue }
+    }
     /// 不正解でステップ0にリセットされた回数
-    var lapseCount: Int
+    var lapseCount: Int {
+        get { lapseCountStorage ?? 0 }
+        set { lapseCountStorage = newValue }
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case dueDate
+        case lastReviewedAt
+        case reviewCount
+        // 追加フィールド導入時のキー名を維持する（保存済みデータとの互換のため変更しない）
+        case stepIndexStorage = "stepIndex"
+        case correctCountStorage = "correctCount"
+        case lapseCountStorage = "lapseCount"
+    }
 
     init(
         dueDate: Date,
@@ -141,19 +169,19 @@ struct WordReviewState: Codable {
         self.dueDate = dueDate
         self.lastReviewedAt = lastReviewedAt
         self.reviewCount = reviewCount
-        self.stepIndex = stepIndex
-        self.correctCount = correctCount
-        self.lapseCount = lapseCount
+        self.stepIndexStorage = stepIndex
+        self.correctCountStorage = correctCount
+        self.lapseCountStorage = lapseCount
     }
 
-    // stepIndex / correctCount / lapseCount 追加前に保存されたデータをデフォルト値0で読む
+    // stepIndex / correctCount / lapseCount 追加前に保存されたデータを nil のまま読む（参照時に0扱い）
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         dueDate = try container.decode(Date.self, forKey: .dueDate)
         lastReviewedAt = try container.decodeIfPresent(Date.self, forKey: .lastReviewedAt)
         reviewCount = try container.decodeIfPresent(Int.self, forKey: .reviewCount) ?? 0
-        stepIndex = try container.decodeIfPresent(Int.self, forKey: .stepIndex) ?? 0
-        correctCount = try container.decodeIfPresent(Int.self, forKey: .correctCount) ?? 0
-        lapseCount = try container.decodeIfPresent(Int.self, forKey: .lapseCount) ?? 0
+        stepIndexStorage = try container.decodeIfPresent(Int.self, forKey: .stepIndexStorage)
+        correctCountStorage = try container.decodeIfPresent(Int.self, forKey: .correctCountStorage)
+        lapseCountStorage = try container.decodeIfPresent(Int.self, forKey: .lapseCountStorage)
     }
 }

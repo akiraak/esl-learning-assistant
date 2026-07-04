@@ -39,7 +39,7 @@ struct LessonMemoEditView: View {
         // 空になったメモは nil に戻して「メモなし」扱いにする
         lesson.memo = trimmed.isEmpty ? nil : trimmed
         // autosave任せだと保存直後にアプリを終了された場合にメモが失われるため、明示的に保存する
-        try? modelContext.save()
+        modelContext.saveOrLog()
         dismiss()
     }
 }

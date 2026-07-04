@@ -197,7 +197,7 @@ struct WordDetailView: View {
         dismiss()
         modelContext.delete(word)
         // autosave任せだと直後にアプリが強制終了された場合に失われるため明示的に保存する
-        try? modelContext.save()
+        modelContext.saveOrLog()
     }
 
     /// AI生成情報のセクション群（ステータスに応じて表示を切り替える）

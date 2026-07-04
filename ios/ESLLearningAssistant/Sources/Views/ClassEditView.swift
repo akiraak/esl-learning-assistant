@@ -39,7 +39,7 @@ struct ClassEditView: View {
     private func saveClass() {
         guard !trimmedName.isEmpty else { return }
         schoolClass.name = trimmedName
-        try? modelContext.save()
+        modelContext.saveOrLog()
         dismiss()
     }
 }

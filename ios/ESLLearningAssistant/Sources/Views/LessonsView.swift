@@ -330,7 +330,7 @@ struct LessonsView: View {
             modelContext.delete(occurrence)
         }
         // autosave任せだと直後にアプリが強制終了された場合に失われるため明示的に保存する
-        try? modelContext.save()
+        modelContext.saveOrLog()
     }
 
     private func translateAllPending(in lesson: Lesson) async {
