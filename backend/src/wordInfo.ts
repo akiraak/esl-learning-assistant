@@ -11,9 +11,10 @@ const WORD_INFO_SCHEMA = {
     senses: {
       type: "array",
       description:
-        "語義1〜5件。context（教科書本文）がある場合は、そこで使われている語義を必ず先頭にする。" +
-        "同綴異義（語源・意味が無関係な別見出し語）がある場合も senses は1つの配列にまとめ、" +
-        "各要素の homographGroup で見出しを区別する。同じ homographGroup の語義は配列内で隣接させる。",
+        "この見出し語の語義1〜4件。ここで扱うのは【1つの見出し語】の意味だけ。" +
+        "関連する多義（例: run=走る/経営する）や品詞転換しただけの語（例: rain=雨/雨が降る）は" +
+        "同じ見出しなのでここに含める。語源・意味が無関係な別見出し（同綴異義）は含めず otherHomographs に回す。" +
+        "context（教科書本文）がある場合は、そこで使われている語義を必ず先頭にする。",
       items: {
         type: "object",
         properties: {
@@ -25,18 +26,26 @@ const WORD_INFO_SCHEMA = {
           },
           partOfSpeech: { type: "string", description: "品詞（母語表記。例:「動詞」）" },
           note: { type: ["string", "null"], description: "ニュアンス・使い分け。特に無ければnull" },
-          homographGroup: {
-            type: "integer",
-            description:
-              "同綴異義の見出しグループ番号（0始まりの連番）。語源・意味が無関係な同綴異義" +
-              "（例: bank=銀行/川岸、fall=落ちる/秋、spring=春/ばね/泉）だけを別番号にする。" +
-              "関連する多義（例: run=走る/経営する）や、品詞転換しただけで意味が同じ語" +
-              "（例: rain=雨/雨が降る、water=水/水をやる）は同じ番号に保つ。" +
-              "判定基準は『1枚の絵で両方の意味を教えられるか。教えられない＝別グループ』。" +
-              "過剰に分割しないこと。context に対応する語義（senses 先頭）は必ずグループ0にする。",
-          },
         },
-        required: ["meaning", "englishDefinition", "partOfSpeech", "note", "homographGroup"],
+        required: ["meaning", "englishDefinition", "partOfSpeech", "note"],
+        additionalProperties: false,
+      },
+    },
+    otherHomographs: {
+      type: "array",
+      description:
+        "この見出しとは【語源・意味が無関係な別見出し（同綴異義）】のラベルを列挙する。" +
+        "辞書が別見出し語に分けるものだけ（例: fall を『落ちる』で生成したなら [{meaning:'秋', partOfSpeech:'名詞'}]、" +
+        "bank なら『川岸』、spring なら『ばね』『泉』）。今回生成した見出し自身は含めない。" +
+        "関連する多義や品詞転換しただけの語（run の『経営する』, rain の『雨が降る』等）は含めない。" +
+        "判定基準は『1枚の絵で両方の意味を教えられるか。教えられない＝別見出し』。過剰に分けないこと。無ければ空配列。",
+      items: {
+        type: "object",
+        properties: {
+          meaning: { type: "string", description: "別見出しの母語での意味（短く。例:「秋」）" },
+          partOfSpeech: { type: "string", description: "品詞（母語表記。例:「名詞」）" },
+        },
+        required: ["meaning", "partOfSpeech"],
         additionalProperties: false,
       },
     },
@@ -120,6 +129,7 @@ const WORD_INFO_SCHEMA = {
   },
   required: [
     "senses",
+    "otherHomographs",
     "pronunciation",
     "inflections",
     "examples",
@@ -140,12 +150,18 @@ export interface WordSense {
   englishDefinition: string;
   partOfSpeech: string;
   note: string | null;
-  /** 同綴異義の見出しグループ番号（0始まり）。語源・意味が無関係な語だけ別番号 */
-  homographGroup: number;
+}
+
+/** 語源・意味が無関係な別見出し（同綴異義）のラベル。見出しごとに個別生成するためのヒント */
+export interface Homograph {
+  meaning: string;
+  partOfSpeech: string;
 }
 
 export interface WordInfo {
   senses: WordSense[];
+  /** この見出しとは無関係な別見出し（同綴異義）。空なら分割不要 */
+  otherHomographs: Homograph[];
   pronunciation: { ipa: string; syllables: string | null };
   inflections: { form: string; text: string }[];
   examples: { english: string; translation: string }[];
@@ -170,12 +186,22 @@ export async function generateWordInfo(
   word: string,
   targetLanguage: string,
   context?: string,
-  userTranslation?: string
+  userTranslation?: string,
+  senseHint?: string
 ): Promise<WordInfoResult> {
   const promptParts = [
     `英単語 "${word}" について、ESL学習者向けの単語情報を生成してください。`,
     `「母語」と指示されている項目は言語コード "${targetLanguage}" の言語で書いてください。`,
   ];
+  // senseHint 指定時は、その見出し（同綴異義のうちの1つ）に限定して生成する。
+  // 見出しごとに個別生成することで、活用形・例文・発音・解説をその意味専用にする。
+  if (senseHint) {
+    promptParts.push(
+      `この単語を【${senseHint}】の意味の見出し語に限定して生成してください。` +
+        `他の意味（別見出し）は一切扱わず、senses・例文・活用形・発音・解説はすべてこの意味のものにしてください。` +
+        `otherHomographs は空配列にしてください。`
+    );
+  }
   if (userTranslation) {
     promptParts.push(
       `学習者はこの単語を「${userTranslation}」という意味で登録しました。語義の選定・並び順のヒントにしてください。`

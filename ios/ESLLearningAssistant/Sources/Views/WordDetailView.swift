@@ -260,9 +260,7 @@ struct WordDetailView: View {
                 WordAIInfoSections(
                     info: info,
                     wordText: word.text,
-                    // 同綴異義の分割エントリでは、このエントリのグループに属する語義のみ表示する
-                    senses: word.groupSenses,
-                    // 語義ごとのイラストキー（辞書式分割）。担当グループの先頭語義のインデックス
+                    // 見出しごとのイラストキー（辞書式分割）。primary=0, 兄弟見出し=1,2…
                     senseIndex: word.illustrationSenseIndex,
                     targetLanguage: illustrationLanguage,
                     speechService: speechService,
@@ -279,9 +277,7 @@ struct WordDetailView: View {
 private struct WordAIInfoSections: View {
     let info: WordAIInfo
     let wordText: String
-    /// このエントリのグループに属する語義（同綴異義の分割で絞り込み済み）
-    let senses: [WordAIInfo.Sense]
-    /// 語義ごとのイラストキー要素（辞書式分割）
+    /// 見出しごとのイラストキー要素（辞書式分割）
     let senseIndex: Int
     let targetLanguage: String
     @ObservedObject var speechService: SpeechService
@@ -291,7 +287,14 @@ private struct WordAIInfoSections: View {
 
     var body: some View {
         Section("Illustration") {
-            WordIllustrationRow(wordText: wordText, targetLanguage: targetLanguage, senseIndex: senseIndex)
+            WordIllustrationRow(
+                wordText: wordText,
+                targetLanguage: targetLanguage,
+                senseIndex: senseIndex,
+                // 兄弟見出しはサーバに blob が無いため、この見出しの定義・例文を作画に直接渡す
+                definition: info.senses.first?.englishDefinition,
+                exampleSentence: info.examples.first?.english
+            )
         }
 
         Section("Pronunciation") {
@@ -310,9 +313,9 @@ private struct WordAIInfoSections: View {
             badgeRow
         }
 
-        if !senses.isEmpty {
+        if !info.senses.isEmpty {
             Section("Meanings") {
-                ForEach(Array(senses.enumerated()), id: \.offset) { index, sense in
+                ForEach(Array(info.senses.enumerated()), id: \.offset) { index, sense in
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
                             Text("\(index + 1).")
@@ -492,6 +495,9 @@ private struct WordIllustrationRow: View {
     let targetLanguage: String
     /// 語義ごとのイラストキー要素（同綴異義の辞書式分割）
     let senseIndex: Int
+    /// この見出しの英語定義・例文（作画プロンプト用。兄弟見出しはサーバに blob が無いため直接渡す）
+    let definition: String?
+    let exampleSentence: String?
 
     // 生成そのものは共有の WordIllustrationGenerator が担う（AI情報生成完了後の自動生成と共用、
     // キー単位で多重リクエスト排他）。この行は生成状態を観測して表示を切り替えるだけ。
@@ -517,7 +523,10 @@ private struct WordIllustrationRow: View {
                         .font(.footnote)
                         .foregroundStyle(.red)
                     Button {
-                        generator.generateIfNeeded(word: wordText, targetLanguage: targetLanguage, senseIndex: senseIndex)
+                        generator.generateIfNeeded(
+                            word: wordText, targetLanguage: targetLanguage, senseIndex: senseIndex,
+                            definition: definition, exampleSentence: exampleSentence
+                        )
                     } label: {
                         Label("Retry", systemImage: "arrow.clockwise")
                     }
@@ -540,7 +549,10 @@ private struct WordIllustrationRow: View {
                let cached = UIImage(contentsOfFile: localURL.path) {
                 image = cached
             } else if generator.failureMessage(word: wordText, targetLanguage: targetLanguage, senseIndex: senseIndex) == nil {
-                generator.generateIfNeeded(word: wordText, targetLanguage: targetLanguage, senseIndex: senseIndex)
+                generator.generateIfNeeded(
+                    word: wordText, targetLanguage: targetLanguage, senseIndex: senseIndex,
+                    definition: definition, exampleSentence: exampleSentence
+                )
             }
         }
     }

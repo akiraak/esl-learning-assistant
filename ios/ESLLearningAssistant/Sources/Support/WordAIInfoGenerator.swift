@@ -35,16 +35,49 @@ final class WordAIInfoGenerator {
             .first { !$0.isEmpty }
 
         do {
-            let response = try await service.fetchWordInfo(
+            // 主見出し（context に合う意味）を生成。ユーザー入力済みの訳語はヒントに使う。
+            let primary = try await service.fetchWordInfo(
                 word: word.text,
                 targetLanguage: targetLanguage,
                 context: context,
                 userTranslation: word.translation.isEmpty ? nil : word.translation,
-                regenerate: regenerate
+                regenerate: regenerate,
+                senseHint: nil
             )
-            // 多義語の辞書式分割: 同綴異義（fall=落ちる/秋 など）は別 Word エントリに分ける。
-            // 文脈に合うグループ0を渡された word に反映し、追加グループは兄弟 Word として作る。
-            let entries = applySplit(response: response, to: word, targetLanguage: targetLanguage)
+            apply(info: primary, to: word, targetLanguage: targetLanguage, senseGroupKey: nil)
+
+            // 多義語の辞書式分割: 語源・意味が無関係な別見出し（同綴異義。fall=落ちる/秋 など）は
+            // 見出しごとに個別生成し、別 Word エントリにする。各エントリは自分の意味専用の
+            // 活用形・例文・発音・解説を持つ（詳細内容が完全に独立する）。
+            var entries = [word]
+            let others = primary.wordInfo.otherHomographs ?? []
+            if let modelContext = word.modelContext, !others.isEmpty {
+                for (offset, homograph) in others.enumerated() {
+                    let groupKey = String(offset + 1)
+                    let hint = "\(homograph.meaning)（\(homograph.partOfSpeech)）"
+                    let siblingInfo: WordInfoResponse
+                    do {
+                        // 別見出しはサーバキャッシュ非対象（senseHint 付き）なので都度生成される
+                        siblingInfo = try await service.fetchWordInfo(
+                            word: word.text,
+                            targetLanguage: targetLanguage,
+                            context: nil,
+                            userTranslation: nil,
+                            regenerate: regenerate,
+                            senseHint: hint
+                        )
+                    } catch {
+                        // 別見出し1件の生成失敗は、主見出しの成功や他の見出しを妨げない
+                        continue
+                    }
+                    let sibling = existingSibling(text: word.text, groupKey: groupKey, in: modelContext)
+                        ?? insertSibling(text: word.text, groupKey: groupKey, in: modelContext)
+                    apply(info: siblingInfo, to: sibling, targetLanguage: targetLanguage, senseGroupKey: groupKey)
+                    entries.append(sibling)
+                }
+                // autosave任せだと直後にアプリを強制終了された場合に失われるため明示的に保存する
+                modelContext.saveOrLog()
+            }
 
             // 復習クイズ問題をサーバで事前生成しておく（保存はサーバ側。fire-and-forget で、
             // 失敗しても単語情報の成功表示には影響させない。未生成のままでも復習セッション
@@ -56,19 +89,20 @@ final class WordAIInfoGenerator {
                     word: wordText, targetLanguage: targetLanguage, regenerate: regenerate
                 )
             }
-            // イラストもテキスト情報の完成に続けてバックグラウンド生成しておく（詳細画面を
-            // 開いていなくても走る）。失敗しても単語情報の成功表示には影響させず、詳細画面の
-            // イラスト行から Retry できる。分割後は各エントリの語義ごとに1枚ずつ生成する。
+            // イラストもテキスト情報の完成に続けてバックグラウンド生成する（詳細画面を開いていなくても走る）。
+            // 見出しごとに1枚ずつ、その見出しの定義・例文を渡して生成する。
             //
             // regenerate: true で作りなおす。イラストのキーは (word, language, senseIndex) のみで
             // 語義内容を含まないため、削除→再登録した単語は古い語義の画像が残っていると再利用されて
-            // しまう。AI情報を生成しなおしたこのタイミングで、必ず今の語義の画像に更新する。
+            // しまう。AI情報を生成しなおしたこのタイミングで、必ず今の見出しの画像に更新する。
             for entry in entries {
                 WordIllustrationGenerator.shared.generateIfNeeded(
                     word: entry.text,
                     targetLanguage: targetLanguage,
                     senseIndex: entry.illustrationSenseIndex,
-                    regenerate: true
+                    regenerate: true,
+                    definition: entry.illustrationDefinition,
+                    exampleSentence: entry.illustrationExampleSentence
                 )
             }
         } catch {
@@ -77,68 +111,38 @@ final class WordAIInfoGenerator {
         }
     }
 
-    /// AI応答の senses を homographGroup で見出し分割し、Word エントリ群に反映する。
-    /// 文脈に合う先頭グループを渡された `word` に、追加グループを兄弟 Word として作成し、
-    /// 反映した全エントリ（base + 兄弟）を返す（呼び出し側がイラスト生成に使う）。
-    private func applySplit(
-        response: WordInfoResponse,
+    /// 生成結果（1見出し分）を Word に反映する。senseGroupKey は主見出し=nil、兄弟見出し="1","2"…。
+    private func apply(
+        info response: WordInfoResponse,
         to word: Word,
-        targetLanguage: String
-    ) -> [Word] {
-        let senses = response.wordInfo.senses
-        // グループ番号を出現順に列挙（senses[0] のグループ = 文脈に合う先頭グループ）
-        var groupsInOrder: [Int] = []
-        for sense in senses {
-            let group = sense.homographGroup ?? 0
-            if !groupsInOrder.contains(group) { groupsInOrder.append(group) }
-        }
-        let primaryGroup = groupsInOrder.first ?? 0
-        let didSplit = groupsInOrder.count > 1
-
-        func firstMeaning(of group: Int) -> String? {
-            senses.first { ($0.homographGroup ?? 0) == group }?.meaning
-        }
-
-        // base（渡された word）に先頭グループを反映
+        targetLanguage: String,
+        senseGroupKey: String?
+    ) {
         word.aiInfo = response.wordInfo
         word.aiInfoModel = response.model
         word.aiInfoLanguage = targetLanguage
         word.aiInfoGeneratedAt = .now
         word.aiInfoStatus = .completed
-        word.senseGroupKey = didSplit ? String(primaryGroup) : nil
-        // 一覧表示用の訳語は担当グループの先頭語義で自動補完する。
-        // ユーザーが入力・編集済みの訳語は上書きしない。
-        if word.translation.isEmpty, let meaning = firstMeaning(of: primaryGroup) {
+        word.senseGroupKey = senseGroupKey
+        // 一覧表示用の訳語は先頭語義で自動補完する。ユーザーが入力・編集済みの訳語は上書きしない。
+        if word.translation.isEmpty, let meaning = response.wordInfo.senses.first?.meaning {
             word.translation = meaning
         }
+    }
 
-        var entries = [word]
-        // 兄弟 Word はモデルに挿入済みでないと作れない（全呼び出し元は挿入済み word を渡す）
-        guard didSplit, let context = word.modelContext else { return entries }
-
-        // 既存の兄弟（同 text・同 senseGroupKey）を重複生成しないための照合セット。
-        // 再生成や「同じ単語を再追加」で二重に増えるのを防ぐ。
-        let wordText = word.text
-        let descriptor = FetchDescriptor<Word>(predicate: #Predicate { $0.text == wordText })
-        let existingKeys = Set(
-            ((try? context.fetch(descriptor)) ?? []).compactMap(\.senseGroupKey)
+    /// 既存の兄弟エントリ（同 text・同 senseGroupKey）を返す。再生成時は新規作成せず更新するため。
+    private func existingSibling(text: String, groupKey: String, in context: ModelContext) -> Word? {
+        let descriptor = FetchDescriptor<Word>(
+            predicate: #Predicate { $0.text == text && $0.senseGroupKey == groupKey }
         )
+        return (try? context.fetch(descriptor))?.first
+    }
 
-        for group in groupsInOrder where group != primaryGroup {
-            let key = String(group)
-            if existingKeys.contains(key) { continue }
-            let sibling = Word(text: word.text, translation: firstMeaning(of: group) ?? "")
-            sibling.aiInfo = response.wordInfo
-            sibling.aiInfoModel = response.model
-            sibling.aiInfoLanguage = targetLanguage
-            sibling.aiInfoGeneratedAt = .now
-            sibling.aiInfoStatus = .completed
-            sibling.senseGroupKey = key
-            context.insert(sibling)
-            entries.append(sibling)
-        }
-        // autosave任せだと直後にアプリを強制終了された場合に失われるため明示的に保存する
-        context.saveOrLog()
-        return entries
+    /// 兄弟エントリを新規作成して挿入する（内容は後続の apply(info:) で埋める）。
+    private func insertSibling(text: String, groupKey: String, in context: ModelContext) -> Word {
+        let sibling = Word(text: text, translation: "")
+        sibling.senseGroupKey = groupKey
+        context.insert(sibling)
+        return sibling
     }
 }

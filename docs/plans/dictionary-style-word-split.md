@@ -94,6 +94,26 @@
 - 既存テスト: `WordAIInfoTests`、`WordIllustrationStoreTests`、UI テスト
   （`LessonWordAddUITests`/`LessonWordRemoveUITests`/`WordDetailButtonsUITests`）が同綴複数行を前提に要見直し。
 
+## 改訂: 見出しごとに個別生成（Option 2 / 2026-07-04）
+
+当初の「1回の生成で `homographGroup` により senses をグループ分けし、各 Word に**全語義入りの共有ブロブ**を
+コピーして表示時に絞り込む」方式は、活用形・例文・発音・解説が見出し間で共有されてしまい「別単語なのに
+詳細が同じ」問題が残った。これを解消するため、**見出しごとに個別生成する方式**へ変更した。
+
+- backend `wordInfo.ts`: sense の `homographGroup` を廃止。代わりに応答トップレベルに
+  `otherHomographs`（語源・意味が無関係な別見出しのラベル配列）を追加。`generateWordInfo` に `senseHint` を
+  追加し、指定時はその意味の見出しに限定して生成する。
+- backend `index.ts` `/api/word-info`: `senseHint` を受け付ける。指定時は primary の (word,language) ブロブを
+  上書きしないよう **キャッシュを読まず・保存しない**（兄弟見出しの内容はクライアントが永続化）。
+- backend `index.ts` `/api/word-illustration`: `definition`/`exampleSentence` を受け付け、あればそれで作画する
+  （兄弟見出しはサーバに blob が無いため）。無ければ従来どおり保存済み blob から補う。
+- iOS `WordAIInfoGenerator`: primary を生成 → base に反映 → `otherHomographs` の各見出しを `senseHint` 付きで
+  個別生成して兄弟 Word にする（既存兄弟は senseGroupKey で照合して更新）。各 Word の `aiInfo` はその見出し
+  1つ分だけを持つ（絞り込み廃止）。イラストは見出しごとに `definition`/`exampleSentence` を渡して生成。
+- iOS `Word`: `senseGroupKey` は主見出し=nil・兄弟="1","2"…。`illustrationSenseIndex`=senseGroupNumber。
+  `groupSenses` は廃止（詳細は `aiInfo.senses` を直接表示）。
+- コスト: 単一見出しは従来どおり1回。分割時は見出し数だけ word-info 生成が増える。
+
 ## Phase / Step
 
 ### Phase 1 — コア分割（一覧・イラストまで）

@@ -18,7 +18,8 @@ final class Word {
     // 単語の同一性が実質 text から (text, senseGroupKey) に変わる。
     // 非オプショナル追加は SwiftData のライトウェイトマイグレーションを壊すため、必ず
     // optional + 既定 nil の nullable カラムにする（reviewState / WordReviewState のコメント参照）。
-    // 値は homographGroup 番号の文字列（"0","1"…）。nil は分割前・単一グループ（=グループ0）。
+    // nil は主見出し（primary、単一見出しも含む）。兄弟見出し（別見出し）は "1","2"… の連番文字列。
+    // イラストの senseIndex（primary=0, 兄弟=1,2…）にもこの番号を使う。
     var senseGroupKey: String?
 
     // AI生成情報（docs/plans/word-ai-info-generation.md）。
@@ -58,28 +59,20 @@ final class Word {
 }
 
 extension Word {
-    /// このエントリが担当する同綴異義グループ番号。nil（分割前・単一グループ）は 0。
+    /// このエントリが担当する同綴異義グループ番号。nil（primary・単一見出し）は 0、兄弟は 1,2…。
     var senseGroupNumber: Int {
         senseGroupKey.flatMap { Int($0) } ?? 0
     }
 
-    /// このエントリのグループに属する語義だけを返す（詳細画面の Meanings 表示用）。
-    /// aiInfo は全グループの語義を保持しているため、表示時にグループで絞り込む。
-    /// homographGroup 未設定の旧データや、絞り込み結果が空の場合は全語義にフォールバックする。
-    var groupSenses: [WordAIInfo.Sense] {
-        guard let senses = aiInfo?.senses, !senses.isEmpty else { return [] }
-        let group = senseGroupNumber
-        let filtered = senses.filter { ($0.homographGroup ?? 0) == group }
-        return filtered.isEmpty ? senses : filtered
-    }
+    /// イラストのキャッシュキー要素。見出しごとに別画像を持たせるため senseGroupNumber をそのまま使う
+    /// （primary=0, 兄弟=1,2…）。見出しごとに aiInfo が独立しているため絞り込みは不要。
+    var illustrationSenseIndex: Int { senseGroupNumber }
 
-    /// イラスト生成に渡す senseIndex。サーバは保存済み word_info の senses[senseIndex] の
-    /// 定義で作画するため、このグループの先頭語義の「全語義配列内でのインデックス」を返す。
-    var illustrationSenseIndex: Int {
-        guard let senses = aiInfo?.senses else { return 0 }
-        let group = senseGroupNumber
-        return senses.firstIndex { ($0.homographGroup ?? 0) == group } ?? 0
-    }
+    /// イラスト生成プロンプトに渡す、この見出しの英語定義（サーバは兄弟見出しの blob を持たないため直接渡す）
+    var illustrationDefinition: String? { aiInfo?.senses.first?.englishDefinition }
+
+    /// イラスト生成プロンプトに渡す、この見出しの例文
+    var illustrationExampleSentence: String? { aiInfo?.examples.first?.english }
 }
 
 enum ExampleSentenceSource: String, Codable {
@@ -106,10 +99,14 @@ struct WordAIInfo: Codable {
         var partOfSpeech: String
         /// ニュアンス・使い分け
         var note: String?
-        /// 同綴異義の見出しグループ番号（0始まり）。語源・意味が無関係な語だけ別番号。
-        /// homographGroup 追加前に保存された aiInfo ブロブには存在しないため optional。
-        /// 未設定（旧データ・単一グループ）は 0 グループ扱いにする（Word.senseGroupNumber 等）。
-        var homographGroup: Int?
+    }
+
+    /// 語源・意味が無関係な別見出し（同綴異義）のラベル。見出しごとに個別生成するためのヒント。
+    struct Homograph: Codable {
+        /// 別見出しの母語での意味（例:「秋」）
+        var meaning: String
+        /// 品詞（母語表記。例:「名詞」）
+        var partOfSpeech: String
     }
 
     struct Pronunciation: Codable {
@@ -132,8 +129,10 @@ struct WordAIInfo: Codable {
         var translation: String
     }
 
-    /// 語義1〜3件。教科書文脈で使われた語義が先頭
+    /// この見出し語の語義1〜4件（関連多義のみ）。教科書文脈で使われた語義が先頭
     var senses: [Sense]
+    /// 語源・意味が無関係な別見出し（同綴異義）。分割生成のトリガに使う。旧データには無いため optional
+    var otherHomographs: [Homograph]?
     var pronunciation: Pronunciation
     /// 語形変化（該当するもののみ。0件可）
     var inflections: [Inflection]

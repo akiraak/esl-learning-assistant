@@ -34,7 +34,14 @@ final class WordIllustrationGenerator: ObservableObject {
     /// regenerate: true で端末ローカルの既存画像を消してから作りなおし、サーバにも再生成を要求する。
     /// AI情報の生成直後に使う。キーが (word, language, senseIndex) のみで語義内容を含まないため、
     /// 同じ単語を再登録すると古い語義の画像が残っていて再利用されてしまうのを防ぐ。
-    func generateIfNeeded(word: String, targetLanguage: String, senseIndex: Int = 0, regenerate: Bool = false) {
+    func generateIfNeeded(
+        word: String,
+        targetLanguage: String,
+        senseIndex: Int = 0,
+        regenerate: Bool = false,
+        definition: String? = nil,
+        exampleSentence: String? = nil
+    ) {
         let key = WordIllustrationStore.key(word: word, targetLanguage: targetLanguage, senseIndex: senseIndex)
         if regenerate {
             WordIllustrationStore.remove(word: word, targetLanguage: targetLanguage, senseIndex: senseIndex)
@@ -48,7 +55,12 @@ final class WordIllustrationGenerator: ObservableObject {
             defer { inFlight.remove(key) }
             do {
                 let data = try await service.fetchIllustration(
-                    word: word, targetLanguage: targetLanguage, senseIndex: senseIndex, regenerate: regenerate
+                    word: word,
+                    targetLanguage: targetLanguage,
+                    senseIndex: senseIndex,
+                    regenerate: regenerate,
+                    definition: definition,
+                    exampleSentence: exampleSentence
                 )
                 try WordIllustrationStore.save(data: data, word: word, targetLanguage: targetLanguage, senseIndex: senseIndex)
             } catch {
