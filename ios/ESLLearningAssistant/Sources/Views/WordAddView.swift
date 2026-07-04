@@ -9,6 +9,7 @@ struct WordAddView: View {
 
     @State private var text = ""
     @State private var selectedLessonID: UUID?
+    @FocusState private var isTextFocused: Bool
 
     /// レッスンを固定して開く場合に指定する。指定時はレッスンを変更できない。
     private let fixedLesson: Lesson?
@@ -25,6 +26,7 @@ struct WordAddView: View {
                     TextField("Word (e.g. apple)", text: $text)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
+                        .focused($isTextFocused)
                         .accessibilityIdentifier("wordTextField")
                 } footer: {
                     Text("The translation, meanings, and examples will be generated automatically by AI.")
@@ -67,6 +69,7 @@ struct WordAddView: View {
                     Button("Cancel") { dismiss() }
                 }
             }
+            .onAppear { isTextFocused = true }
         }
     }
 

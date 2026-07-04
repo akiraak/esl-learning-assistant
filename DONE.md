@@ -1,5 +1,10 @@
 # DONE
 
+- [x] 2026-07-03 単語追加時に入力欄に最初からフォーカスを当てる（クラス作成、レッスン作成も同様に） [plan](docs/plans/archive/word-add-focus.md)
+      WordAddView に @FocusState + .onAppear によるフォーカス処理を追加し、単語追加シートを
+      開いた直後から入力できるようにした。ClassAddView / LessonAddView は既に同パターンで
+      実装済みだったため確認のみ。LessonWordAddUITests にシート表示直後のキーボードフォーカスを
+      検証するアサーション（hasKeyboardFocus のポーリング待ち）を追加し、パスを確認済み。
 - [x] 2026-07-03 単語問題の音声生成をAIで行う [plan](docs/plans/archive/quiz-audio-ai-generation.md)
       クイズ問題の生成成功直後（/api/quiz-questions/generate と管理画面 regenerate の2経路）に、
       サーバ側で全 audioText を fire-and-forget で一括プリ合成するようにした（並列2・モデルは flash 固定）。

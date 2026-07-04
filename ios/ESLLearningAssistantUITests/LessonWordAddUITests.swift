@@ -43,6 +43,9 @@ final class LessonWordAddUITests: XCTestCase {
         XCTAssertTrue(wordTextField.waitForExistence(timeout: 5))
         XCTAssertTrue(app.tabBars.buttons["Lessons"].isSelected)
 
+        // 単語入力欄には開いた直後からフォーカスが当たっている
+        XCTAssertTrue(waitForKeyboardFocus(wordTextField))
+
         // レッスンは固定表示（Pickerは存在しない＝変更不可）
         // LabeledContent はラベルと値を1つのアクセシビリティ要素に結合するため identifier で参照する
         let fixedLabel = app.staticTexts["wordLessonFixedLabel"]
@@ -88,6 +91,16 @@ final class LessonWordAddUITests: XCTestCase {
         XCTAssertTrue(deleteButton.waitForExistence(timeout: 5))
         deleteButton.tap()
         XCTAssertTrue(deleteButton.waitForNonExistence(timeout: 5))
+    }
+
+    /// 要素にキーボードフォーカスが当たるまで待つ（シート表示アニメーション分の猶予を持たせる）
+    private func waitForKeyboardFocus(_ element: XCUIElement, timeout: TimeInterval = 5) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            if element.value(forKey: "hasKeyboardFocus") as? Bool == true { return true }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        } while Date() < deadline
+        return false
     }
 
     /// 指定テキストが見えるまで下方向へスクロールする（最大5回）
