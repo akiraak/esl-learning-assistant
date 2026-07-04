@@ -131,6 +131,7 @@ struct WordReviewState: Codable {
     private var stepIndexStorage: Int?
     private var correctCountStorage: Int?
     private var lapseCountStorage: Int?
+    private var masteryPercentStorage: Int?
 
     /// 現在の復習ステップ（ReviewScheduler.stepIntervalsInDays のインデックス）
     var stepIndex: Int {
@@ -147,6 +148,12 @@ struct WordReviewState: Codable {
         get { lapseCountStorage ?? 0 }
         set { lapseCountStorage = newValue }
     }
+    /// 現在の周回の習熟度（0〜100%）。正解+25 / 不正解−25 で増減し、
+    /// 100% でクリア（dueDate 前進）と同時に 0 へ戻る（ReviewScheduler.answered）
+    var masteryPercent: Int {
+        get { masteryPercentStorage ?? 0 }
+        set { masteryPercentStorage = newValue }
+    }
 
     enum CodingKeys: String, CodingKey {
         case dueDate
@@ -156,6 +163,7 @@ struct WordReviewState: Codable {
         case stepIndexStorage = "stepIndex"
         case correctCountStorage = "correctCount"
         case lapseCountStorage = "lapseCount"
+        case masteryPercentStorage = "masteryPercent"
     }
 
     init(
@@ -164,7 +172,8 @@ struct WordReviewState: Codable {
         reviewCount: Int = 0,
         stepIndex: Int = 0,
         correctCount: Int = 0,
-        lapseCount: Int = 0
+        lapseCount: Int = 0,
+        masteryPercent: Int = 0
     ) {
         self.dueDate = dueDate
         self.lastReviewedAt = lastReviewedAt
@@ -172,6 +181,7 @@ struct WordReviewState: Codable {
         self.stepIndexStorage = stepIndex
         self.correctCountStorage = correctCount
         self.lapseCountStorage = lapseCount
+        self.masteryPercentStorage = masteryPercent
     }
 
     // stepIndex / correctCount / lapseCount 追加前に保存されたデータを nil のまま読む（参照時に0扱い）
@@ -183,5 +193,6 @@ struct WordReviewState: Codable {
         stepIndexStorage = try container.decodeIfPresent(Int.self, forKey: .stepIndexStorage)
         correctCountStorage = try container.decodeIfPresent(Int.self, forKey: .correctCountStorage)
         lapseCountStorage = try container.decodeIfPresent(Int.self, forKey: .lapseCountStorage)
+        masteryPercentStorage = try container.decodeIfPresent(Int.self, forKey: .masteryPercentStorage)
     }
 }

@@ -170,6 +170,9 @@ struct WordDetailView: View {
                 }
             }
             .accessibilityIdentifier("wordReviewNextRow")
+            // 現在の周回の習熟度（100%到達で次回復習日に進み、0%から再スタート）
+            LabeledContent("Mastery", value: "\(state.masteryPercent)%")
+                .accessibilityIdentifier("wordReviewMasteryRow")
             // stepIndex は「次の正解で適用される間隔」のインデックス（0始まり）
             let step = min(state.stepIndex, ReviewScheduler.stepIntervalsInDays.count - 1)
             LabeledContent(

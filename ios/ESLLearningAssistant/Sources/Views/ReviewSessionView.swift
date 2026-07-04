@@ -2,21 +2,23 @@ import SwiftUI
 import SwiftData
 
 /// 復習クイズのセッション画面。1問ずつ出題 → 回答 → 正誤フィードバック → 次へ。
-/// 上限は1セッション20問（超過分は次セッションで続けられる）。
-/// セッション内で不正解だった単語は最後にもう一度出題する。reviewState への反映は
-/// 各単語の初回解答のみで、再出題は表示のみ（ReviewScheduler.reviewed を二重適用しない）。
+/// 習熟度方式（docs/plans/archive/review-mastery-progress.md）: 対象は due 単語の先頭5語・最大10問。
+/// 未クリア単語のキューをラウンドロビンで回して同じ単語が連続しないようにし、
+/// 解答のたびに reviewState を更新する（正解+25% / 不正解−25%、100%でクリア）。
+/// 全対象が100%に達したら10問未満でも終了する。
 ///
 /// 問題はサーバ保存のもののみを使う（docs/plans/archive/quiz-questions-server-storage.md）。
-/// セッション開始時に /api/quiz-questions/query でまとめて取得し、出題する問題を
-/// ReviewSessionPlanner で先に確定してから、必要な音声を一括ダウンロードして始める
-/// （進捗バー表示。docs/plans/quiz-audio-predownload.md）。
+/// セッション開始時に /api/quiz-questions/query でまとめて取得し、対象単語の全問題の音声を
+/// 一括ダウンロードして始める（進捗バー表示。出題が動的に決まるため事前確定はしない）。
 /// サーバに問題が無い単語は出題せずスキップする。
 struct ReviewSessionView: View {
     /// 今日の復習対象（呼び出し側で ReviewScheduler.isDue フィルタ済み）
     let dueWords: [Word]
 
-    /// 1セッションの出題上限
-    static let sessionLimit = 20
+    /// 1セッションの対象単語数上限
+    static let sessionWordLimit = 5
+    /// 1セッションの出題数上限
+    static let sessionQuestionLimit = 10
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
@@ -36,26 +38,22 @@ struct ReviewSessionView: View {
     @State private var audioDownload: AudioDownloadProgress?
     /// 問題取得〜音声DLを行う Task。Close・画面破棄でキャンセルする
     @State private var sessionTask: Task<Void, Never>?
-    /// セッション開始時に確定した出題（単語と問題のペア。docs/plans/quiz-audio-predownload.md）
-    @State private var mainQueue: [PlannedItem] = []
-    @State private var retryQueue: [Word] = []
+    /// 未クリア（習熟度100%未満）単語のラウンドロビンキュー。解答後も未クリアなら末尾へ戻す
+    @State private var wordQueue: [Word] = []
     @State private var current: CurrentQuestion?
     @State private var sessionCounts: [ReviewQuestionFormat: Int] = [:]
-    /// 解答済みの問題数（再出題を含む。進捗表示用）
+    /// 解答済みの問題数（進捗表示・出題上限の判定用）
     @State private var completedCount = 0
-    /// 初回解答の数と正解数（サマリー表示用。再出題は含まない）
-    @State private var firstAnswerCount = 0
-    @State private var firstCorrectCount = 0
+    /// 解答数と正解数（サマリー表示用）
+    @State private var answerCount = 0
+    @State private var correctAnswerCount = 0
+    /// このセッションで習熟度100%に達した（クリアした）単語数
+    @State private var clearedWordCount = 0
     @State private var typedAnswer = ""
     @State private var selectedChoiceIndex: Int?
     @State private var feedback: Feedback?
     @State private var isFinished = false
     @FocusState private var isAnswerFieldFocused: Bool
-
-    private struct PlannedItem {
-        var word: Word
-        var question: ReviewQuestion
-    }
 
     private struct AudioDownloadProgress {
         var completed: Int
@@ -65,12 +63,14 @@ struct ReviewSessionView: View {
     private struct CurrentQuestion {
         var word: Word
         var question: ReviewQuestion
-        var isRetry: Bool
     }
 
     private struct Feedback {
         var isCorrect: Bool
         var correctAnswer: String
+        /// 解答反映後の習熟度（クリア時は100として表示する）
+        var masteryPercent: Int
+        var isCleared: Bool
     }
 
     var body: some View {
@@ -198,10 +198,10 @@ struct ReviewSessionView: View {
     }
 
     private var progressHeader: some View {
-        let remaining = mainQueue.count + retryQueue.count + (current != nil ? 1 : 0)
-        let total = completedCount + remaining
+        // 全単語クリアで早期終了することがあるため、分母は出題上限の10で固定表示する
+        let total = Self.sessionQuestionLimit
         return VStack(spacing: 4) {
-            ProgressView(value: Double(completedCount), total: Double(max(total, 1)))
+            ProgressView(value: Double(completedCount), total: Double(total))
             Text("\(min(completedCount + 1, total)) / \(total)")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -361,6 +361,24 @@ struct ReviewSessionView: View {
                     .fontWeight(.medium)
             }
 
+            // この単語の習熟度。100%（クリア）は次回復習日に進んだことを示す
+            HStack(spacing: 8) {
+                Text("Mastery")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                ProgressView(value: Double(feedback.masteryPercent), total: 100)
+                Text("\(feedback.masteryPercent)%")
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .foregroundStyle(feedback.isCleared ? .green : .secondary)
+                if feedback.isCleared {
+                    Image(systemName: "checkmark.seal.fill")
+                        .font(.caption)
+                        .foregroundStyle(.green)
+                }
+            }
+            .accessibilityIdentifier("reviewMasteryRow")
+
             Divider()
 
             // 正誤にかかわらず単語のまとめを見せて記憶を強化する（プラン §3.5）
@@ -410,7 +428,10 @@ struct ReviewSessionView: View {
         Button {
             advance()
         } label: {
-            Text(mainQueue.isEmpty && retryQueue.isEmpty ? "Finish" : "Next")
+            Text(
+                wordQueue.isEmpty || completedCount + 1 >= Self.sessionQuestionLimit
+                    ? "Finish" : "Next"
+            )
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 6)
         }
@@ -423,7 +444,7 @@ struct ReviewSessionView: View {
 
     @ViewBuilder
     private var summaryView: some View {
-        if firstAnswerCount == 0 && skippedWordCount > 0 {
+        if answerCount == 0 && skippedWordCount > 0 {
             // 全単語がスキップ（問題未生成）だった場合。自己修復トリガ済みなので時間を置けば出題できる
             VStack(spacing: 16) {
                 Image(systemName: "hourglass")
@@ -456,17 +477,23 @@ struct ReviewSessionView: View {
                 Text("Session Complete")
                     .font(.title2)
                     .fontWeight(.semibold)
-                if firstAnswerCount > 0 {
-                    Text("\(firstCorrectCount) of \(firstAnswerCount) correct")
+                if answerCount > 0 {
+                    Text("\(correctAnswerCount) of \(answerCount) correct")
                         .foregroundStyle(.secondary)
+                    if clearedWordCount > 0 {
+                        Text("\(clearedWordCount) word\(clearedWordCount == 1 ? "" : "s") mastered 🎉")
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 if skippedWordCount > 0 {
                     Text("\(skippedWordCount) word\(skippedWordCount == 1 ? "" : "s") skipped (questions being prepared)")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
-                if dueWords.count > Self.sessionLimit {
-                    Text("\(dueWords.count - Self.sessionLimit) more words are still due today.")
+                // 未クリアの単語は due に残るため、続けてセッションを開始できることを知らせる
+                let remainingDue = dueWords.filter { ReviewScheduler.isDue($0.reviewState) }.count
+                if remainingDue > 0 {
+                    Text("\(remainingDue) word\(remainingDue == 1 ? "" : "s") still due today. Start again to continue.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -491,10 +518,10 @@ struct ReviewSessionView: View {
         sessionTask = Task { await loadQuestions() }
     }
 
-    /// セッション対象（上限20語）の問題をサーバからまとめて取得する。
+    /// セッション対象（上限5語）の問題をサーバからまとめて取得する。
     /// 問題が無い単語はスキップし、サーバ生成の自己修復トリガだけ投げておく。
     private func loadQuestions() async {
-        let candidates = Array(dueWords.prefix(Self.sessionLimit))
+        let candidates = Array(dueWords.prefix(Self.sessionWordLimit))
         guard !candidates.isEmpty else {
             isLoading = false
             isFinished = true
@@ -526,7 +553,6 @@ struct ReviewSessionView: View {
             return
         }
 
-        questionsByWordID = fetched
         let ready = candidates.filter { fetched[$0.id] != nil }
         skippedWordCount = candidates.count - ready.count
 
@@ -540,50 +566,45 @@ struct ReviewSessionView: View {
             }
         }
 
-        // 出題順の問題をここで確定し、このセッションで使う音声だけを先にダウンロードする
-        // （docs/plans/quiz-audio-predownload.md）
-        var plan = ReviewSessionPlanner.plan(
-            wordIDs: ready.map(\.id), questionsByWordID: fetched
-        )
+        // 出題は解答結果に応じて動的に決まるため、対象単語の全問題の音声を先に一括ダウンロード
+        // する（対象は最大5語なので件数は小さい。docs/plans/archive/review-mastery-progress.md）
         let missingAudioTexts = Array(
-            Set(plan.questions.compactMap(\.question.audioText))
+            Set(ready.flatMap { (fetched[$0.id] ?? []).compactMap(\.audioText) })
         ).filter { TTSAudioStore.localURL(text: $0, model: AppSettingsKeys.quizTTSModel) == nil }
 
+        var failedTexts: Set<String> = []
         if !missingAudioTexts.isEmpty {
             isLoading = false
             audioDownload = AudioDownloadProgress(completed: 0, total: missingAudioTexts.count)
-            let failedTexts = await QuizAudioDownloader.download(texts: missingAudioTexts) { completed, total in
+            failedTexts = await QuizAudioDownloader.download(texts: missingAudioTexts) { completed, total in
                 audioDownload = AudioDownloadProgress(completed: completed, total: total)
             }
             // Close で中断された場合は開始しない（画面はすでに閉じている）
             if Task.isCancelled { return }
-            if !failedTexts.isEmpty {
-                // 失敗したテキストを含む問題は別形式に差し替えてセッションを続行する
-                // （非音声形式はどの単語にもあるため、サーバ不達でも完走できる）
-                plan = ReviewSessionPlanner.replacingFailedAudio(
-                    plan: plan,
-                    questionsByWordID: fetched,
-                    failedTexts: failedTexts,
-                    hasLocalAudio: {
-                        TTSAudioStore.localURL(text: $0, model: AppSettingsKeys.quizTTSModel) != nil
-                    }
-                )
-            }
             audioDownload = nil
         }
 
-        sessionCounts = plan.sessionCounts
-        let wordByID = Dictionary(uniqueKeysWithValues: ready.map { ($0.id, $0) })
-        mainQueue = plan.questions.compactMap { item in
-            wordByID[item.wordID].map { PlannedItem(word: $0, question: item.question) }
+        // DL失敗した音声の問題は出題候補から外す
+        // （非音声形式はどの単語にもあるため、サーバ不達でも通常は続行できる）
+        var usable: [UUID: [ReviewQuestion]] = [:]
+        for word in ready {
+            let questions = (fetched[word.id] ?? []).filter { question in
+                guard let text = question.audioText else { return true }
+                return !failedTexts.contains(text)
+            }
+            if !questions.isEmpty {
+                usable[word.id] = questions
+            }
         }
-        // 差し替え先が無く出題から外れた単語もスキップ扱いで知らせる
-        skippedWordCount += ready.count - mainQueue.count
+        questionsByWordID = usable
+        wordQueue = ready.filter { usable[$0.id] != nil }
+        // 出題できる問題が残らなかった単語もスキップ扱いで知らせる
+        skippedWordCount += ready.count - wordQueue.count
         isLoading = false
         advance()
     }
 
-    /// 次の問題を用意する（キューが尽きたらサマリーへ）
+    /// 次の問題を用意する（10問上限・全単語クリア・出題可能な単語なしでサマリーへ）
     private func advance() {
         speechService.stop()
         ttsPlayback.stop()
@@ -595,32 +616,24 @@ struct ReviewSessionView: View {
         typedAnswer = ""
         current = nil
 
-        while true {
-            if !mainQueue.isEmpty {
-                // main キューはセッション開始時に確定済み（sessionCounts も反映済み）
-                let item = mainQueue.removeFirst()
-                current = CurrentQuestion(word: item.word, question: item.question, isRetry: false)
-            } else if !retryQueue.isEmpty {
-                let word = retryQueue.removeFirst()
-                guard let question = pickRetryQuestion(for: word) else { continue }
-                sessionCounts[question.format, default: 0] += 1
-                current = CurrentQuestion(word: word, question: question, isRetry: true)
-            } else {
-                isFinished = true
-                return
-            }
+        while completedCount < Self.sessionQuestionLimit, !wordQueue.isEmpty {
+            let word = wordQueue.removeFirst()
+            guard let question = pickQuestion(for: word) else { continue }
+            sessionCounts[question.format, default: 0] += 1
+            current = CurrentQuestion(word: word, question: question)
 
             // 音声出題は表示と同時に1回自動再生する
-            if let audioText = current?.question.audioText {
+            if let audioText = question.audioText {
                 playAudio(audioText)
             }
             return
         }
+        isFinished = true
     }
 
-    /// 再出題（retry）の出題選択。形式は従来どおり比率調整で選ぶが、
-    /// 追加ダウンロードはしないため音声形式はローカルに音声がある問題に限定する。
-    private func pickRetryQuestion(for word: Word) -> ReviewQuestion? {
+    /// 出題選択。形式は比率調整で選ぶ。追加ダウンロードはしないため、
+    /// 音声形式はローカルに音声がある問題に限定する（途中削除への保険）。
+    private func pickQuestion(for word: Word) -> ReviewQuestion? {
         let candidates = (questionsByWordID[word.id] ?? []).filter { question in
             guard let text = question.audioText else { return true }
             return TTSAudioStore.localURL(text: text, model: AppSettingsKeys.quizTTSModel) != nil
@@ -650,18 +663,29 @@ struct ReviewSessionView: View {
         speechService.stop()
         ttsPlayback.stop()
 
-        // reviewState への反映は初回解答のみ。再出題（retry）は表示だけ
-        if !item.isRetry {
-            item.word.reviewState = ReviewScheduler.reviewed(item.word.reviewState, isCorrect: isCorrect)
-            modelContext.saveOrLog()
-            firstAnswerCount += 1
-            if isCorrect {
-                firstCorrectCount += 1
-            } else {
-                retryQueue.append(item.word)
-            }
+        // 解答のたびに反映する（正解+25% / 不正解−25%、100%でクリア）
+        let newState = ReviewScheduler.answered(item.word.reviewState, isCorrect: isCorrect)
+        item.word.reviewState = newState
+        modelContext.saveOrLog()
+        answerCount += 1
+        if isCorrect {
+            correctAnswerCount += 1
         }
-        feedback = Feedback(isCorrect: isCorrect, correctAnswer: correctAnswer)
+
+        // クリア（dueDate が前進して今日の対象から外れた）なら再出題しない。
+        // 未クリアならキュー末尾へ戻す（他の単語が残っていれば連続出題にならない）
+        let isCleared = !ReviewScheduler.isDue(newState)
+        if isCleared {
+            clearedWordCount += 1
+        } else {
+            wordQueue.append(item.word)
+        }
+        feedback = Feedback(
+            isCorrect: isCorrect,
+            correctAnswer: correctAnswer,
+            masteryPercent: isCleared ? 100 : newState.masteryPercent,
+            isCleared: isCleared
+        )
     }
 
     // MARK: - 音声・イラスト

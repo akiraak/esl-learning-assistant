@@ -191,9 +191,11 @@ Word                                          (Lessonに従属しない独立エ
 レッスンをまたいでも同じ単語であればこの状態を共有する（レッスンごとに復習履歴が分散しない）。
 
 - 復習ステップ: `[3日, 7日, 14日, 30日, 90日]`（stepIndex 0〜4）。90日到達後は 90日間隔を維持
-- 正解 → `dueDate = 今日 + 現在ステップの日数` とし、ステップを1つ進める（最終ステップでは維持。
-  新規単語の初回正解は +3日）。
-  不正解 → stepIndex 0 に戻し `dueDate = 今日 + 3日`（同日中の再出題はセッション内のみ）
+- 習熟度方式（[docs/plans/archive/review-mastery-progress.md](../plans/archive/review-mastery-progress.md)）:
+  解答のたびに `masteryPercent` を増減する（正解 +25% / 不正解 −25%、0〜100 でクランプ）
+  - 100% 到達 = クリア → `dueDate = 今日 + 現在ステップの日数` とし、ステップを1つ進め
+    （最終ステップでは維持）、masteryPercent を 0 に戻す（新規単語の初回クリアは +3日）
+  - 不正解 → stepIndex 0 に戻す。dueDate は変えない（クリアするまで出題対象に残る）
 - 判定はローカル日付（Calendar）基準。`dueDate <= 今日` の単語が「今日の復習」対象
 - 計算ロジックはモデルから分離した純関数 `ReviewScheduler` に置く（SM-2 / FSRS への将来差し替えを想定）
 
@@ -205,6 +207,7 @@ Word                                          (Lessonに従属しない独立エ
 | stepIndex | Int | 現在の復習ステップ（初期値 0） |
 | correctCount | Int | 累計正解数（初期値 0） |
 | lapseCount | Int | 不正解でリセットされた回数（初期値 0） |
+| masteryPercent | Int | 現在周回の習熟度 0〜100%（初期値 0。100 でクリアと同時に 0 へ戻る） |
 
 - 既存レコードには追加フィールドをデフォルト値（0）で吸収する（SwiftData 埋め込み構造体のため
   マイグレーション不要）

@@ -1,7 +1,7 @@
 import XCTest
 @testable import ESLLearningAssistant
 
-/// stepIndex / correctCount / lapseCount 追加前に保存されたデータの後方互換を確認する。
+/// stepIndex / correctCount / lapseCount / masteryPercent 追加前に保存されたデータの後方互換を確認する。
 final class WordReviewStateTests: XCTestCase {
     func testDecodeLegacyDataWithoutNewFields() throws {
         // 旧フィールドのみのJSON（Dateは既定のtimeIntervalSinceReferenceDate表現）
@@ -16,6 +16,7 @@ final class WordReviewStateTests: XCTestCase {
         XCTAssertEqual(state.stepIndex, 0)
         XCTAssertEqual(state.correctCount, 0)
         XCTAssertEqual(state.lapseCount, 0)
+        XCTAssertEqual(state.masteryPercent, 0)
     }
 
     func testEncodeDecodeRoundTripKeepsNewFields() throws {
@@ -25,7 +26,8 @@ final class WordReviewStateTests: XCTestCase {
             reviewCount: 5,
             stepIndex: 3,
             correctCount: 4,
-            lapseCount: 1
+            lapseCount: 1,
+            masteryPercent: 50
         )
         let data = try JSONEncoder().encode(state)
         let decoded = try JSONDecoder().decode(WordReviewState.self, from: data)
@@ -36,5 +38,6 @@ final class WordReviewStateTests: XCTestCase {
         XCTAssertEqual(decoded.stepIndex, 3)
         XCTAssertEqual(decoded.correctCount, 4)
         XCTAssertEqual(decoded.lapseCount, 1)
+        XCTAssertEqual(decoded.masteryPercent, 50)
     }
 }

@@ -122,10 +122,14 @@ final class ReviewSessionUITests: XCTestCase {
         attach(app, "05-session-summary")
         doneButton.tap()
 
-        // 全単語が解答済み → 今日の復習は完了表示
+        // 習熟度方式では正誤に応じて未クリアの単語が due に残ることがあるため、
+        // 完了表示（全単語クリア）か再開カード（未クリアあり）のどちらかに戻ればよい
         let completeLabel = app.staticTexts["reviewCompleteLabel"]
-        XCTAssertTrue(completeLabel.waitForExistence(timeout: 5))
-        attach(app, "06-review-complete-card")
+        XCTAssertTrue(
+            completeLabel.waitForExistence(timeout: 5)
+                || app.buttons["reviewStartButton"].waitForExistence(timeout: 5)
+        )
+        attach(app, "06-review-card-after-session")
     }
 
     /// WordDetailView の Review セクション: 新規登録語は「Due today」・Step 1/5・Reviews 0 を表示する
