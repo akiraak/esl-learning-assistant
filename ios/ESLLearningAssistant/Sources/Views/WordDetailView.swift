@@ -444,66 +444,63 @@ private struct WordAIInfoSections: View {
 }
 
 /// 単語の意味を直感的に伝えるAI生成イラスト（GPT Image 2）の行。
-/// 端末ローカルに保存済みなら即表示、未生成なら行の表示と同時にバックグラウンドで
-/// 自動生成を開始し（スピナー表示）、完了したら画像表示に切り替わる。失敗時は
-/// エラーメッセージ + Retry ボタン。生成した画像はサーバと端末ローカルの両方に保存され、
-/// 2回目以降の生成はサーバキャッシュ、再訪時の表示は端末ローカルから行われる。
+/// 生成はAI単語情報の完成に続けて WordIllustrationGenerator が自動で開始しており、
+/// この行は端末ローカルに保存済みなら即表示、生成中ならスピナーを出して完成し次第
+/// 画像に差し替える。未着手（AI情報だけ生成済みの既存単語など）なら行の表示時に生成を
+/// 開始する。失敗時はエラーメッセージ + Retry ボタン。生成した画像はサーバと端末ローカル
+/// の両方に保存され、2回目以降の生成はサーバキャッシュ、再訪時の表示は端末ローカルから行われる。
 private struct WordIllustrationRow: View {
     let wordText: String
     let targetLanguage: String
 
-    @State private var isGenerating = false
-    @State private var errorMessage: String?
+    // 生成そのものは共有の WordIllustrationGenerator が担う（AI情報生成完了後の自動生成と共用、
+    // キー単位で多重リクエスト排他）。この行は生成状態を観測して表示を切り替えるだけ。
+    // body は image / inFlight / failures を読んで分岐するため、生成完了・失敗で確実に再描画される
+    @ObservedObject private var generator = WordIllustrationGenerator.shared
+    @State private var image: UIImage?
 
     var body: some View {
-        // 存在チェックのみで軽量。生成完了で isGenerating が変わると再評価されて画像表示に切り替わる
-        let localURL = WordIllustrationStore.localURL(word: wordText, targetLanguage: targetLanguage)
-        if let localURL, let uiImage = UIImage(contentsOfFile: localURL.path) {
-            Image(uiImage: uiImage)
-                .resizable()
-                .scaledToFit()
-                .frame(maxWidth: .infinity)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8))
-                .accessibilityLabel("Illustration of \(wordText)")
-                .accessibilityIdentifier("wordIllustrationImage")
-        } else if let errorMessage {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(errorMessage)
-                    .font(.footnote)
-                    .foregroundStyle(.red)
-                Button {
-                    generate()
-                } label: {
-                    Label("Retry", systemImage: "arrow.clockwise")
+        let isGenerating = generator.isGenerating(word: wordText, targetLanguage: targetLanguage)
+        Group {
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: .infinity)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8))
+                    .accessibilityLabel("Illustration of \(wordText)")
+                    .accessibilityIdentifier("wordIllustrationImage")
+            } else if let errorMessage = generator.failureMessage(word: wordText, targetLanguage: targetLanguage) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(errorMessage)
+                        .font(.footnote)
+                        .foregroundStyle(.red)
+                    Button {
+                        generator.generateIfNeeded(word: wordText, targetLanguage: targetLanguage)
+                    } label: {
+                        Label("Retry", systemImage: "arrow.clockwise")
+                    }
+                    .accessibilityIdentifier("wordIllustrationRetryButton")
                 }
-                .accessibilityIdentifier("wordIllustrationRetryButton")
+            } else {
+                HStack(spacing: 12) {
+                    ProgressView()
+                    Text("Generating illustration…")
+                        .foregroundStyle(.secondary)
+                }
+                .accessibilityIdentifier("wordIllustrationGeneratingLabel")
             }
-        } else {
-            HStack(spacing: 12) {
-                ProgressView()
-                Text("Generating illustration…")
-                    .foregroundStyle(.secondary)
-            }
-            .accessibilityIdentifier("wordIllustrationGeneratingLabel")
-            // 未生成なら表示と同時にバックグラウンドで生成を始める（isGenerating 中は generate() 側で弾く）
-            .onAppear(perform: generate)
         }
-    }
-
-    /// サーバで生成（保存済みならサーバキャッシュ返却）したPNGを端末ローカルに保存する
-    private func generate() {
-        guard !isGenerating else { return }
-        isGenerating = true
-        errorMessage = nil
-        Task {
-            defer { isGenerating = false }
-            do {
-                let data = try await RemoteWordIllustrationService()
-                    .fetchIllustration(word: wordText, targetLanguage: targetLanguage, senseIndex: 0)
-                try WordIllustrationStore.save(data: data, word: wordText, targetLanguage: targetLanguage)
-            } catch {
-                errorMessage = error.localizedDescription
+        // 表示時と生成完了時（inFlight から消えた時）にローカルファイルを読み込む。
+        // ファイルも失敗記録も無ければここから生成を開始する（AI情報だけ生成済みの既存単語向け）
+        .task(id: isGenerating) {
+            guard image == nil, !isGenerating else { return }
+            if let localURL = WordIllustrationStore.localURL(word: wordText, targetLanguage: targetLanguage),
+               let cached = UIImage(contentsOfFile: localURL.path) {
+                image = cached
+            } else if generator.failureMessage(word: wordText, targetLanguage: targetLanguage) == nil {
+                generator.generateIfNeeded(word: wordText, targetLanguage: targetLanguage)
             }
         }
     }
@@ -567,7 +564,8 @@ private struct TTSButton: View {
     private func generate() {
         guard !isGenerating else { return }
         isGenerating = true
-        Task {
+        // @State への書き込みを MainActor 上で行う（外すとメインスレッド外更新になり再描画されないことがある）
+        Task { @MainActor in
             defer { isGenerating = false }
             do {
                 let data = try await BackendAPI.post(

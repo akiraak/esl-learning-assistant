@@ -16,9 +16,12 @@ final class RemoteWordIllustrationService: WordIllustrationService {
     }
 
     func fetchIllustration(word: String, targetLanguage: String, senseIndex: Int = 0) async throws -> Data {
+        // サーバ側の画像生成は最大120秒（illustration.ts の REQUEST_TIMEOUT_MS）かかるため、
+        // URLRequest 既定の60秒では生成完了前にiOS側だけタイムアウトしてしまう
         try await BackendAPI.post(
             path: "api/word-illustration",
-            body: RequestBody(word: word, targetLanguage: targetLanguage, senseIndex: senseIndex)
+            body: RequestBody(word: word, targetLanguage: targetLanguage, senseIndex: senseIndex),
+            timeout: 180
         )
     }
 }

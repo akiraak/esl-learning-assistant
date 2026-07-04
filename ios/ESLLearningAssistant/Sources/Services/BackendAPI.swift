@@ -63,8 +63,12 @@ enum BackendAPI {
     }
 
     /// JSONボディをPOSTし、200ならレスポンスボディを返す。失敗はステータス・ボディをログに残して throw する。
-    static func post(path: String, body: some Encodable) async throws -> Data {
+    /// timeout はサーバ側の処理が URLRequest 既定の60秒を超えうるAPI（画像生成など）で指定する。
+    static func post(path: String, body: some Encodable, timeout: TimeInterval? = nil) async throws -> Data {
         var request = try makeRequest(path: path, method: "POST")
+        if let timeout {
+            request.timeoutInterval = timeout
+        }
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(body)
         return try await send(request, path: path)

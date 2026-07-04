@@ -60,6 +60,10 @@ final class WordAIInfoGenerator {
                     word: wordText, targetLanguage: targetLanguage, regenerate: regenerate
                 )
             }
+            // イラストもテキスト情報の完成に続けてバックグラウンド生成しておく（詳細画面を
+            // 開いていなくても走る）。失敗しても単語情報の成功表示には影響させず、詳細画面の
+            // イラスト行から Retry できる
+            WordIllustrationGenerator.shared.generateIfNeeded(word: wordText, targetLanguage: targetLanguage)
         } catch {
             word.aiInfoStatus = .failed
             word.aiInfoErrorMessage = error.localizedDescription

@@ -1,5 +1,23 @@
 # DONE
 
+- [x] 2026-07-04 AI単語情報の生成完了後にイラスト生成を自動でバックグラウンド開始する [plan](docs/plans/archive/word-illustration-auto-generate-after-ai-info.md)
+      従来はイラスト生成が単語詳細のイラスト行の表示時にしか始まらなかった。共有の
+      WordIllustrationGenerator（@MainActor シングルトン、キー単位で多重リクエスト排他）を
+      新設し、WordAIInfoGenerator の単語情報生成成功直後に自動でイラスト生成を連結。
+      詳細画面を開いていなくても生成が走り、開いていればテキスト表示直後はスピナー →
+      完成し次第画像に自動差し替え。WordIllustrationRow は生成状態（@Published）を観測する
+      表示専用に変更。ビルド・ユニットテスト全55件成功。実機での確認は未実施。
+
+- [x] 2026-07-04 単語詳細のイラストが生成完了後も「生成中」のまま表示されないバグを修正 [plan](docs/plans/archive/word-illustration-not-refreshing.md)
+      調査結果: 画像生成は単語追加時ではなく、単語詳細のイラスト行が表示された瞬間に開始される。
+      原因は WordIllustrationRow の body がローカルファイルの存在チェックだけで分岐し
+      @State を読んでいなかったため、生成完了しても再描画が起きなかったこと。加えて
+      Task {} が MainActor 外で @State を書き込んでいた。表示画像を @State image として
+      保持し .task（MainActor）で読み込み/生成する形に修正。iOS 側の60秒タイムアウトが
+      バックエンドの生成時間（最大120秒）より短い問題も timeout: 180 指定で解消。
+      TTSButton の同パターン（MainActor 外の @State 書き込み）も修正。ビルド・ユニット
+      テスト全55件成功。実機での再現確認は未実施。
+
 - [x] 2026-07-04 単語クイズで正解しても Mastery が保存されず 0% のままでクリアできないバグを修正 [plan](docs/plans/archive/review-mastery-persistence-fix.md)
       原因は WordReviewState の CodingKeys リネーム（masteryPercentStorage → "masteryPercent" 等）。
       SwiftData は埋め込み Codable のカラムを実プロパティ名（ZMASTERYPERCENTSTORAGE）で作る一方、
