@@ -1,5 +1,10 @@
 # DONE
 
+- [x] 2026-07-03 管理画面の単語一覧にクイズ問題の生成ボタンを追加 [plan](docs/plans/archive/admin-words-quiz-generate-button.md)
+      実機の Today's Review が「Preparing Questions」のまま進まない問題（本番の quiz_questions が空、
+      アプリの fire-and-forget 自己修復も不発）への対処。/admin/words 一覧と単語詳細に「クイズ」列を追加し、
+      0件は生成ボタン（既存の /admin/quiz-questions/regenerate を利用、失敗時はエラーがブラウザに表示され
+      診断に使える）、1件以上は問題数を詳細リンクで表示。ローカルで experience 61問の実生成を確認済み。
 - [x] 2026-07-03 WordReviewState 追加フィールドによるマイグレーション失敗を修正（実機で「クラスを作成しても表示されない」バグ） [plan](docs/plans/archive/fix-reviewstate-migration-failure.md)
       原因: 復習クイズ Phase 2 で埋め込み Codable の WordReviewState に非オプショナルの
       stepIndex/correctCount/lapseCount を追加したため、既存 Word 行を持つストア（実機）で

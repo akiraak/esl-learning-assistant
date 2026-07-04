@@ -3,6 +3,7 @@ import { Router } from "express";
 import { marked } from "marked";
 import fs from "fs";
 import {
+  countQuizQuestions,
   deleteQuizQuestions,
   deleteStoredWord,
   deleteTtsAudio,
@@ -546,6 +547,22 @@ function firstMeaningPreview(row: StoredWordRow): string {
   }
 }
 
+/// 単語一覧・詳細に出すクイズ問題の状態表示。
+/// 0件は生成ボタン（アプリの自己修復トリガに頼らず管理画面から生成でき、失敗時はエラーが見える）、
+/// 1件以上は問題数を詳細ページへのリンクで表示する
+function quizStatusCell(word: string, targetLanguage: string): string {
+  const count = countQuizQuestions(word, targetLanguage);
+  if (count > 0) {
+    return `<a href="/admin/quiz-questions/item?${quizItemQuery(word, targetLanguage)}">${count}問</a>`;
+  }
+  return `
+    <form method="post" action="/admin/quiz-questions/regenerate?${quizItemQuery(word, targetLanguage)}"
+          onsubmit="return confirm('この単語のクイズ問題を生成します。よろしいですか？')">
+      <button type="submit" class="btn btn-primary">生成</button>
+    </form>
+  `;
+}
+
 adminRouter.get("/words", (_req, res) => {
   const words = listStoredWords();
 
@@ -559,6 +576,7 @@ adminRouter.get("/words", (_req, res) => {
           <td>${escapeHtml(firstMeaningPreview(row))}</td>
           <td class="dim">${escapeHtml(row.model)}</td>
           <td class="mono dim">${row.generation_count}</td>
+          <td>${quizStatusCell(row.word, row.target_language)}</td>
           <td class="mono dim">${escapeHtml(formatSeattleTime(row.created_at))}</td>
           <td class="mono dim">${escapeHtml(formatSeattleTime(row.updated_at))}</td>
           <td><a href="/admin/words/${row.id}">詳細 →</a></td>
@@ -579,7 +597,7 @@ adminRouter.get("/words", (_req, res) => {
             <thead>
               <tr>
                 <th>ID</th><th>単語</th><th>母語</th><th>先頭語義</th>
-                <th>モデル</th><th>生成回数</th><th>作成日時</th><th>更新日時</th><th></th>
+                <th>モデル</th><th>生成回数</th><th>クイズ</th><th>作成日時</th><th>更新日時</th><th></th>
               </tr>
             </thead>
             <tbody>${rows}</tbody>
@@ -621,6 +639,7 @@ adminRouter.get("/words/:id", (req, res) => {
       <tr><th>ユーザー訳語</th><td>${row.user_translation ? escapeHtml(row.user_translation) : "(なし)"}</td></tr>
       <tr><th>モデル</th><td>${escapeHtml(row.model)}</td></tr>
       <tr><th>生成回数</th><td>${row.generation_count}</td></tr>
+      <tr><th>クイズ問題</th><td>${quizStatusCell(row.word, row.target_language)}</td></tr>
       <tr><th>作成日時</th><td>${escapeHtml(formatSeattleTime(row.created_at))}</td></tr>
       <tr><th>更新日時</th><td>${escapeHtml(formatSeattleTime(row.updated_at))}</td></tr>
     </table>
