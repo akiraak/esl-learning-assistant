@@ -19,50 +19,29 @@ final class WordIllustrationGenerator: ObservableObject {
         self.service = service
     }
 
-    func isGenerating(word: String, targetLanguage: String, senseIndex: Int = 0) -> Bool {
-        inFlight.contains(WordIllustrationStore.key(word: word, targetLanguage: targetLanguage, senseIndex: senseIndex))
+    func isGenerating(word: String, targetLanguage: String) -> Bool {
+        inFlight.contains(WordIllustrationStore.key(word: word, targetLanguage: targetLanguage))
     }
 
-    func failureMessage(word: String, targetLanguage: String, senseIndex: Int = 0) -> String? {
-        failures[WordIllustrationStore.key(word: word, targetLanguage: targetLanguage, senseIndex: senseIndex)]
+    func failureMessage(word: String, targetLanguage: String) -> String? {
+        failures[WordIllustrationStore.key(word: word, targetLanguage: targetLanguage)]
     }
 
     /// 端末ローカルに未保存かつ生成中でなければ、サーバ生成 → ローカル保存を開始してすぐ戻る。
     /// サーバに保存済みならサーバキャッシュが返るだけなので、二重呼び出しにも安全。
-    /// senseIndex は同綴異義の語義ごとに別イラストを持たせるためのキー要素（辞書式分割）。
-    ///
-    /// regenerate: true で端末ローカルの既存画像を消してから作りなおし、サーバにも再生成を要求する。
-    /// AI情報の生成直後に使う。キーが (word, language, senseIndex) のみで語義内容を含まないため、
-    /// 同じ単語を再登録すると古い語義の画像が残っていて再利用されてしまうのを防ぐ。
-    func generateIfNeeded(
-        word: String,
-        targetLanguage: String,
-        senseIndex: Int = 0,
-        regenerate: Bool = false,
-        definition: String? = nil,
-        exampleSentence: String? = nil
-    ) {
-        let key = WordIllustrationStore.key(word: word, targetLanguage: targetLanguage, senseIndex: senseIndex)
-        if regenerate {
-            WordIllustrationStore.remove(word: word, targetLanguage: targetLanguage, senseIndex: senseIndex)
-        } else if WordIllustrationStore.localURL(word: word, targetLanguage: targetLanguage, senseIndex: senseIndex) != nil {
-            return  // 既に生成済み
-        }
-        guard !inFlight.contains(key) else { return }
+    func generateIfNeeded(word: String, targetLanguage: String) {
+        let key = WordIllustrationStore.key(word: word, targetLanguage: targetLanguage)
+        guard WordIllustrationStore.localURL(word: word, targetLanguage: targetLanguage) == nil,
+              !inFlight.contains(key) else { return }
         inFlight.insert(key)
         failures[key] = nil
         Task {
             defer { inFlight.remove(key) }
             do {
                 let data = try await service.fetchIllustration(
-                    word: word,
-                    targetLanguage: targetLanguage,
-                    senseIndex: senseIndex,
-                    regenerate: regenerate,
-                    definition: definition,
-                    exampleSentence: exampleSentence
+                    word: word, targetLanguage: targetLanguage, senseIndex: 0
                 )
-                try WordIllustrationStore.save(data: data, word: word, targetLanguage: targetLanguage, senseIndex: senseIndex)
+                try WordIllustrationStore.save(data: data, word: word, targetLanguage: targetLanguage)
             } catch {
                 failures[key] = error.localizedDescription
             }

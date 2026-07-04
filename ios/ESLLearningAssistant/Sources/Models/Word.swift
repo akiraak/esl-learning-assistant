@@ -13,15 +13,6 @@ final class Word {
     var registeredAt: Date
     var reviewState: WordReviewState
 
-    // 多義語の辞書式分割（docs/plans/dictionary-style-word-split.md）。
-    // 同綴異義（fall=落ちる/秋 など）は別 Word エントリに分割し、この判別子で区別する。
-    // 単語の同一性が実質 text から (text, senseGroupKey) に変わる。
-    // 非オプショナル追加は SwiftData のライトウェイトマイグレーションを壊すため、必ず
-    // optional + 既定 nil の nullable カラムにする（reviewState / WordReviewState のコメント参照）。
-    // nil は主見出し（primary、単一見出しも含む）。兄弟見出し（別見出し）は "1","2"… の連番文字列。
-    // イラストの senseIndex（primary=0, 兄弟=1,2…）にもこの番号を使う。
-    var senseGroupKey: String?
-
     // AI生成情報（docs/plans/word-ai-info-generation.md）。
     // すべてoptional/デフォルトありにして既存データの軽量マイグレーションを維持する。
     var aiInfo: WordAIInfo?
@@ -58,23 +49,6 @@ final class Word {
     }
 }
 
-extension Word {
-    /// このエントリが担当する同綴異義グループ番号。nil（primary・単一見出し）は 0、兄弟は 1,2…。
-    var senseGroupNumber: Int {
-        senseGroupKey.flatMap { Int($0) } ?? 0
-    }
-
-    /// イラストのキャッシュキー要素。見出しごとに別画像を持たせるため senseGroupNumber をそのまま使う
-    /// （primary=0, 兄弟=1,2…）。見出しごとに aiInfo が独立しているため絞り込みは不要。
-    var illustrationSenseIndex: Int { senseGroupNumber }
-
-    /// イラスト生成プロンプトに渡す、この見出しの英語定義（サーバは兄弟見出しの blob を持たないため直接渡す）
-    var illustrationDefinition: String? { aiInfo?.senses.first?.englishDefinition }
-
-    /// イラスト生成プロンプトに渡す、この見出しの例文
-    var illustrationExampleSentence: String? { aiInfo?.examples.first?.english }
-}
-
 enum ExampleSentenceSource: String, Codable {
     case textbook
     case aiGenerated
@@ -101,14 +75,6 @@ struct WordAIInfo: Codable {
         var note: String?
     }
 
-    /// 語源・意味が無関係な別見出し（同綴異義）のラベル。見出しごとに個別生成するためのヒント。
-    struct Homograph: Codable {
-        /// 別見出しの母語での意味（例:「秋」）
-        var meaning: String
-        /// 品詞（母語表記。例:「名詞」）
-        var partOfSpeech: String
-    }
-
     struct Pronunciation: Codable {
         /// IPA発音記号（例: /ˈæp.əl/）
         var ipa: String
@@ -129,10 +95,8 @@ struct WordAIInfo: Codable {
         var translation: String
     }
 
-    /// この見出し語の語義1〜4件（関連多義のみ）。教科書文脈で使われた語義が先頭
+    /// 語義1〜3件。教科書文脈で使われた語義が先頭
     var senses: [Sense]
-    /// 語源・意味が無関係な別見出し（同綴異義）。分割生成のトリガに使う。旧データには無いため optional
-    var otherHomographs: [Homograph]?
     var pronunciation: Pronunciation
     /// 語形変化（該当するもののみ。0件可）
     var inflections: [Inflection]

@@ -10,14 +10,12 @@ struct WordInfoResponse: Decodable {
 
 @MainActor
 protocol WordInfoService {
-    /// senseHint 指定時は、その意味の見出し（同綴異義のうちの1つ）に限定して生成する。
     func fetchWordInfo(
         word: String,
         targetLanguage: String,
         context: String?,
         userTranslation: String?,
-        regenerate: Bool,
-        senseHint: String?
+        regenerate: Bool
     ) async throws -> WordInfoResponse
 }
 
@@ -30,7 +28,6 @@ final class RemoteWordInfoService: WordInfoService {
         let context: String?
         let userTranslation: String?
         let regenerate: Bool
-        let senseHint: String?
     }
 
     func fetchWordInfo(
@@ -38,8 +35,7 @@ final class RemoteWordInfoService: WordInfoService {
         targetLanguage: String,
         context: String?,
         userTranslation: String?,
-        regenerate: Bool,
-        senseHint: String? = nil
+        regenerate: Bool
     ) async throws -> WordInfoResponse {
         let data = try await BackendAPI.post(
             path: "api/word-info",
@@ -48,8 +44,7 @@ final class RemoteWordInfoService: WordInfoService {
                 targetLanguage: targetLanguage,
                 context: context,
                 userTranslation: userTranslation,
-                regenerate: regenerate,
-                senseHint: senseHint
+                regenerate: regenerate
             )
         )
         return try JSONDecoder().decode(WordInfoResponse.self, from: data)

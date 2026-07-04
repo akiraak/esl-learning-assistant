@@ -47,15 +47,4 @@ final class WordIllustrationStoreTests: XCTestCase {
         WordIllustrationStore.removeAll()
         XCTAssertNil(WordIllustrationStore.localURL(word: word, targetLanguage: "ja"))
     }
-
-    /// remove は指定した (word, language, senseIndex) だけを消し、別 senseIndex の画像は残す
-    func testRemoveOnlyDeletesGivenSenseIndex() throws {
-        try WordIllustrationStore.save(data: data, word: word, targetLanguage: "ja", senseIndex: 0)
-        try WordIllustrationStore.save(data: data, word: word, targetLanguage: "ja", senseIndex: 1)
-
-        WordIllustrationStore.remove(word: word, targetLanguage: "ja", senseIndex: 0)
-
-        XCTAssertNil(WordIllustrationStore.localURL(word: word, targetLanguage: "ja", senseIndex: 0))
-        XCTAssertNotNil(WordIllustrationStore.localURL(word: word, targetLanguage: "ja", senseIndex: 1))
-    }
 }

@@ -195,23 +195,9 @@ struct WordDetailView: View {
         }
     }
 
-    /// イラストのキャッシュキーに使う言語。AI情報を生成した言語に揃える（未記録の旧データは設定値）
-    private var illustrationLanguage: String {
-        word.aiInfoLanguage
-            ?? UserDefaults.standard.string(forKey: AppSettingsKeys.targetLanguageCode)
-            ?? AppSettingsKeys.defaultTargetLanguageCode
-    }
-
     /// 単語本体を削除して一覧に戻る。cascade で全レッスンの WordOccurrence も消える
     private func deleteWord() {
         dismiss()
-        // 端末ローカルのイラストも消す。残すとキーが (word, language, senseIndex) のみで
-        // 語義内容を含まないため、同じ単語を再登録したとき古い語義の画像が再利用されてしまう。
-        WordIllustrationStore.remove(
-            word: word.text,
-            targetLanguage: illustrationLanguage,
-            senseIndex: word.illustrationSenseIndex
-        )
         modelContext.delete(word)
         // autosave任せだと直後にアプリが強制終了された場合に失われるため明示的に保存する
         modelContext.saveOrLog()
@@ -260,9 +246,10 @@ struct WordDetailView: View {
                 WordAIInfoSections(
                     info: info,
                     wordText: word.text,
-                    // 見出しごとのイラストキー（辞書式分割）。primary=0, 兄弟見出し=1,2…
-                    senseIndex: word.illustrationSenseIndex,
-                    targetLanguage: illustrationLanguage,
+                    // イラストのキャッシュキーはAI情報を生成した言語に揃える（未記録の旧データは設定値）
+                    targetLanguage: word.aiInfoLanguage
+                        ?? UserDefaults.standard.string(forKey: AppSettingsKeys.targetLanguageCode)
+                        ?? AppSettingsKeys.defaultTargetLanguageCode,
                     speechService: speechService,
                     speakingText: $speakingText,
                     ttsPlayback: ttsPlayback,
@@ -277,8 +264,6 @@ struct WordDetailView: View {
 private struct WordAIInfoSections: View {
     let info: WordAIInfo
     let wordText: String
-    /// 見出しごとのイラストキー要素（辞書式分割）
-    let senseIndex: Int
     let targetLanguage: String
     @ObservedObject var speechService: SpeechService
     @Binding var speakingText: String?
@@ -287,14 +272,7 @@ private struct WordAIInfoSections: View {
 
     var body: some View {
         Section("Illustration") {
-            WordIllustrationRow(
-                wordText: wordText,
-                targetLanguage: targetLanguage,
-                senseIndex: senseIndex,
-                // 兄弟見出しはサーバに blob が無いため、この見出しの定義・例文を作画に直接渡す
-                definition: info.senses.first?.englishDefinition,
-                exampleSentence: info.examples.first?.english
-            )
+            WordIllustrationRow(wordText: wordText, targetLanguage: targetLanguage)
         }
 
         Section("Pronunciation") {
@@ -493,11 +471,6 @@ private struct WordAIInfoSections: View {
 private struct WordIllustrationRow: View {
     let wordText: String
     let targetLanguage: String
-    /// 語義ごとのイラストキー要素（同綴異義の辞書式分割）
-    let senseIndex: Int
-    /// この見出しの英語定義・例文（作画プロンプト用。兄弟見出しはサーバに blob が無いため直接渡す）
-    let definition: String?
-    let exampleSentence: String?
 
     // 生成そのものは共有の WordIllustrationGenerator が担う（AI情報生成完了後の自動生成と共用、
     // キー単位で多重リクエスト排他）。この行は生成状態を観測して表示を切り替えるだけ。
@@ -506,7 +479,7 @@ private struct WordIllustrationRow: View {
     @State private var image: UIImage?
 
     var body: some View {
-        let isGenerating = generator.isGenerating(word: wordText, targetLanguage: targetLanguage, senseIndex: senseIndex)
+        let isGenerating = generator.isGenerating(word: wordText, targetLanguage: targetLanguage)
         Group {
             if let image {
                 Image(uiImage: image)
@@ -517,16 +490,13 @@ private struct WordIllustrationRow: View {
                     .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8))
                     .accessibilityLabel("Illustration of \(wordText)")
                     .accessibilityIdentifier("wordIllustrationImage")
-            } else if let errorMessage = generator.failureMessage(word: wordText, targetLanguage: targetLanguage, senseIndex: senseIndex) {
+            } else if let errorMessage = generator.failureMessage(word: wordText, targetLanguage: targetLanguage) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(errorMessage)
                         .font(.footnote)
                         .foregroundStyle(.red)
                     Button {
-                        generator.generateIfNeeded(
-                            word: wordText, targetLanguage: targetLanguage, senseIndex: senseIndex,
-                            definition: definition, exampleSentence: exampleSentence
-                        )
+                        generator.generateIfNeeded(word: wordText, targetLanguage: targetLanguage)
                     } label: {
                         Label("Retry", systemImage: "arrow.clockwise")
                     }
@@ -545,14 +515,11 @@ private struct WordIllustrationRow: View {
         // ファイルも失敗記録も無ければここから生成を開始する（AI情報だけ生成済みの既存単語向け）
         .task(id: isGenerating) {
             guard image == nil, !isGenerating else { return }
-            if let localURL = WordIllustrationStore.localURL(word: wordText, targetLanguage: targetLanguage, senseIndex: senseIndex),
+            if let localURL = WordIllustrationStore.localURL(word: wordText, targetLanguage: targetLanguage),
                let cached = UIImage(contentsOfFile: localURL.path) {
                 image = cached
-            } else if generator.failureMessage(word: wordText, targetLanguage: targetLanguage, senseIndex: senseIndex) == nil {
-                generator.generateIfNeeded(
-                    word: wordText, targetLanguage: targetLanguage, senseIndex: senseIndex,
-                    definition: definition, exampleSentence: exampleSentence
-                )
+            } else if generator.failureMessage(word: wordText, targetLanguage: targetLanguage) == nil {
+                generator.generateIfNeeded(word: wordText, targetLanguage: targetLanguage)
             }
         }
     }

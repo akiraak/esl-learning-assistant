@@ -176,7 +176,7 @@ const WORD_MAX_LENGTH = 100;
 const WORD_INFO_CONTEXT_MAX_LENGTH = 8000;
 
 app.post("/api/word-info", async (req, res) => {
-  const { word, targetLanguage, context, userTranslation, regenerate, senseHint } = req.body ?? {};
+  const { word, targetLanguage, context, userTranslation, regenerate } = req.body ?? {};
 
   if (typeof word !== "string" || !word.trim()) {
     logger.warn("word-info: rejected (word is required)");
@@ -208,17 +208,8 @@ app.post("/api/word-info", async (req, res) => {
     res.status(400).json({ error: "regenerate must be a boolean" });
     return;
   }
-  if (senseHint !== undefined && typeof senseHint !== "string") {
-    logger.warn("word-info: rejected (senseHint must be a string)");
-    res.status(400).json({ error: "senseHint must be a string" });
-    return;
-  }
 
   const trimmedWord = word.trim();
-  // senseHint 指定時は同綴異義の1見出しに限定した生成。primary の (word, language) ブロブとは
-  // 別内容なので、キャッシュを読まず・書かない（primary を上書きしないため）。
-  const trimmedSenseHint =
-    typeof senseHint === "string" && senseHint.trim() ? senseHint.trim() : undefined;
   // 教科書ページ全文が来るため長すぎる場合は先頭側を残して切り詰める（拒否はしない）
   const trimmedContext =
     typeof context === "string" && context.trim()
@@ -231,8 +222,8 @@ app.post("/api/word-info", async (req, res) => {
 
   const startedAt = Date.now();
 
-  // 保存済みなら Claude API を呼ばずに返す（regenerate / senseHint 指定時は作りなおす）
-  if (!regenerate && !trimmedSenseHint) {
+  // 保存済みなら Claude API を呼ばずに返す（regenerate 指定時は作りなおす）
+  if (!regenerate) {
     const stored = getStoredWord(trimmedWord, targetLanguage);
     if (stored) {
       const latencyMs = Date.now() - startedAt;
@@ -266,25 +257,20 @@ app.post("/api/word-info", async (req, res) => {
       trimmedWord,
       targetLanguage,
       trimmedContext,
-      trimmedUserTranslation,
-      trimmedSenseHint
+      trimmedUserTranslation
     );
     const latencyMs = Date.now() - startedAt;
     const costUsd = estimateCostUsd(result.model, result.inputTokens, result.outputTokens);
     const wordInfoJson = JSON.stringify(result.wordInfo);
 
-    // senseHint 指定（同綴異義の別見出し）は primary の (word, language) ブロブを上書きしないよう保存しない。
-    // 各見出しの内容はクライアント（iOS の Word.aiInfo）が永続化する。
-    if (!trimmedSenseHint) {
-      upsertStoredWord({
-        word: trimmedWord,
-        targetLanguage,
-        wordInfoJson,
-        model: result.model,
-        context: trimmedContext ?? null,
-        userTranslation: trimmedUserTranslation ?? null,
-      });
-    }
+    upsertStoredWord({
+      word: trimmedWord,
+      targetLanguage,
+      wordInfoJson,
+      model: result.model,
+      context: trimmedContext ?? null,
+      userTranslation: trimmedUserTranslation ?? null,
+    });
 
     insertWordInfoLog({
       word: trimmedWord,
@@ -519,7 +505,7 @@ app.post("/api/tts", async (req, res) => {
 const ILLUSTRATION_SENSE_INDEX_MAX = 9;
 
 app.post("/api/word-illustration", async (req, res) => {
-  const { word, targetLanguage, senseIndex, regenerate, definition, exampleSentence } = req.body ?? {};
+  const { word, targetLanguage, senseIndex } = req.body ?? {};
 
   if (typeof word !== "string" || !word.trim()) {
     logger.warn("word-illustration: rejected (word is required)");
@@ -555,10 +541,7 @@ app.post("/api/word-illustration", async (req, res) => {
     .createHash("sha256")
     .update(`${ILLUSTRATION_MODEL}|${normalizeWordKey(trimmedWord)}|${targetLanguage}|${resolvedSenseIndex}`)
     .digest("hex");
-  // regenerate 指定時はキャッシュを無視して作りなおす（単語の削除→再登録で語義が変わった等）。
-  // キーが (model, word, language, senseIndex) のみで語義内容を含まないため、キャッシュには
-  // 古い語義の画像が残りうる。同一 keyHash で上書き保存するので upsert 側の変更は不要。
-  const cached = regenerate ? undefined : getWordIllustrationByHash(keyHash);
+  const cached = getWordIllustrationByHash(keyHash);
   if (cached) {
     const cachedPath = path.join(config.illustrationsDir, cached.filename);
     if (fs.existsSync(cachedPath)) {
@@ -570,30 +553,25 @@ app.post("/api/word-illustration", async (req, res) => {
     logger.warn(`word-illustration: cached file missing, re-generating hash=${keyHash.slice(0, 12)}`);
   }
 
-  // 作画プロンプトに含める英語定義と例文を決める。
-  // 見出しごとに個別生成する同綴異義（senseIndex>0）はサーバに blob が無いため、クライアントが
-  // その見出しの定義・例文を直接渡す。渡されなければ保存済み word_info_json（primary）から補う。
-  let resolvedDefinition: string | undefined =
-    typeof definition === "string" && definition.trim() ? definition.trim() : undefined;
-  let resolvedExample: string | undefined =
-    typeof exampleSentence === "string" && exampleSentence.trim() ? exampleSentence.trim() : undefined;
-  if (!resolvedDefinition) {
-    const stored = getStoredWord(trimmedWord, targetLanguage);
-    if (stored) {
-      try {
-        const info = JSON.parse(stored.word_info_json) as WordInfo;
-        resolvedDefinition = info.senses[resolvedSenseIndex]?.englishDefinition || info.senses[0]?.englishDefinition || undefined;
-        resolvedExample = resolvedExample ?? (info.examples[0]?.english || undefined);
-      } catch {
-        logger.warn(`word-illustration: broken word_info_json for word="${trimmedWord}", generating without it`);
-      }
+  // 保存済みの単語情報（words.word_info_json）から該当義の英語定義と例文を取ってプロンプトに含める。
+  // 未生成の単語や該当義が無い場合は単語のみで生成する。
+  let definition: string | undefined;
+  let exampleSentence: string | undefined;
+  const stored = getStoredWord(trimmedWord, targetLanguage);
+  if (stored) {
+    try {
+      const info = JSON.parse(stored.word_info_json) as WordInfo;
+      definition = info.senses[resolvedSenseIndex]?.englishDefinition || undefined;
+      exampleSentence = info.examples[0]?.english || undefined;
+    } catch {
+      logger.warn(`word-illustration: broken word_info_json for word="${trimmedWord}", generating without it`);
     }
   }
 
-  const prompt = buildIllustrationPrompt(trimmedWord, resolvedDefinition, resolvedExample);
+  const prompt = buildIllustrationPrompt(trimmedWord, definition, exampleSentence);
   logger.info(
     `word-illustration: start word="${trimmedWord}" targetLanguage=${targetLanguage} ` +
-      `senseIndex=${resolvedSenseIndex} definition=${resolvedDefinition ? "yes" : "no"} model=${ILLUSTRATION_MODEL}`
+      `senseIndex=${resolvedSenseIndex} wordInfo=${stored ? "yes" : "no"} model=${ILLUSTRATION_MODEL}`
   );
   try {
     const { png, inputTokens, outputTokens } = await generateIllustration(prompt);
