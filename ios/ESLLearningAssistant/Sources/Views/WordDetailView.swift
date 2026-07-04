@@ -331,7 +331,7 @@ private struct WordAIInfoSections: View {
         if !info.inflections.isEmpty {
             Section("Word Forms") {
                 ForEach(Array(info.inflections.enumerated()), id: \.offset) { _, inflection in
-                    LabeledContent(inflection.form, value: inflection.text)
+                    LabeledContent(Self.englishInflectionLabel(inflection.form), value: inflection.text)
                 }
             }
         }
@@ -440,6 +440,25 @@ private struct WordAIInfoSections: View {
             Text(text)
         }
         .padding(.vertical, 2)
+    }
+
+    /// 語形変化のラベル。旧データは母語（日本語）で保存されているため、
+    /// 既知の日本語ラベルは英語の文法用語に変換して表示する（未知のものはそのまま）。
+    static func englishInflectionLabel(_ form: String) -> String {
+        let map: [String: String] = [
+            "三人称単数現在形": "third-person singular",
+            "三人称単数現在": "third-person singular",
+            "三人称単数": "third-person singular",
+            "過去形": "past tense",
+            "過去分詞": "past participle",
+            "現在分詞": "present participle",
+            "動名詞": "gerund",
+            "複数形": "plural",
+            "比較級": "comparative",
+            "最上級": "superlative",
+            "原形": "base form",
+        ]
+        return map[form] ?? form
     }
 }
 

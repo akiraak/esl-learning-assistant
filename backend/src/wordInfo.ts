@@ -46,7 +46,11 @@ const WORD_INFO_SCHEMA = {
       items: {
         type: "object",
         properties: {
-          form: { type: "string", description: "変化の種類（母語。例:「過去形」）" },
+          form: {
+            type: "string",
+            description:
+              "変化の種類を英語の文法用語で。例: \"third-person singular\", \"past tense\", \"past participle\", \"present participle\", \"plural\", \"comparative\", \"superlative\"",
+          },
           text: { type: "string", description: "変化形（例: \"ran\"）" },
         },
         required: ["form", "text"],

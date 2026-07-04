@@ -1,5 +1,11 @@
 # DONE
 
+- [x] 2026-07-04 単語詳細の Word Forms の左項目名を英語にする [plan](docs/plans/archive/word-forms-english-labels.md)
+      backend の wordInfo.ts の inflections[].form を英語の文法用語（past tense, past participle 等）で
+      生成するよう structured output の description を変更し dist を再ビルド。既存データは日本語ラベルで
+      保存済みのため、iOS の WordDetailView（WordAIInfoSections.englishInflectionLabel）で既知の日本語
+      ラベルを英語へマッピングして表示（未知はそのまま）。backend tsc・iOS ビルド成功。
+
 - [x] 2026-07-04 AI単語情報の生成完了後にイラスト生成を自動でバックグラウンド開始する [plan](docs/plans/archive/word-illustration-auto-generate-after-ai-info.md)
       従来はイラスト生成が単語詳細のイラスト行の表示時にしか始まらなかった。共有の
       WordIllustrationGenerator（@MainActor シングルトン、キー単位で多重リクエスト排他）を
