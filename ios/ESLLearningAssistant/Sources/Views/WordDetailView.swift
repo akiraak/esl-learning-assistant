@@ -441,8 +441,9 @@ private struct WordAIInfoSections: View {
 }
 
 /// 単語の意味を直感的に伝えるAI生成イラスト（GPT Image 2）の行。
-/// 端末ローカルに保存済みなら即表示、未生成なら生成ボタン → スピナー → 表示の
-/// TTSButton と同様の状態遷移。生成した画像はサーバと端末ローカルの両方に保存され、
+/// 端末ローカルに保存済みなら即表示、未生成なら行の表示と同時にバックグラウンドで
+/// 自動生成を開始し（スピナー表示）、完了したら画像表示に切り替わる。失敗時は
+/// エラーメッセージ + Retry ボタン。生成した画像はサーバと端末ローカルの両方に保存され、
 /// 2回目以降の生成はサーバキャッシュ、再訪時の表示は端末ローカルから行われる。
 private struct WordIllustrationRow: View {
     let wordText: String
@@ -463,27 +464,27 @@ private struct WordIllustrationRow: View {
                 .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8))
                 .accessibilityLabel("Illustration of \(wordText)")
                 .accessibilityIdentifier("wordIllustrationImage")
-        } else if isGenerating {
+        } else if let errorMessage {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(errorMessage)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+                Button {
+                    generate()
+                } label: {
+                    Label("Retry", systemImage: "arrow.clockwise")
+                }
+                .accessibilityIdentifier("wordIllustrationRetryButton")
+            }
+        } else {
             HStack(spacing: 12) {
                 ProgressView()
                 Text("Generating illustration…")
                     .foregroundStyle(.secondary)
             }
             .accessibilityIdentifier("wordIllustrationGeneratingLabel")
-        } else {
-            VStack(alignment: .leading, spacing: 6) {
-                Button {
-                    generate()
-                } label: {
-                    Label("Generate Illustration", systemImage: "photo.badge.plus")
-                }
-                .accessibilityIdentifier("wordIllustrationGenerateButton")
-                if let errorMessage {
-                    Text(errorMessage)
-                        .font(.footnote)
-                        .foregroundStyle(.red)
-                }
-            }
+            // 未生成なら表示と同時にバックグラウンドで生成を始める（isGenerating 中は generate() 側で弾く）
+            .onAppear(perform: generate)
         }
     }
 

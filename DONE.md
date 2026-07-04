@@ -1,5 +1,10 @@
 # DONE
 
+- [x] 2026-07-03 単語詳細のイラストをバックグラウンドで生成して終わったら表示する [plan](docs/plans/archive/word-illustration-auto-generate.md)
+      手動の「Generate Illustration」ボタンを廃止し、詳細画面を開いたら自動でバックグラウンド生成を
+      開始（スピナー表示）→ 完了で画像表示に切り替わるようにした。失敗時はエラー + Retry ボタン。
+      イラストセクションは AI 情報 completed 時のみ描画されるため素材未生成の状態で走ることはない。
+      ローカル backend + シミュレータの UI テストで自動生成→表示を確認済み。
 - [x] 2026-07-03 管理画面の単語一覧にクイズ問題の生成ボタンを追加 [plan](docs/plans/archive/admin-words-quiz-generate-button.md)
       実機の Today's Review が「Preparing Questions」のまま進まない問題（本番の quiz_questions が空、
       アプリの fire-and-forget 自己修復も不発）への対処。/admin/words 一覧と単語詳細に「クイズ」列を追加し、
