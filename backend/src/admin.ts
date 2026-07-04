@@ -163,7 +163,7 @@ const NAV_ITEMS: Array<[NavSection, string, string]> = [
   ["ocr", "/admin", "OCR・翻訳ログ"],
   ["word-info", "/admin/word-info", "単語情報ログ"],
   ["words", "/admin/words", "単語一覧"],
-  ["quiz-questions", "/admin/quiz-questions", "クイズ問題"],
+  ["quiz-questions", "/admin/quiz-questions", "単語クイズ"],
   ["tts", "/admin/tts", "TTS一覧"],
   ["illustrations", "/admin/illustrations", "単語イラスト"],
   ["pricing", "/admin/pricing", "AI料金"],
@@ -1171,10 +1171,10 @@ adminRouter.get("/quiz-questions", (_req, res) => {
 
   res.type("html").send(
     renderPage(
-      "ESL Assistant - クイズ問題",
+      "ESL Assistant - 単語クイズ",
       "",
       `
-        <h1>復習クイズ問題</h1>
+        <h1>単語クイズ</h1>
         <p class="page-sub">単語×言語ごとに、形式（tc1〜vt2）別の複数バリエーションを保存。iOS はこの中からランダムに出題する</p>
         <div class="stats">
           <div class="stat"><div class="lbl">単語数</div><div class="val">${summaries.length}</div></div>
@@ -1221,7 +1221,7 @@ adminRouter.get("/quiz-questions/item", (req, res) => {
   if (rows.length === 0) {
     res.status(404).type("html").send(
       renderPage(
-        "クイズ問題が見つかりません",
+        "単語クイズが見つかりません",
         "",
         '<p>指定された単語の問題は存在しません。</p><p><a href="/admin/quiz-questions">← 一覧に戻る</a></p>'
       )
@@ -1256,7 +1256,7 @@ adminRouter.get("/quiz-questions/item", (req, res) => {
 
   const body = `
     <p><a href="/admin/quiz-questions">← 一覧に戻る</a></p>
-    <h1>クイズ問題: ${escapeHtml(rows[0].word)} <span class="dim">(${escapeHtml(targetLanguage)})</span></h1>
+    <h1>単語クイズ: ${escapeHtml(rows[0].word)} <span class="dim">(${escapeHtml(targetLanguage)})</span></h1>
     <p class="page-sub">全${rows.length}問 / 生成コスト $${totalCost.toFixed(4)} / 最終生成 ${escapeHtml(formatSeattleTime(rows[0].created_at))}</p>
 
     <div class="action-buttons" style="display:flex; gap:12px; margin:16px 0 24px;">
@@ -1279,7 +1279,7 @@ adminRouter.get("/quiz-questions/item", (req, res) => {
       </table>
     </div>
   `;
-  res.type("html").send(renderPage(`クイズ問題: ${rows[0].word} - ESL Assistant`, "", body, "quiz-questions"));
+  res.type("html").send(renderPage(`単語クイズ: ${rows[0].word} - ESL Assistant`, "", body, "quiz-questions"));
 });
 
 adminRouter.post("/quiz-questions/delete", (req, res) => {
