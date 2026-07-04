@@ -40,5 +40,8 @@ enum DebugDataCleaner {
             context.delete(word)
         }
         try context.save()
+        // イラストはSwiftData管理外のファイルなのでcascadeでは消えない。全Word削除に合わせて
+        // ディレクトリごと消す（deleteAllClasses が PhotoStorage.deleteAll() で画像を消すのと同様）
+        WordIllustrationStore.removeAll()
     }
 }
