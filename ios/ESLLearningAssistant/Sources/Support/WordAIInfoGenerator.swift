@@ -59,11 +59,16 @@ final class WordAIInfoGenerator {
             // イラストもテキスト情報の完成に続けてバックグラウンド生成しておく（詳細画面を
             // 開いていなくても走る）。失敗しても単語情報の成功表示には影響させず、詳細画面の
             // イラスト行から Retry できる。分割後は各エントリの語義ごとに1枚ずつ生成する。
+            //
+            // regenerate: true で作りなおす。イラストのキーは (word, language, senseIndex) のみで
+            // 語義内容を含まないため、削除→再登録した単語は古い語義の画像が残っていると再利用されて
+            // しまう。AI情報を生成しなおしたこのタイミングで、必ず今の語義の画像に更新する。
             for entry in entries {
                 WordIllustrationGenerator.shared.generateIfNeeded(
                     word: entry.text,
                     targetLanguage: targetLanguage,
-                    senseIndex: entry.illustrationSenseIndex
+                    senseIndex: entry.illustrationSenseIndex,
+                    regenerate: true
                 )
             }
         } catch {

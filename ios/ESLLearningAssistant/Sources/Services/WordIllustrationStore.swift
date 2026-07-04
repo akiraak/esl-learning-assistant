@@ -37,6 +37,14 @@ enum WordIllustrationStore {
         return url
     }
 
+    /// 指定した語義のイラストを端末ローカルから削除する。
+    /// 単語削除時に呼ぶ。残すと同じ単語を再登録したとき、キーが (word, language, senseIndex)
+    /// のみで語義内容を含まないため、古い語義の画像がそのまま再利用されてしまう。
+    static func remove(word: String, targetLanguage: String, senseIndex: Int = 0) {
+        let url = fileURL(word: word, targetLanguage: targetLanguage, senseIndex: senseIndex)
+        try? FileManager.default.removeItem(at: url)
+    }
+
     /// 保存済みイラストを全削除する（Settingsのデバッグメニュー等からの利用を想定）
     static func removeAll() {
         try? FileManager.default.removeItem(at: directory)

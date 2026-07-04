@@ -195,9 +195,23 @@ struct WordDetailView: View {
         }
     }
 
+    /// イラストのキャッシュキーに使う言語。AI情報を生成した言語に揃える（未記録の旧データは設定値）
+    private var illustrationLanguage: String {
+        word.aiInfoLanguage
+            ?? UserDefaults.standard.string(forKey: AppSettingsKeys.targetLanguageCode)
+            ?? AppSettingsKeys.defaultTargetLanguageCode
+    }
+
     /// 単語本体を削除して一覧に戻る。cascade で全レッスンの WordOccurrence も消える
     private func deleteWord() {
         dismiss()
+        // 端末ローカルのイラストも消す。残すとキーが (word, language, senseIndex) のみで
+        // 語義内容を含まないため、同じ単語を再登録したとき古い語義の画像が再利用されてしまう。
+        WordIllustrationStore.remove(
+            word: word.text,
+            targetLanguage: illustrationLanguage,
+            senseIndex: word.illustrationSenseIndex
+        )
         modelContext.delete(word)
         // autosave任せだと直後にアプリが強制終了された場合に失われるため明示的に保存する
         modelContext.saveOrLog()
@@ -250,10 +264,7 @@ struct WordDetailView: View {
                     senses: word.groupSenses,
                     // 語義ごとのイラストキー（辞書式分割）。担当グループの先頭語義のインデックス
                     senseIndex: word.illustrationSenseIndex,
-                    // イラストのキャッシュキーはAI情報を生成した言語に揃える（未記録の旧データは設定値）
-                    targetLanguage: word.aiInfoLanguage
-                        ?? UserDefaults.standard.string(forKey: AppSettingsKeys.targetLanguageCode)
-                        ?? AppSettingsKeys.defaultTargetLanguageCode,
+                    targetLanguage: illustrationLanguage,
                     speechService: speechService,
                     speakingText: $speakingText,
                     ttsPlayback: ttsPlayback,

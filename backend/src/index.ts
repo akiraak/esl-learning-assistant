@@ -505,7 +505,7 @@ app.post("/api/tts", async (req, res) => {
 const ILLUSTRATION_SENSE_INDEX_MAX = 9;
 
 app.post("/api/word-illustration", async (req, res) => {
-  const { word, targetLanguage, senseIndex } = req.body ?? {};
+  const { word, targetLanguage, senseIndex, regenerate } = req.body ?? {};
 
   if (typeof word !== "string" || !word.trim()) {
     logger.warn("word-illustration: rejected (word is required)");
@@ -541,7 +541,10 @@ app.post("/api/word-illustration", async (req, res) => {
     .createHash("sha256")
     .update(`${ILLUSTRATION_MODEL}|${normalizeWordKey(trimmedWord)}|${targetLanguage}|${resolvedSenseIndex}`)
     .digest("hex");
-  const cached = getWordIllustrationByHash(keyHash);
+  // regenerate 指定時はキャッシュを無視して作りなおす（単語の削除→再登録で語義が変わった等）。
+  // キーが (model, word, language, senseIndex) のみで語義内容を含まないため、キャッシュには
+  // 古い語義の画像が残りうる。同一 keyHash で上書き保存するので upsert 側の変更は不要。
+  const cached = regenerate ? undefined : getWordIllustrationByHash(keyHash);
   if (cached) {
     const cachedPath = path.join(config.illustrationsDir, cached.filename);
     if (fs.existsSync(cachedPath)) {
