@@ -1,5 +1,12 @@
 # DONE
 
+- [x] 2026-07-03 管理画面で単語クイズの音声データを再生できるようにする [plan](docs/plans/archive/admin-quiz-audio-playback.md)
+      単語クイズ詳細（/admin/quiz-questions/item）の問題テーブルに「音声」列を追加し、
+      audioText のプリ合成済み音声（sha256("flash|text") で tts_audio を照合）を
+      TTS一覧と同じ <audio> プレイヤーで再生できるようにした。未合成は「音声未合成」、
+      audioText なしは「—」表示。配信は既存 /admin/tts/:id/audio を再利用（新規APIなし）。
+      ローカルサーバで apple / banana のページに全プレイヤーが出力され audio/wav が
+      返ることを確認済み。
 - [x] 2026-07-03 単語追加時に入力欄に最初からフォーカスを当てる（クラス作成、レッスン作成も同様に） [plan](docs/plans/archive/word-add-focus.md)
       WordAddView に @FocusState + .onAppear によるフォーカス処理を追加し、単語追加シートを
       開いた直後から入力できるようにした。ClassAddView / LessonAddView は既に同パターンで

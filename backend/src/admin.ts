@@ -1,4 +1,5 @@
 import path from "path";
+import crypto from "crypto";
 import { Router } from "express";
 import { marked } from "marked";
 import fs from "fs";
@@ -12,6 +13,7 @@ import {
   getRequestLog,
   getStoredWord,
   getStoredWordById,
+  getTtsAudioByHash,
   getTtsAudioById,
   getWordIllustrationById,
   getWordInfoLog,
@@ -40,7 +42,7 @@ import { generateIllustration, ILLUSTRATION_MODEL } from "./illustration";
 import { DEFAULT_IMAGE_PRICING, DEFAULT_PRICING, DEFAULT_TTS_PRICING, estimateCostUsd, getCurrentPricing } from "./pricing";
 import { fetchAndApplyPricing, fetchAndApplyTtsPricing } from "./pricingSync";
 import { logger } from "./logger";
-import { pregenerateQuizAudio } from "./ttsStore";
+import { pregenerateQuizAudio, QUIZ_TTS_MODEL } from "./ttsStore";
 
 export const adminRouter = Router();
 
@@ -1234,6 +1236,17 @@ function quizAnswerSummary(question: QuizQuestion): string {
   return options;
 }
 
+/// audioText のプリ合成済み音声プレイヤー。キャッシュキーは ttsStore の
+/// sha256("model|text")（モデルはクイズ音声固定の QUIZ_TTS_MODEL）と一致させる。
+/// 未合成（プリ合成失敗など）の場合はその旨を表示する。
+function quizAudioCell(audioText: string | null): string {
+  if (!audioText) return `<span class="faint">—</span>`;
+  const textHash = crypto.createHash("sha256").update(`${QUIZ_TTS_MODEL}|${audioText}`).digest("hex");
+  const row = getTtsAudioByHash(textHash);
+  if (!row) return `<span class="faint">音声未合成</span>`;
+  return `<audio controls preload="none" src="/admin/tts/${row.id}/audio" style="width:220px;height:32px;"></audio>`;
+}
+
 adminRouter.get("/quiz-questions/item", (req, res) => {
   const word = String(req.query.word ?? "");
   const targetLanguage = String(req.query.targetLanguage ?? "");
@@ -1266,6 +1279,7 @@ adminRouter.get("/quiz-questions/item", (req, res) => {
         <tr class="log-row">
           <td class="mono"><strong>${escapeHtml(row.format)}</strong> <span class="faint">v${row.variant_index}</span></td>
           <td>${escapeHtml(question.instruction)}${prompt ? `<br>${prompt}` : ""}</td>
+          <td>${quizAudioCell(question.audioText)}</td>
           <td>${quizAnswerSummary(question)}</td>
           <td class="dim">${escapeHtml(row.model)}</td>
           <td class="mono dim">$${row.cost_usd.toFixed(4)}</td>
@@ -1293,7 +1307,7 @@ adminRouter.get("/quiz-questions/item", (req, res) => {
     <div class="card">
       <table>
         <thead>
-          <tr><th>形式</th><th>問題</th><th>回答</th><th>モデル</th><th>コスト</th></tr>
+          <tr><th>形式</th><th>問題</th><th>音声</th><th>回答</th><th>モデル</th><th>コスト</th></tr>
         </thead>
         <tbody>${tableRows}</tbody>
       </table>
