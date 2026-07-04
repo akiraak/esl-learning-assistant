@@ -13,6 +13,14 @@ final class Word {
     var registeredAt: Date
     var reviewState: WordReviewState
 
+    // 多義語の辞書式分割（docs/plans/dictionary-style-word-split.md）。
+    // 同綴異義（fall=落ちる/秋 など）は別 Word エントリに分割し、この判別子で区別する。
+    // 単語の同一性が実質 text から (text, senseGroupKey) に変わる。
+    // 非オプショナル追加は SwiftData のライトウェイトマイグレーションを壊すため、必ず
+    // optional + 既定 nil の nullable カラムにする（reviewState / WordReviewState のコメント参照）。
+    // 値は homographGroup 番号の文字列（"0","1"…）。nil は分割前・単一グループ（=グループ0）。
+    var senseGroupKey: String?
+
     // AI生成情報（docs/plans/word-ai-info-generation.md）。
     // すべてoptional/デフォルトありにして既存データの軽量マイグレーションを維持する。
     var aiInfo: WordAIInfo?
@@ -49,6 +57,31 @@ final class Word {
     }
 }
 
+extension Word {
+    /// このエントリが担当する同綴異義グループ番号。nil（分割前・単一グループ）は 0。
+    var senseGroupNumber: Int {
+        senseGroupKey.flatMap { Int($0) } ?? 0
+    }
+
+    /// このエントリのグループに属する語義だけを返す（詳細画面の Meanings 表示用）。
+    /// aiInfo は全グループの語義を保持しているため、表示時にグループで絞り込む。
+    /// homographGroup 未設定の旧データや、絞り込み結果が空の場合は全語義にフォールバックする。
+    var groupSenses: [WordAIInfo.Sense] {
+        guard let senses = aiInfo?.senses, !senses.isEmpty else { return [] }
+        let group = senseGroupNumber
+        let filtered = senses.filter { ($0.homographGroup ?? 0) == group }
+        return filtered.isEmpty ? senses : filtered
+    }
+
+    /// イラスト生成に渡す senseIndex。サーバは保存済み word_info の senses[senseIndex] の
+    /// 定義で作画するため、このグループの先頭語義の「全語義配列内でのインデックス」を返す。
+    var illustrationSenseIndex: Int {
+        guard let senses = aiInfo?.senses else { return 0 }
+        let group = senseGroupNumber
+        return senses.firstIndex { ($0.homographGroup ?? 0) == group } ?? 0
+    }
+}
+
 enum ExampleSentenceSource: String, Codable {
     case textbook
     case aiGenerated
@@ -73,6 +106,10 @@ struct WordAIInfo: Codable {
         var partOfSpeech: String
         /// ニュアンス・使い分け
         var note: String?
+        /// 同綴異義の見出しグループ番号（0始まり）。語源・意味が無関係な語だけ別番号。
+        /// homographGroup 追加前に保存された aiInfo ブロブには存在しないため optional。
+        /// 未設定（旧データ・単一グループ）は 0 グループ扱いにする（Word.senseGroupNumber 等）。
+        var homographGroup: Int?
     }
 
     struct Pronunciation: Codable {

@@ -294,4 +294,97 @@ final class WordAIInfoGeneratorTests: XCTestCase {
 
         XCTAssertEqual(service.lastContext, "My uncle runs a small bakery.")
     }
+
+    // MARK: - 多義語の辞書式分割
+
+    /// homographGroup が2つ（落ちる=0 / 秋=1）の "fall" のレスポンス
+    private func makeSplitResponse() -> WordInfoResponse {
+        WordInfoResponse(
+            wordInfo: WordAIInfo(
+                senses: [
+                    .init(meaning: "落ちる", englishDefinition: "to drop down", partOfSpeech: "動詞", note: nil, homographGroup: 0),
+                    .init(meaning: "秋", englishDefinition: "the season after summer", partOfSpeech: "名詞", note: nil, homographGroup: 1),
+                ],
+                pronunciation: .init(ipa: "/fɔːl/", syllables: nil),
+                inflections: [],
+                examples: [.init(english: "Leaves fall in autumn.", translation: "秋に葉が落ちる。")],
+                collocations: [],
+                synonyms: [],
+                antonyms: [],
+                usageNote: nil,
+                cefrLevel: "A1",
+                etymology: nil,
+                register: nil,
+                commonMistakes: nil
+            ),
+            model: "claude-haiku-4-5",
+            cached: nil
+        )
+    }
+
+    /// 同綴異義（homographGroup が複数）は、先頭グループを base に、追加グループを兄弟 Word に分割する
+    func testGenerateSplitsHomographsIntoSiblingWords() async throws {
+        let context = try makeContext()
+        let word = Word(text: "fall", translation: "")
+        context.insert(word)
+
+        let service = MockWordInfoService()
+        service.result = .success(makeSplitResponse())
+        let generator = WordAIInfoGenerator(service: service)
+
+        await generator.generate(for: word)
+
+        // base = 先頭グループ（落ちる）
+        XCTAssertEqual(word.translation, "落ちる")
+        XCTAssertEqual(word.senseGroupKey, "0")
+        XCTAssertEqual(word.groupSenses.map(\.meaning), ["落ちる"])
+        XCTAssertEqual(word.illustrationSenseIndex, 0)
+
+        // 兄弟 = 追加グループ（秋）
+        let all = try context.fetch(FetchDescriptor<Word>())
+        XCTAssertEqual(all.count, 2)
+        let sibling = try XCTUnwrap(all.first { $0.id != word.id })
+        XCTAssertEqual(sibling.text, "fall")
+        XCTAssertEqual(sibling.translation, "秋")
+        XCTAssertEqual(sibling.senseGroupKey, "1")
+        XCTAssertEqual(sibling.groupSenses.map(\.meaning), ["秋"])
+        // 秋グループの先頭語義は全語義配列のインデックス1（サーバ作画キーと一致させる）
+        XCTAssertEqual(sibling.illustrationSenseIndex, 1)
+        XCTAssertEqual(sibling.aiInfoStatus, .completed)
+        XCTAssertEqual(sibling.aiInfoModel, "claude-haiku-4-5")
+    }
+
+    /// 単一グループ（関連多義・品詞転換のみ）は分割せず senseGroupKey も付けない
+    func testGenerateDoesNotSplitSingleGroup() async throws {
+        let context = try makeContext()
+        let word = Word(text: "apple", translation: "")
+        context.insert(word)
+
+        let service = MockWordInfoService()
+        service.result = .success(makeResponse())
+        let generator = WordAIInfoGenerator(service: service)
+
+        await generator.generate(for: word)
+
+        XCTAssertNil(word.senseGroupKey)
+        let all = try context.fetch(FetchDescriptor<Word>())
+        XCTAssertEqual(all.count, 1)
+    }
+
+    /// 再生成しても兄弟 Word を重複生成しない（同 text・同 senseGroupKey は照合してスキップ）
+    func testGenerateDoesNotDuplicateSiblingsOnRerun() async throws {
+        let context = try makeContext()
+        let word = Word(text: "fall", translation: "")
+        context.insert(word)
+
+        let service = MockWordInfoService()
+        service.result = .success(makeSplitResponse())
+        let generator = WordAIInfoGenerator(service: service)
+
+        await generator.generate(for: word)
+        await generator.generate(for: word, regenerate: true)
+
+        let all = try context.fetch(FetchDescriptor<Word>())
+        XCTAssertEqual(all.count, 2)
+    }
 }

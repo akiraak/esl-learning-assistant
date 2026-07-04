@@ -431,7 +431,7 @@ struct ReviewSessionView: View {
                 }
             }
 
-            if let image = illustrationImage(for: item.word.text) {
+            if let image = illustrationImage(for: item.word) {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFit()
@@ -730,14 +730,26 @@ struct ReviewSessionView: View {
         }
     }
 
-    private func illustrationImage(for wordText: String) -> UIImage? {
-        guard let word = allWords.first(where: { $0.text == wordText }),
-              let url = illustrationURL(for: word) else { return nil }
+    /// 出題中の単語（Word が分かる場合）はこちらを使う。同綴異義でも id 由来の
+    /// senseGroupKey から正しい語義のイラストを引ける。
+    private func illustrationImage(for word: Word) -> UIImage? {
+        guard let url = illustrationURL(for: word) else { return nil }
         return UIImage(contentsOfFile: url.path)
     }
 
+    /// 選択肢の単語テキストだけが分かる場合のフォールバック。同綴異義があると
+    /// どのエントリか一意に定まらないため先頭一致で解決する（クイズの語義分離は Phase 2）。
+    private func illustrationImage(for wordText: String) -> UIImage? {
+        guard let word = allWords.first(where: { $0.text == wordText }) else { return nil }
+        return illustrationImage(for: word)
+    }
+
     private func illustrationURL(for word: Word) -> URL? {
-        WordIllustrationStore.localURL(word: word.text, targetLanguage: targetLanguage(for: word))
+        WordIllustrationStore.localURL(
+            word: word.text,
+            targetLanguage: targetLanguage(for: word),
+            senseIndex: word.illustrationSenseIndex
+        )
     }
 
     /// イラストのキャッシュキーはAI情報を生成した言語に揃える（WordDetailView と同じ解決順）

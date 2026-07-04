@@ -19,19 +19,20 @@ final class WordIllustrationGenerator: ObservableObject {
         self.service = service
     }
 
-    func isGenerating(word: String, targetLanguage: String) -> Bool {
-        inFlight.contains(WordIllustrationStore.key(word: word, targetLanguage: targetLanguage))
+    func isGenerating(word: String, targetLanguage: String, senseIndex: Int = 0) -> Bool {
+        inFlight.contains(WordIllustrationStore.key(word: word, targetLanguage: targetLanguage, senseIndex: senseIndex))
     }
 
-    func failureMessage(word: String, targetLanguage: String) -> String? {
-        failures[WordIllustrationStore.key(word: word, targetLanguage: targetLanguage)]
+    func failureMessage(word: String, targetLanguage: String, senseIndex: Int = 0) -> String? {
+        failures[WordIllustrationStore.key(word: word, targetLanguage: targetLanguage, senseIndex: senseIndex)]
     }
 
     /// 端末ローカルに未保存かつ生成中でなければ、サーバ生成 → ローカル保存を開始してすぐ戻る。
     /// サーバに保存済みならサーバキャッシュが返るだけなので、二重呼び出しにも安全。
-    func generateIfNeeded(word: String, targetLanguage: String) {
-        let key = WordIllustrationStore.key(word: word, targetLanguage: targetLanguage)
-        guard WordIllustrationStore.localURL(word: word, targetLanguage: targetLanguage) == nil,
+    /// senseIndex は同綴異義の語義ごとに別イラストを持たせるためのキー要素（辞書式分割）。
+    func generateIfNeeded(word: String, targetLanguage: String, senseIndex: Int = 0) {
+        let key = WordIllustrationStore.key(word: word, targetLanguage: targetLanguage, senseIndex: senseIndex)
+        guard WordIllustrationStore.localURL(word: word, targetLanguage: targetLanguage, senseIndex: senseIndex) == nil,
               !inFlight.contains(key) else { return }
         inFlight.insert(key)
         failures[key] = nil
@@ -39,9 +40,9 @@ final class WordIllustrationGenerator: ObservableObject {
             defer { inFlight.remove(key) }
             do {
                 let data = try await service.fetchIllustration(
-                    word: word, targetLanguage: targetLanguage, senseIndex: 0
+                    word: word, targetLanguage: targetLanguage, senseIndex: senseIndex
                 )
-                try WordIllustrationStore.save(data: data, word: word, targetLanguage: targetLanguage)
+                try WordIllustrationStore.save(data: data, word: word, targetLanguage: targetLanguage, senseIndex: senseIndex)
             } catch {
                 failures[key] = error.localizedDescription
             }

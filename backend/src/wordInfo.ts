@@ -11,7 +11,9 @@ const WORD_INFO_SCHEMA = {
     senses: {
       type: "array",
       description:
-        "語義1〜3件。context（教科書本文）がある場合は、そこで使われている語義を必ず先頭にする。",
+        "語義1〜5件。context（教科書本文）がある場合は、そこで使われている語義を必ず先頭にする。" +
+        "同綴異義（語源・意味が無関係な別見出し語）がある場合も senses は1つの配列にまとめ、" +
+        "各要素の homographGroup で見出しを区別する。同じ homographGroup の語義は配列内で隣接させる。",
       items: {
         type: "object",
         properties: {
@@ -23,8 +25,18 @@ const WORD_INFO_SCHEMA = {
           },
           partOfSpeech: { type: "string", description: "品詞（母語表記。例:「動詞」）" },
           note: { type: ["string", "null"], description: "ニュアンス・使い分け。特に無ければnull" },
+          homographGroup: {
+            type: "integer",
+            description:
+              "同綴異義の見出しグループ番号（0始まりの連番）。語源・意味が無関係な同綴異義" +
+              "（例: bank=銀行/川岸、fall=落ちる/秋、spring=春/ばね/泉）だけを別番号にする。" +
+              "関連する多義（例: run=走る/経営する）や、品詞転換しただけで意味が同じ語" +
+              "（例: rain=雨/雨が降る、water=水/水をやる）は同じ番号に保つ。" +
+              "判定基準は『1枚の絵で両方の意味を教えられるか。教えられない＝別グループ』。" +
+              "過剰に分割しないこと。context に対応する語義（senses 先頭）は必ずグループ0にする。",
+          },
         },
-        required: ["meaning", "englishDefinition", "partOfSpeech", "note"],
+        required: ["meaning", "englishDefinition", "partOfSpeech", "note", "homographGroup"],
         additionalProperties: false,
       },
     },
@@ -128,6 +140,8 @@ export interface WordSense {
   englishDefinition: string;
   partOfSpeech: string;
   note: string | null;
+  /** 同綴異義の見出しグループ番号（0始まり）。語源・意味が無関係な語だけ別番号 */
+  homographGroup: number;
 }
 
 export interface WordInfo {

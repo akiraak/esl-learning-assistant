@@ -246,6 +246,10 @@ struct WordDetailView: View {
                 WordAIInfoSections(
                     info: info,
                     wordText: word.text,
+                    // 同綴異義の分割エントリでは、このエントリのグループに属する語義のみ表示する
+                    senses: word.groupSenses,
+                    // 語義ごとのイラストキー（辞書式分割）。担当グループの先頭語義のインデックス
+                    senseIndex: word.illustrationSenseIndex,
                     // イラストのキャッシュキーはAI情報を生成した言語に揃える（未記録の旧データは設定値）
                     targetLanguage: word.aiInfoLanguage
                         ?? UserDefaults.standard.string(forKey: AppSettingsKeys.targetLanguageCode)
@@ -264,6 +268,10 @@ struct WordDetailView: View {
 private struct WordAIInfoSections: View {
     let info: WordAIInfo
     let wordText: String
+    /// このエントリのグループに属する語義（同綴異義の分割で絞り込み済み）
+    let senses: [WordAIInfo.Sense]
+    /// 語義ごとのイラストキー要素（辞書式分割）
+    let senseIndex: Int
     let targetLanguage: String
     @ObservedObject var speechService: SpeechService
     @Binding var speakingText: String?
@@ -272,7 +280,7 @@ private struct WordAIInfoSections: View {
 
     var body: some View {
         Section("Illustration") {
-            WordIllustrationRow(wordText: wordText, targetLanguage: targetLanguage)
+            WordIllustrationRow(wordText: wordText, targetLanguage: targetLanguage, senseIndex: senseIndex)
         }
 
         Section("Pronunciation") {
@@ -291,9 +299,9 @@ private struct WordAIInfoSections: View {
             badgeRow
         }
 
-        if !info.senses.isEmpty {
+        if !senses.isEmpty {
             Section("Meanings") {
-                ForEach(Array(info.senses.enumerated()), id: \.offset) { index, sense in
+                ForEach(Array(senses.enumerated()), id: \.offset) { index, sense in
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
                             Text("\(index + 1).")
@@ -471,6 +479,8 @@ private struct WordAIInfoSections: View {
 private struct WordIllustrationRow: View {
     let wordText: String
     let targetLanguage: String
+    /// 語義ごとのイラストキー要素（同綴異義の辞書式分割）
+    let senseIndex: Int
 
     // 生成そのものは共有の WordIllustrationGenerator が担う（AI情報生成完了後の自動生成と共用、
     // キー単位で多重リクエスト排他）。この行は生成状態を観測して表示を切り替えるだけ。
@@ -479,7 +489,7 @@ private struct WordIllustrationRow: View {
     @State private var image: UIImage?
 
     var body: some View {
-        let isGenerating = generator.isGenerating(word: wordText, targetLanguage: targetLanguage)
+        let isGenerating = generator.isGenerating(word: wordText, targetLanguage: targetLanguage, senseIndex: senseIndex)
         Group {
             if let image {
                 Image(uiImage: image)
@@ -490,13 +500,13 @@ private struct WordIllustrationRow: View {
                     .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8))
                     .accessibilityLabel("Illustration of \(wordText)")
                     .accessibilityIdentifier("wordIllustrationImage")
-            } else if let errorMessage = generator.failureMessage(word: wordText, targetLanguage: targetLanguage) {
+            } else if let errorMessage = generator.failureMessage(word: wordText, targetLanguage: targetLanguage, senseIndex: senseIndex) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(errorMessage)
                         .font(.footnote)
                         .foregroundStyle(.red)
                     Button {
-                        generator.generateIfNeeded(word: wordText, targetLanguage: targetLanguage)
+                        generator.generateIfNeeded(word: wordText, targetLanguage: targetLanguage, senseIndex: senseIndex)
                     } label: {
                         Label("Retry", systemImage: "arrow.clockwise")
                     }
@@ -515,11 +525,11 @@ private struct WordIllustrationRow: View {
         // ファイルも失敗記録も無ければここから生成を開始する（AI情報だけ生成済みの既存単語向け）
         .task(id: isGenerating) {
             guard image == nil, !isGenerating else { return }
-            if let localURL = WordIllustrationStore.localURL(word: wordText, targetLanguage: targetLanguage),
+            if let localURL = WordIllustrationStore.localURL(word: wordText, targetLanguage: targetLanguage, senseIndex: senseIndex),
                let cached = UIImage(contentsOfFile: localURL.path) {
                 image = cached
-            } else if generator.failureMessage(word: wordText, targetLanguage: targetLanguage) == nil {
-                generator.generateIfNeeded(word: wordText, targetLanguage: targetLanguage)
+            } else if generator.failureMessage(word: wordText, targetLanguage: targetLanguage, senseIndex: senseIndex) == nil {
+                generator.generateIfNeeded(word: wordText, targetLanguage: targetLanguage, senseIndex: senseIndex)
             }
         }
     }
