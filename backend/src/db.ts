@@ -190,6 +190,11 @@ db.exec(`
   )
 `);
 
+// 廃止した穴埋めテキスト入力形式（tt2）の保存済み問題を一掃する
+// （docs/plans/archive/remove-fill-blank-typing.md。冪等なので毎起動で実行してよい。
+//   vtt1 は音声で答えを特定できるため復活: docs/plans/archive/restore-vtt1.md）。
+db.exec("DELETE FROM quiz_questions WHERE format = 'tt2'");
+
 export interface RequestLogInput {
   imageFilename: string | null;
   targetLanguage: string;

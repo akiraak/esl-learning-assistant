@@ -95,7 +95,7 @@ function mappableInflections(info: WordInfo): { formEnglish: string; text: strin
     .filter((entry): entry is { formEnglish: string; text: string } => Boolean(entry.formEnglish && entry.text));
 }
 
-// -- 形式定義（AI 生成対象の24形式）
+// -- 形式定義（AI 生成対象の23形式）
 
 interface FormatSpec {
   id: string;
@@ -249,17 +249,9 @@ const AI_FORMAT_SPECS: FormatSpec[] = [
       `tt1: displayText に "${word}" の英語定義（tc1 と同様、表現はバリエーションごとに変える）。` +
       `instruction は「Type the word that matches this definition.」。acceptedAnswers は ["${word}"]。`,
   },
-  {
-    id: "tt2",
-    answerType: "typing",
-    needsDisplayText: true,
-    needsAudioText: false,
-    correctMustBeWord: false,
-    isAvailable: hasExamples,
-    promptSpec: (word) =>
-      `tt2: tc3 の入力版。"${word}"（または活用形）を "_____" にした英文を displayText に（新作）。` +
-      `instruction は「Type the word that completes the sentence.」。acceptedAnswers は空所にした形1つ。`,
-  },
+  // tt2（例文穴埋め入力）は空所の候補が多すぎて答えを特定できないため廃止
+  // （docs/plans/archive/remove-fill-blank-typing.md。4択版の tc3 は存続。
+  //   音声で答えを特定できる vtt1 は docs/plans/archive/restore-vtt1.md で復活）
   {
     id: "tt3",
     answerType: "typing",
@@ -380,8 +372,11 @@ const AI_FORMAT_SPECS: FormatSpec[] = [
     needsAudioText: true,
     correctMustBeWord: false,
     isAvailable: hasExamples,
+    // 生成指示は形式グループ（FORMATS_PER_CALL 分割）をまたぐ参照をしない自己完結の文にする
+    // （「vtc1 の入力版」のような参照は、別グループに分割された単語で生成漏れを起こした）
     promptSpec: (word) =>
-      `vtt1: vtc1 の入力版。audioText に完全な英文、displayText に空所付きの同じ文。` +
+      `vtt1: audioText に "${word}"（または活用形）を含む完全な英文（新作）、` +
+      `displayText にはその文の該当語を "_____" にしたもの。` +
       `instruction は「Listen and type the missing word.」。acceptedAnswers は空所にした形1つ。`,
   },
   {
@@ -654,7 +649,7 @@ function ruleQuestion(variantIndex: number, question: QuizQuestion): GeneratedQu
 // -- エントリポイント
 
 /**
- * 1単語分の問題を生成する（AI 24形式 + ルール生成のイラスト系）。
+ * 1単語分の問題を生成する（AI 23形式 + ルール生成のイラスト系）。
  * 形式グループごとに並列で callStructured を呼び、失敗したグループはスキップして部分成功を返す。
  */
 export async function generateQuizQuestions(

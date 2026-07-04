@@ -1,5 +1,22 @@
 # DONE
 
+- [x] 2026-07-04 vtt1（例文リスニング穴埋め入力）を復活させる [plan](docs/plans/archive/restore-vtt1.md)
+      vtt1 は音声が完全文（単語の発音込み）を読み上げるため答えを一意に特定でき、
+      tt2 の廃止理由（空所の候補が多すぎる）は当てはまらないと判明したため復活。
+      backend の AI_FORMAT_SPECS・iOS の ReviewQuestionFormat に再追加し、起動時
+      クリーンアップは tt2 のみに変更。あわせて vtt1 の生成指示が「vtc1 の入力版」と
+      別グループの形式を参照していて生成漏れする問題（banana で再現）を自己完結の
+      指示文に修正。保存済み5単語を再生成し、全単語に vtt1 が3問ずつ保存され
+      音声プリ合成も成功したことを確認済み。
+
+- [x] 2026-07-04 単語問題で穴埋めをテキスト入力するのは無くす（tt2・vtt1 の廃止） [plan](docs/plans/archive/remove-fill-blank-typing.md)
+      空所の候補が多すぎて答えを特定できないため、例文穴埋め入力（tt2）と
+      例文リスニング穴埋め入力（vtt1）を廃止。backend は AI_FORMAT_SPECS から削除して
+      生成を停止し、起動時に保存済み行を DELETE（冪等）。iOS は ReviewQuestionFormat から
+      両ケースを削除（旧データは要素単位デコードで自然に除外）。4択版の tc3・vtc1 や
+      tt1・tt3・vt1・vt2 など答えが一意な入力形式は存続。ローカルサーバ再起動で
+      既存24行の削除、banana の再生成で両形式が生成されないことを確認済み。
+
 - [x] 2026-07-04 単語クイズの最初に音声データをダウンロードしてから始める。DLは進捗がわかるようにバーを表示 [plan](docs/plans/archive/quiz-audio-predownload.md)
       セッション開始時に main キュー分の出題を ReviewSessionPlanner で事前確定し
       （FormatSelector の逐次比率調整と同一挙動・テストで検証）、必要な音声だけを

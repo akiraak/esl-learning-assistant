@@ -1,6 +1,6 @@
 import Foundation
 
-/// 復習クイズの出題形式（28形式）。ID 表記: `[出題][回答] + 連番`
+/// 復習クイズの出題形式（27形式）。ID 表記: `[出題][回答] + 連番`
 /// （T=テキスト, V=音声, I=イラスト, C=4択。一覧: docs/plans/archive/word-memorization-quiz.md §3.3）。
 /// rawValue はサーバ保存問題（quiz_questions.format）と一致する。
 enum ReviewQuestionFormat: String, CaseIterable, Codable, Sendable {
@@ -17,8 +17,9 @@ enum ReviewQuestionFormat: String, CaseIterable, Codable, Sendable {
     case tc10 // 文中語義（senses 1件の単語に限定）
     case tc11 // 単語→イラスト4択
     // 出題テキスト・回答テキスト入力
+    // （tt2: 例文穴埋め入力 は空所の候補が多すぎて答えを特定できないため廃止。
+    //   サーバも生成・保存を停止済みで、旧データはデコード失敗として自然に除外される）
     case tt1  // 定義→単語入力
-    case tt2  // 例文穴埋め入力
     case tt3  // 活用形入力
     // 出題イラスト
     case ic1  // イラスト→単語4択
@@ -34,7 +35,7 @@ enum ReviewQuestionFormat: String, CaseIterable, Codable, Sendable {
     case vc8  // 音声→イラスト4択
     // 出題音声+テキスト
     case vtc1 // 例文リスニング穴埋め4択
-    case vtt1 // 例文リスニング穴埋め入力
+    case vtt1 // 例文リスニング穴埋め入力（音声が完全文を読むため答えは一意に特定できる）
     // 出題音声・回答テキスト入力
     case vt1  // 単語ディクテーション
     case vt2  // 例文ディクテーション（一致率判定）
@@ -43,7 +44,7 @@ enum ReviewQuestionFormat: String, CaseIterable, Codable, Sendable {
     var promptBucket: ReviewPromptBucket {
         switch self {
         case .tc1, .tc2, .tc3, .tc4, .tc5, .tc6, .tc7, .tc8, .tc9, .tc10, .tc11,
-             .tt1, .tt2, .tt3:
+             .tt1, .tt3:
             return .text
         case .ic1, .it1:
             return .illustration
@@ -58,7 +59,7 @@ enum ReviewQuestionFormat: String, CaseIterable, Codable, Sendable {
         case .tc1, .tc2, .tc3, .tc4, .tc5, .tc6, .tc7, .tc8, .tc9, .tc10,
              .ic1, .vc1, .vc2, .vc3, .vc4, .vc5, .vc6, .vc7, .vtc1:
             return .choice
-        case .tt1, .tt2, .tt3, .it1, .vtt1, .vt1, .vt2:
+        case .tt1, .tt3, .it1, .vtt1, .vt1, .vt2:
             return .typing
         case .tc11, .vc8:
             return .illustrationChoice
