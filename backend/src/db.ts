@@ -82,7 +82,8 @@ if (!wordInfoColumns.has("cache_hit")) {
 }
 
 // サーバ合成したTTS音声の保存（実体は data/tts/<text_hash>.wav、ここはメタデータ）。
-// キャッシュキーは sha256("voice|model|text")。
+// キャッシュキーは sha256("model|text")（voice は生成時ランダム選択のためキーに含めない。
+// 旧形式 sha256("voice|model|text") の既存行はヒットしなくなるが残置）。
 db.exec(`
   CREATE TABLE IF NOT EXISTS tts_audio (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

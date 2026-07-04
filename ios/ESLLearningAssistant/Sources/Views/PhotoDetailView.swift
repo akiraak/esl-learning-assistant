@@ -8,7 +8,6 @@ struct PhotoDetailView: View {
     @StateObject private var speechService = SpeechService()
     @StateObject private var geminiSpeechService = GeminiSpeechService()
     @StateObject private var ttsPlayback = TTSPlaybackService()
-    @AppStorage(AppSettingsKeys.ttsVoice) private var ttsVoice = AppSettingsKeys.defaultTTSVoice
     @AppStorage(AppSettingsKeys.ttsModel) private var ttsModel = AppSettingsKeys.defaultTTSModel
     private let ocrTranslationService: OCRTranslationService = RemoteOCRTranslationService()
 
@@ -114,7 +113,7 @@ struct PhotoDetailView: View {
             if isSpeaking {
                 stopSpeaking()
             } else if ttsModel != "local" {
-                geminiSpeechService.speak(plainText(photo.ocrText), voice: ttsVoice, model: ttsModel, playback: ttsPlayback)
+                geminiSpeechService.speak(plainText(photo.ocrText), model: ttsModel, playback: ttsPlayback)
             } else {
                 speechService.speak(plainText(photo.ocrText))
             }

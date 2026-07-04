@@ -11,33 +11,33 @@ final class TTSAudioStoreTests: XCTestCase {
     }
 
     func testSaveThenLocalURLReturnsFile() throws {
-        XCTAssertNil(TTSAudioStore.localURL(text: text, voice: "chobi", model: "flash"))
+        XCTAssertNil(TTSAudioStore.localURL(text: text, model: "flash"))
 
-        let saved = try TTSAudioStore.save(data: data, text: text, voice: "chobi", model: "flash")
-        let found = TTSAudioStore.localURL(text: text, voice: "chobi", model: "flash")
+        let saved = try TTSAudioStore.save(data: data, text: text, model: "flash")
+        let found = TTSAudioStore.localURL(text: text, model: "flash")
         XCTAssertEqual(found, saved)
         XCTAssertEqual(try Data(contentsOf: saved), data)
     }
 
-    func testDifferentVoiceOrModelUsesDifferentKey() throws {
-        try TTSAudioStore.save(data: data, text: text, voice: "chobi", model: "flash")
+    func testDifferentModelOrTextUsesDifferentKey() throws {
+        try TTSAudioStore.save(data: data, text: text, model: "flash")
 
-        // voice / model が違えば別キー＝未生成扱いになる
-        XCTAssertNil(TTSAudioStore.localURL(text: text, voice: "naruko", model: "flash"))
-        XCTAssertNil(TTSAudioStore.localURL(text: text, voice: "chobi", model: "pro"))
+        // model / text が違えば別キー＝未生成扱いになる
+        XCTAssertNil(TTSAudioStore.localURL(text: text, model: "pro"))
+        XCTAssertNil(TTSAudioStore.localURL(text: text + " extra", model: "flash"))
 
-        let key1 = TTSAudioStore.key(text: text, voice: "chobi", model: "flash")
-        let key2 = TTSAudioStore.key(text: text, voice: "naruko", model: "flash")
-        let key3 = TTSAudioStore.key(text: text, voice: "chobi", model: "pro")
+        let key1 = TTSAudioStore.key(text: text, model: "flash")
+        let key2 = TTSAudioStore.key(text: text, model: "pro")
+        let key3 = TTSAudioStore.key(text: text + " extra", model: "flash")
         XCTAssertNotEqual(key1, key2)
         XCTAssertNotEqual(key1, key3)
-        // サーバ側（sha256("voice|model|text")）と同じ形式の64桁hex
+        // サーバ側（sha256("model|text")）と同じ形式の64桁hex
         XCTAssertEqual(key1.count, 64)
     }
 
     func testRemoveAllClearsSavedFiles() throws {
-        try TTSAudioStore.save(data: data, text: text, voice: "chobi", model: "flash")
+        try TTSAudioStore.save(data: data, text: text, model: "flash")
         TTSAudioStore.removeAll()
-        XCTAssertNil(TTSAudioStore.localURL(text: text, voice: "chobi", model: "flash"))
+        XCTAssertNil(TTSAudioStore.localURL(text: text, model: "flash"))
     }
 }

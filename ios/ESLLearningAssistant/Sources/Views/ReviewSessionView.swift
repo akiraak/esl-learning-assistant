@@ -24,7 +24,6 @@ struct ReviewSessionView: View {
 
     @StateObject private var speechService = SpeechService()
     @StateObject private var ttsPlayback = TTSPlaybackService()
-    @AppStorage(AppSettingsKeys.ttsVoice) private var ttsVoice = AppSettingsKeys.defaultTTSVoice
     @AppStorage(AppSettingsKeys.ttsModel) private var ttsModel = AppSettingsKeys.defaultTTSModel
 
     @State private var hasStarted = false
@@ -609,7 +608,7 @@ struct ReviewSessionView: View {
     /// （出題テンポを保つため、この画面ではサーバ生成を待たない）
     private func playAudio(_ text: String) {
         let serverModel = ttsModel == "local" ? AppSettingsKeys.fallbackServerTTSModel : ttsModel
-        if let url = TTSAudioStore.localURL(text: text, voice: ttsVoice, model: serverModel) {
+        if let url = TTSAudioStore.localURL(text: text, model: serverModel) {
             ttsPlayback.play(url: url)
         } else {
             speechService.speak(text)

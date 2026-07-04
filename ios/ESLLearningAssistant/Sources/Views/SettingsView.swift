@@ -35,8 +35,6 @@ struct SettingsView: View {
     private var backendBaseURL = AppSettingsKeys.defaultBackendBaseURL
     @AppStorage(AppSettingsKeys.apiSecret)
     private var apiSecret = AppSettingsKeys.defaultAPISecret
-    @AppStorage(AppSettingsKeys.ttsVoice)
-    private var ttsVoice = AppSettingsKeys.defaultTTSVoice
     @AppStorage(AppSettingsKeys.ttsModel)
     private var ttsModel = AppSettingsKeys.defaultTTSModel
 
@@ -115,11 +113,6 @@ struct SettingsView: View {
                         Text("Gemini 2.5 Flash TTS").tag("flash")
                         Text("Gemini 2.5 Pro TTS").tag("pro")
                     }
-                    Picker("Voice", selection: $ttsVoice) {
-                        Text("Chobi").tag("chobi")
-                        Text("Naruko").tag("naruko")
-                    }
-                    .disabled(ttsModel == "local")
                 } header: {
                     Text("Text-to-Speech")
                 } footer: {
@@ -127,7 +120,8 @@ struct SettingsView: View {
                         "Model used to read the OCR result (English) aloud. On-Device plays "
                             + "instantly without network access. Gemini 2.5 Flash TTS is fast; "
                             + "Gemini 2.5 Pro TTS sounds more natural but may take longer to "
-                            + "generate. Voice applies to the Gemini models only."
+                            + "generate. The Gemini voice character is picked randomly for "
+                            + "each generation."
                     )
                 }
 

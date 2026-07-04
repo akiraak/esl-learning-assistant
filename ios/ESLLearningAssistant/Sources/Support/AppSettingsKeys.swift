@@ -4,7 +4,6 @@ enum AppSettingsKeys {
     static let backendBaseURL = "backendBaseURL"
     static let apiSecret = "apiSecret"
     static let targetLanguageCode = "targetLanguageCode"
-    static let ttsVoice = "ttsVoice"
     static let ttsModel = "ttsModel"
 
     /// ビルド時にInfo.plistへ埋め込まれた値（実機ビルドはrun-ios-device.shがMacのIPで上書きする）。
@@ -28,8 +27,6 @@ enum AppSettingsKeys {
         return ""
     }
     static let defaultTargetLanguageCode = "ja"
-    /// "chobi"（ちょビ/Leda） or "naruko"（なるこ/Aoede）
-    static let defaultTTSVoice = "chobi"
     /// "local"（端末内蔵AVSpeechSynthesizer）,
     /// "flash"（gemini-2.5-flash-preview-tts）, "pro"（gemini-2.5-pro-preview-tts）
     static let defaultTTSModel = "local"
@@ -37,7 +34,9 @@ enum AppSettingsKeys {
     static let fallbackServerTTSModel = "flash"
 
     /// 廃止した "ttsEngine"（local/gemini）設定を ttsModel（local/flash/pro）へ一度だけ移行する。
+    /// あわせて、廃止した "ttsVoice"（音声キャラ選択。サーバ側のランダム選択に移行）も掃除する。
     static func migrateLegacyTTSEngineIfNeeded(defaults: UserDefaults = .standard) {
+        defaults.removeObject(forKey: "ttsVoice")
         guard let engine = defaults.string(forKey: "ttsEngine") else { return }
         if engine == "local" {
             defaults.set("local", forKey: ttsModel)

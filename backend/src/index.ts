@@ -466,7 +466,7 @@ app.post("/api/quiz-questions/query", (req, res) => {
 const TTS_TEXT_MAX_LENGTH = 20000;
 
 app.post("/api/tts", async (req, res) => {
-  const { text, voice, model } = req.body ?? {};
+  const { text, model } = req.body ?? {};
 
   if (typeof text !== "string" || !text.trim()) {
     logger.warn("tts: rejected (text is required)");
@@ -478,11 +478,6 @@ app.post("/api/tts", async (req, res) => {
     res.status(400).json({ error: `text must be ${TTS_TEXT_MAX_LENGTH} characters or fewer` });
     return;
   }
-  if (voice !== "chobi" && voice !== "naruko") {
-    logger.warn(`tts: rejected (invalid voice: ${String(voice)})`);
-    res.status(400).json({ error: `voice must be one of: ${Object.keys(VOICE_PRESETS).join(", ")}` });
-    return;
-  }
   if (model !== "flash" && model !== "pro") {
     logger.warn(`tts: rejected (invalid model: ${String(model)})`);
     res.status(400).json({ error: `model must be one of: ${Object.keys(MODEL_PRESETS).join(", ")}` });
@@ -491,9 +486,10 @@ app.post("/api/tts", async (req, res) => {
 
   const startedAt = Date.now();
 
-  // 同一 (voice, model, text) は保存済みWAVを返す（Gemini再呼び出しなし）。
-  // ファイルが欠損していた場合は再合成して自己修復する。
-  const textHash = crypto.createHash("sha256").update(`${voice}|${model}|${text}`).digest("hex");
+  // 同一 (model, text) は保存済みWAVを返す（Gemini再呼び出しなし）。
+  // キャラは初回生成時にランダム選択され、キャッシュにより同一テキストでは固定される。
+  // ファイルが欠損していた場合は再合成して自己修復する（その際キャラは選び直し）。
+  const textHash = crypto.createHash("sha256").update(`${model}|${text}`).digest("hex");
   const cached = getTtsAudioByHash(textHash);
   if (cached) {
     const cachedPath = path.join(config.ttsDir, cached.filename);
@@ -506,9 +502,13 @@ app.post("/api/tts", async (req, res) => {
     logger.warn(`tts: cached file missing, re-synthesizing hash=${textHash.slice(0, 12)}`);
   }
 
+  // キャラ（音声）は2人からランダム選択（ユーザー設定は廃止）
+  const voiceKeys = Object.keys(VOICE_PRESETS) as VoiceKey[];
+  const voice = voiceKeys[Math.floor(Math.random() * voiceKeys.length)];
+
   logger.info(`tts: start voice=${voice} model=${model} textLength=${text.length}`);
   try {
-    const { wav, inputTokens, outputTokens } = await synthesizeSpeech(text, voice as VoiceKey, model as ModelKey);
+    const { wav, inputTokens, outputTokens } = await synthesizeSpeech(text, voice, model as ModelKey);
     const costUsd = estimateCostUsd(MODEL_PRESETS[model as ModelKey], inputTokens, outputTokens);
     const filename = `${textHash}.wav`;
     fs.writeFileSync(path.join(config.ttsDir, filename), wav);

@@ -515,7 +515,6 @@ private struct TTSButton: View {
     @ObservedObject var playback: TTSPlaybackService
     @Binding var errorMessage: String?
 
-    @AppStorage(AppSettingsKeys.ttsVoice) private var voice = AppSettingsKeys.defaultTTSVoice
     @AppStorage(AppSettingsKeys.ttsModel) private var model = AppSettingsKeys.defaultTTSModel
     @State private var isGenerating = false
 
@@ -526,13 +525,12 @@ private struct TTSButton: View {
 
     private struct RequestBody: Encodable {
         let text: String
-        let voice: String
         let model: String
     }
 
     var body: some View {
-        // 存在チェックのみで軽量。voice / model 設定を変えるとキーが変わり「未生成」に戻る
-        let localURL = TTSAudioStore.localURL(text: text, voice: voice, model: serverModel)
+        // 存在チェックのみで軽量。model 設定を変えるとキーが変わり「未生成」に戻る
+        let localURL = TTSAudioStore.localURL(text: text, model: serverModel)
         if isGenerating {
             ProgressView()
         } else if let localURL {
@@ -571,9 +569,9 @@ private struct TTSButton: View {
             do {
                 let data = try await BackendAPI.post(
                     path: "api/tts",
-                    body: RequestBody(text: text, voice: voice, model: serverModel)
+                    body: RequestBody(text: text, model: serverModel)
                 )
-                try TTSAudioStore.save(data: data, text: text, voice: voice, model: serverModel)
+                try TTSAudioStore.save(data: data, text: text, model: serverModel)
             } catch {
                 errorMessage = error.localizedDescription
             }

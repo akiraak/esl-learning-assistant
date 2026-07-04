@@ -10,11 +10,10 @@ final class GeminiSpeechService: ObservableObject {
 
     private struct RequestBody: Encodable {
         let text: String
-        let voice: String
         let model: String
     }
 
-    func speak(_ text: String, voice: String, model: String, playback: TTSPlaybackService) {
+    func speak(_ text: String, model: String, playback: TTSPlaybackService) {
         guard !text.isEmpty, !isLoading else { return }
         playback.stop()
 
@@ -24,7 +23,7 @@ final class GeminiSpeechService: ObservableObject {
             do {
                 let data = try await BackendAPI.post(
                     path: "api/tts",
-                    body: RequestBody(text: text, voice: voice, model: model)
+                    body: RequestBody(text: text, model: model)
                 )
                 playback.play(data: data)
             } catch BackendAPIError.unauthorized {

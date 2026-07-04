@@ -1,5 +1,11 @@
 # DONE
 
+- [x] 2026-07-03 TTSはキャラクター2人をランダムで選択して生成する。アプリのSettingのキャラ選択は削除 [plan](docs/plans/archive/tts-random-voice.md)
+      音声キャラの決定をサーバに一元化。/api/tts が生成時に chobi/naruko からランダム選択し、
+      キャッシュキーを sha256("model|text") に変更（同一テキストは初回に選ばれたキャラで固定＝キャッシュ有効）。
+      iOS からは voice の概念を削除（Settings の Voice ピッカー、AppSettingsKeys.ttsVoice、
+      GeminiSpeechService / TTSAudioStore / 各 View の voice 引数）。旧形式キーのキャッシュは
+      ヒットしなくなり必要に応じて再生成される（移行処理なし）。TTSAudioStoreTests 更新・全パス確認済み。
 - [x] 2026-07-03 単語詳細のイラストをバックグラウンドで生成して終わったら表示する [plan](docs/plans/archive/word-illustration-auto-generate.md)
       手動の「Generate Illustration」ボタンを廃止し、詳細画面を開いたら自動でバックグラウンド生成を
       開始（スピナー表示）→ 完了で画像表示に切り替わるようにした。失敗時はエラー + Retry ボタン。
