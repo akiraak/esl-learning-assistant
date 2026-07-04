@@ -7,9 +7,10 @@ import SwiftData
 /// 各単語の初回解答のみで、再出題は表示のみ（ReviewScheduler.reviewed を二重適用しない）。
 ///
 /// 問題はサーバ保存のもののみを使う（docs/plans/archive/quiz-questions-server-storage.md）。
-/// セッション開始時に /api/quiz-questions/query でまとめて取得し、単語ごとに
-/// 比率調整（FormatSelector）で形式を選び、その形式の複数バリエーションから
-/// ランダムに1問を出題する。サーバに問題が無い単語は出題せずスキップする。
+/// セッション開始時に /api/quiz-questions/query でまとめて取得し、出題する問題を
+/// ReviewSessionPlanner で先に確定してから、必要な音声を一括ダウンロードして始める
+/// （進捗バー表示。docs/plans/quiz-audio-predownload.md）。
+/// サーバに問題が無い単語は出題せずスキップする。
 struct ReviewSessionView: View {
     /// 今日の復習対象（呼び出し側で ReviewScheduler.isDue フィルタ済み）
     let dueWords: [Word]
@@ -31,7 +32,12 @@ struct ReviewSessionView: View {
     @State private var questionsByWordID: [UUID: [ReviewQuestion]] = [:]
     /// サーバに問題が無くスキップした due 単語の数（サマリーで知らせる）
     @State private var skippedWordCount = 0
-    @State private var mainQueue: [Word] = []
+    /// 音声一括ダウンロード中の進捗（nil なら非表示）
+    @State private var audioDownload: AudioDownloadProgress?
+    /// 問題取得〜音声DLを行う Task。Close・画面破棄でキャンセルする
+    @State private var sessionTask: Task<Void, Never>?
+    /// セッション開始時に確定した出題（単語と問題のペア。docs/plans/quiz-audio-predownload.md）
+    @State private var mainQueue: [PlannedItem] = []
     @State private var retryQueue: [Word] = []
     @State private var current: CurrentQuestion?
     @State private var sessionCounts: [ReviewQuestionFormat: Int] = [:]
@@ -45,6 +51,16 @@ struct ReviewSessionView: View {
     @State private var feedback: Feedback?
     @State private var isFinished = false
     @FocusState private var isAnswerFieldFocused: Bool
+
+    private struct PlannedItem {
+        var word: Word
+        var question: ReviewQuestion
+    }
+
+    private struct AudioDownloadProgress {
+        var completed: Int
+        var total: Int
+    }
 
     private struct CurrentQuestion {
         var word: Word
@@ -62,6 +78,8 @@ struct ReviewSessionView: View {
             Group {
                 if isLoading {
                     loadingView
+                } else if let audioDownload {
+                    downloadingView(audioDownload)
                 } else if let loadErrorMessage {
                     loadFailedView(loadErrorMessage)
                 } else if isFinished {
@@ -86,6 +104,7 @@ struct ReviewSessionView: View {
         .interactiveDismissDisabled()
         .onAppear(perform: startSession)
         .onDisappear {
+            sessionTask?.cancel()
             speechService.stop()
             ttsPlayback.stop()
         }
@@ -100,6 +119,17 @@ struct ReviewSessionView: View {
                 .foregroundStyle(.secondary)
         }
         .accessibilityIdentifier("reviewLoadingLabel")
+    }
+
+    /// 音声一括ダウンロード中の進捗バー。対象0件ならこの画面は出ない
+    private func downloadingView(_ progress: AudioDownloadProgress) -> some View {
+        VStack(spacing: 12) {
+            ProgressView(value: Double(progress.completed), total: Double(max(progress.total, 1)))
+                .frame(maxWidth: 240)
+            Text("Preparing audio… \(progress.completed)/\(progress.total)")
+                .foregroundStyle(.secondary)
+        }
+        .accessibilityIdentifier("reviewAudioDownloadLabel")
     }
 
     private func loadFailedView(_ message: String) -> some View {
@@ -118,7 +148,7 @@ struct ReviewSessionView: View {
             Button("Retry") {
                 isLoading = true
                 loadErrorMessage = nil
-                Task { await loadQuestions() }
+                sessionTask = Task { await loadQuestions() }
             }
             .buttonStyle(.borderedProminent)
             .accessibilityIdentifier("reviewRetryLoadButton")
@@ -458,7 +488,7 @@ struct ReviewSessionView: View {
     private func startSession() {
         guard !hasStarted else { return }
         hasStarted = true
-        Task { await loadQuestions() }
+        sessionTask = Task { await loadQuestions() }
     }
 
     /// セッション対象（上限20語）の問題をサーバからまとめて取得する。
@@ -510,7 +540,45 @@ struct ReviewSessionView: View {
             }
         }
 
-        mainQueue = ready
+        // 出題順の問題をここで確定し、このセッションで使う音声だけを先にダウンロードする
+        // （docs/plans/quiz-audio-predownload.md）
+        var plan = ReviewSessionPlanner.plan(
+            wordIDs: ready.map(\.id), questionsByWordID: fetched
+        )
+        let missingAudioTexts = Array(
+            Set(plan.questions.compactMap(\.question.audioText))
+        ).filter { TTSAudioStore.localURL(text: $0, model: AppSettingsKeys.quizTTSModel) == nil }
+
+        if !missingAudioTexts.isEmpty {
+            isLoading = false
+            audioDownload = AudioDownloadProgress(completed: 0, total: missingAudioTexts.count)
+            let failedTexts = await QuizAudioDownloader.download(texts: missingAudioTexts) { completed, total in
+                audioDownload = AudioDownloadProgress(completed: completed, total: total)
+            }
+            // Close で中断された場合は開始しない（画面はすでに閉じている）
+            if Task.isCancelled { return }
+            if !failedTexts.isEmpty {
+                // 失敗したテキストを含む問題は別形式に差し替えてセッションを続行する
+                // （非音声形式はどの単語にもあるため、サーバ不達でも完走できる）
+                plan = ReviewSessionPlanner.replacingFailedAudio(
+                    plan: plan,
+                    questionsByWordID: fetched,
+                    failedTexts: failedTexts,
+                    hasLocalAudio: {
+                        TTSAudioStore.localURL(text: $0, model: AppSettingsKeys.quizTTSModel) != nil
+                    }
+                )
+            }
+            audioDownload = nil
+        }
+
+        sessionCounts = plan.sessionCounts
+        let wordByID = Dictionary(uniqueKeysWithValues: ready.map { ($0.id, $0) })
+        mainQueue = plan.questions.compactMap { item in
+            wordByID[item.wordID].map { PlannedItem(word: $0, question: item.question) }
+        }
+        // 差し替え先が無く出題から外れた単語もスキップ扱いで知らせる
+        skippedWordCount += ready.count - mainQueue.count
         isLoading = false
         advance()
     }
@@ -528,41 +596,36 @@ struct ReviewSessionView: View {
         current = nil
 
         while true {
-            let isRetry: Bool
-            let word: Word
             if !mainQueue.isEmpty {
-                word = mainQueue.removeFirst()
-                isRetry = false
+                // main キューはセッション開始時に確定済み（sessionCounts も反映済み）
+                let item = mainQueue.removeFirst()
+                current = CurrentQuestion(word: item.word, question: item.question, isRetry: false)
             } else if !retryQueue.isEmpty {
-                word = retryQueue.removeFirst()
-                isRetry = true
+                let word = retryQueue.removeFirst()
+                guard let question = pickRetryQuestion(for: word) else { continue }
+                sessionCounts[question.format, default: 0] += 1
+                current = CurrentQuestion(word: word, question: question, isRetry: true)
             } else {
                 isFinished = true
                 return
             }
 
-            // 取得済みの問題から比率調整で形式を選び、バリエーションをランダムに1問引く
-            guard let question = pickQuestion(for: word) else { continue }
-            sessionCounts[question.format, default: 0] += 1
-            current = CurrentQuestion(word: word, question: question, isRetry: isRetry)
-
             // 音声出題は表示と同時に1回自動再生する
-            if let audioText = question.audioText {
+            if let audioText = current?.question.audioText {
                 playAudio(audioText)
             }
             return
         }
     }
 
-    /// サーバ保存問題からの出題選択:
-    /// 形式は FormatSelector の比率調整で選び、同形式の複数バリエーションからランダムに1件。
-    private func pickQuestion(for word: Word) -> ReviewQuestion? {
-        guard let questions = questionsByWordID[word.id], !questions.isEmpty else { return nil }
-        let available = Set(questions.map(\.format))
-        guard let format = FormatSelector.select(
-            availableFormats: available, sessionCounts: sessionCounts
-        ) else { return nil }
-        return questions.filter { $0.format == format }.randomElement()
+    /// 再出題（retry）の出題選択。形式は従来どおり比率調整で選ぶが、
+    /// 追加ダウンロードはしないため音声形式はローカルに音声がある問題に限定する。
+    private func pickRetryQuestion(for word: Word) -> ReviewQuestion? {
+        let candidates = (questionsByWordID[word.id] ?? []).filter { question in
+            guard let text = question.audioText else { return true }
+            return TTSAudioStore.localURL(text: text, model: AppSettingsKeys.quizTTSModel) != nil
+        }
+        return ReviewSessionPlanner.pick(from: candidates, sessionCounts: sessionCounts)
     }
 
     // MARK: - 解答処理
@@ -603,8 +666,9 @@ struct ReviewSessionView: View {
 
     // MARK: - 音声・イラスト
 
-    /// 生成済みのサーバTTSがあればそれを再生し、無ければ端末内蔵TTSへフォールバックする
-    /// （出題テンポを保つため、この画面ではサーバ生成を待たない）。
+    /// 出題音声はセッション開始時に一括ダウンロード済みのため、通常はローカルWAVを再生する。
+    /// フィードバック欄の単語読み上げなどDL対象外のテキストや、差し替え後に消えた
+    /// ファイルに備えて、端末内蔵TTSフォールバックを最終安全網として残す。
     /// モデルはサーバのプリ合成と揃えて flash 固定（ユーザー設定 ttsModel は使わない）。
     private func playAudio(_ text: String) {
         if let url = TTSAudioStore.localURL(text: text, model: AppSettingsKeys.quizTTSModel) {

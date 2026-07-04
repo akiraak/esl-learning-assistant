@@ -1,5 +1,15 @@
 # DONE
 
+- [x] 2026-07-04 単語クイズの最初に音声データをダウンロードしてから始める。DLは進捗がわかるようにバーを表示 [plan](docs/plans/archive/quiz-audio-predownload.md)
+      セッション開始時に main キュー分の出題を ReviewSessionPlanner で事前確定し
+      （FormatSelector の逐次比率調整と同一挙動・テストで検証）、必要な音声だけを
+      QuizAudioDownloader（並列2・1回リトライ）で一括DLしてから出題を開始するようにした。
+      DL中は「Preparing audio… n/m」の進捗バーを表示し、Close でキャンセル可能。
+      失敗テキストを含む問題は同じ単語の別形式（音声形式はローカル保存済みに限定）へ
+      差し替えて続行、retry の出題もローカル音声がある問題に限定。端末内蔵TTSは
+      最終安全網として存続。ユニットテスト8件追加・全パス、ローカルサーバでの
+      E2E（testTodayReviewFlowWithServerQuestions）とサーバ不達テストもパス確認済み。
+
 - [x] 2026-07-03 管理画面で単語クイズの音声データを再生できるようにする [plan](docs/plans/archive/admin-quiz-audio-playback.md)
       単語クイズ詳細（/admin/quiz-questions/item）の問題テーブルに「音声」列を追加し、
       audioText のプリ合成済み音声（sha256("flash|text") で tts_audio を照合）を
