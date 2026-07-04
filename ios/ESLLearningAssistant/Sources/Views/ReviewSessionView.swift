@@ -320,14 +320,33 @@ struct ReviewSessionView: View {
 
     @ViewBuilder
     private func typingArea(_ item: CurrentQuestion) -> some View {
-        VStack(spacing: 12) {
-            TextField("Type your answer", text: $typedAnswer, axis: .vertical)
-                .textFieldStyle(.roundedBorder)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .focused($isAnswerFieldFocused)
-                .disabled(feedback != nil)
-                .accessibilityIdentifier("reviewTypedAnswerField")
+        VStack(alignment: .leading, spacing: 12) {
+            Label("Type your answer", systemImage: "keyboard")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 10) {
+                Image(systemName: "pencil.line")
+                    .font(.title3)
+                    .foregroundStyle(feedback == nil ? Color.accentColor : .secondary)
+
+                TextField("Enter the word…", text: $typedAnswer)
+                    .font(.title3)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .submitLabel(.go)
+                    .focused($isAnswerFieldFocused)
+                    .disabled(feedback != nil)
+                    .onSubmit { submitTypedAnswer(item) }
+                    .accessibilityIdentifier("reviewTypedAnswerField")
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(isAnswerFieldFocused ? Color.accentColor : Color.clear, lineWidth: 2)
+            )
 
             if feedback == nil {
                 Button {
@@ -337,6 +356,7 @@ struct ReviewSessionView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .controlSize(.large)
                 .disabled(typedAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 .accessibilityIdentifier("reviewSubmitButton")
             }
@@ -625,6 +645,14 @@ struct ReviewSessionView: View {
             // 音声出題は表示と同時に1回自動再生する
             if let audioText = question.audioText {
                 playAudio(audioText)
+            }
+            // テキスト入力形式はキーボードをすぐ出せるよう自動でフォーカスを当てる。
+            // TextField の描画完了を待つため、わずかに遅延させてからフォーカスする。
+            if case .typing = question.answer {
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 300_000_000)
+                    isAnswerFieldFocused = true
+                }
             }
             return
         }

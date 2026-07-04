@@ -1,5 +1,12 @@
 # DONE
 
+- [x] 2026-07-04 単語問題テキスト入力の自動フォーカスとフォーム改善 [plan](docs/plans/archive/word-quiz-typing-focus-and-form.md)
+      復習クイズの `.typing` 形式で、(1) `advance()` で次問が typing の場合に ~0.3s 遅延後
+      `isAnswerFieldFocused = true` を立て、出題時にキーボードを自動表示。(2) `typingArea` を刷新：
+      "Type your answer" 見出し＋pencil アイコン付き角丸カード（フォーカス中はアクセント枠線）、
+      単一行 TextField で Return（.go）送信、Answer ボタンを controlSize(.large) に。
+      accessibilityIdentifier は維持。iOS ビルド成功。実機確認は未実施。
+
 - [x] 2026-07-04 単語詳細の Word Forms の左項目名を英語にする [plan](docs/plans/archive/word-forms-english-labels.md)
       backend の wordInfo.ts の inflections[].form を英語の文法用語（past tense, past participle 等）で
       生成するよう structured output の description を変更し dist を再ビルド。既存データは日本語ラベルで
