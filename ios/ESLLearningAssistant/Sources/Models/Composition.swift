@@ -17,8 +17,12 @@ final class Composition {
     var updatedAt: Date
     /// 解説言語（実質 "ja"。生成時のユーザー母語設定を記録）
     var explanationLanguage: String
-    /// 直近の添削結果（未添削 or 未生成なら nil）。埋め込み Codable。
+    /// 旧データ（単発添削）の直近結果。v2 以降は書き込まず `rounds` を使う。
+    /// ストアから外さないために残置（削除するとマイグレーションで開けなくなる恐れ）。未添削なら nil。
     var feedback: WritingFeedback?
+    /// 改善のやり取りの履歴（古い順）。`rounds` computed の実ストレージ。
+    /// マイグレーション安全のため必ず optional で追加する（swiftdata-codable-migration-pitfall）。
+    var roundsStorage: [WritingRound]?
 
     init(
         id: UUID = UUID(),
@@ -34,15 +38,44 @@ final class Composition {
         self.createdAt = createdAt
         self.updatedAt = createdAt
         self.feedback = nil
+        self.roundsStorage = nil
     }
 }
 
 extension Composition {
-    /// 本文（英文・日本語）が添削後に編集されているか。編集後は既存の添削を「古い」として扱う。
-    /// feedback が無ければ false。
-    var isFeedbackStale: Bool {
-        guard let feedback else { return false }
-        return feedback.generatedAt < updatedAt
+    /// 改善の履歴（古い順）。`roundsStorage` が空でも旧データ（単一 `feedback`）があれば
+    /// それを Round 1 として見せる（破壊的マイグレーション不要）。setter は storage を直接更新する。
+    var rounds: [WritingRound] {
+        get {
+            if let roundsStorage, !roundsStorage.isEmpty { return roundsStorage }
+            if let feedback {
+                return [
+                    WritingRound(
+                        englishText: englishText,
+                        japaneseText: japaneseText,
+                        feedback: feedback,
+                        createdAt: feedback.generatedAt
+                    )
+                ]
+            }
+            return []
+        }
+        set { roundsStorage = newValue }
+    }
+
+    /// 最新ラウンドの添削（未添削なら nil）
+    var latestFeedback: WritingFeedback? { rounds.last?.feedback }
+
+    /// 添削を1回以上受けているか
+    var hasFeedback: Bool { !rounds.isEmpty }
+
+    /// 現在の下書きが最終ラウンドと同一か（＝新たに送る変更が無い）。
+    /// ラウンドがまだ無ければ false（初回は下書きさえあれば送れる）。
+    var draftMatchesLastRound: Bool {
+        guard let last = rounds.last else { return false }
+        func norm(_ s: String) -> String { s.trimmingCharacters(in: .whitespacesAndNewlines) }
+        return norm(englishText) == norm(last.englishText)
+            && norm(japaneseText) == norm(last.japaneseText)
     }
 
     /// 一覧に出すプレビュー用の1行テキスト（英文優先、空なら日本語）。
@@ -50,6 +83,34 @@ extension Composition {
         let english = englishText.trimmingCharacters(in: .whitespacesAndNewlines)
         if !english.isEmpty { return english }
         return japaneseText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+/// 1回分の添削ラウンド（学習者が送った英文＋意図＋その添削）。改善のたびに `Composition.rounds` へ積む。
+/// SwiftData 埋め込み Codable は実プロパティ名ベースで管理するため CodingKeys は付けない
+/// （リネームすると値が黙って未永続化になる。WritingFeedback と同方針）。
+struct WritingRound: Codable, Identifiable {
+    var id: UUID
+    /// このラウンドで学習者が送った英文
+    var englishText: String
+    /// このラウンドで学習者が送った日本語（伝えたかった意図）
+    var japaneseText: String
+    /// このラウンドの添削結果
+    var feedback: WritingFeedback
+    var createdAt: Date
+
+    init(
+        id: UUID = UUID(),
+        englishText: String,
+        japaneseText: String,
+        feedback: WritingFeedback,
+        createdAt: Date
+    ) {
+        self.id = id
+        self.englishText = englishText
+        self.japaneseText = japaneseText
+        self.feedback = feedback
+        self.createdAt = createdAt
     }
 }
 

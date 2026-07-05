@@ -1,5 +1,23 @@
 # DONE
 
+- [x] 2026-07-05 作文の反復改善（ラウンド式の履歴スレッド）
+      一度添削した後、フィードバックを踏まえて下書きを直し「Re-review」すると次のラウンドとして
+      積み上がる反復改善機能。再添削時は過去の全ラウンド（英文・修正・解説）を history として AI に渡し、
+      「前回の指摘は直った／まだ残る問題はここ」と改善の推移を踏まえた添削になる。
+      iOS: Composition に埋め込み Codable WritingRound（englishText/japaneseText/feedback/createdAt）の
+      配列 roundsStorage（nullable ストレージ＋computed rounds、既定 []）を追加。マイグレーション安全のため
+      optional 追加、CodingKeys なし。旧データ（単一 feedback）は getter が Round 1 として見せる互換方式で
+      破壊的マイグレーション不要（feedback フィールドは残置）。派生 latestFeedback/hasFeedback/
+      draftMatchesLastRound を追加。UI（CompositionDetailView）は上部にラウンド履歴を古い順で並べ、下部の
+      下書きエディタから次を送る。添削後もエディタの英文は学習者のまま維持（自分で手直しして再送）。
+      送信可否は英日非空かつ下書きが最終ラウンドと相違（同一なら無効）。CompositionsView のバッジは
+      未添削／編集中／添削済み（×N）。バックエンド: generateWritingFeedback に history 引数を追加し、
+      history があれば「複数回書き直して改善中。前回改善点は前向きに触れ残る問題を指摘」旨を前置きして過去
+      ラウンドを列挙。/api/writing-feedback で history を任意受理・防御的に正規化（配列でなければ []、直近
+      20 件に丸め、各フィールド長クランプ）。DB スキーマ変更なし。実 API 疎通で history 有（前回改善への
+      言及＋残る meet→met の指摘）・無（従来単発）の両パスを確認。iOS ビルド・CompositionUITests 成功。
+      specs: app-spec.md §3.4、data-model.md §9（WritingRound 追加・旧データ互換方針）。
+      plan: docs/plans/archive/writing-iterative-rounds.md
 - [x] 2026-07-05 作文機能（英作文の添削込み）
       学習者が英作文を書き、Claude API で添削（修正英文＋日本語解説）を受ける産出練習機能。
       入力は英文＋「伝えたかった意図（日本語）」の2つで、日本語を AI に渡して添削方向を確定させる。

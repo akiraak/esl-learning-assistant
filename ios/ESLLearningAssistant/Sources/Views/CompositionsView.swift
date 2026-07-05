@@ -119,15 +119,16 @@ struct CompositionRow: View {
         .padding(.vertical, 2)
     }
 
-    /// 添削の状態バッジ。未添削 / 添削済み / 本文編集後（要再添削）を出し分ける。
+    /// 添削の状態バッジ。未添削 / 編集中（未送信の変更あり）/ 添削済み（ラウンド数）を出し分ける。
     @ViewBuilder
     private var statusBadge: some View {
-        if composition.feedback == nil {
+        if !composition.hasFeedback {
             badge(text: "Not reviewed", color: .secondary)
-        } else if composition.isFeedbackStale {
-            badge(text: "Edited — re-review", color: .orange)
+        } else if !composition.draftMatchesLastRound {
+            badge(text: "Editing", color: .orange)
         } else {
-            badge(text: "Reviewed", color: .green)
+            let count = composition.rounds.count
+            badge(text: count > 1 ? "Reviewed ×\(count)" : "Reviewed", color: .green)
         }
     }
 

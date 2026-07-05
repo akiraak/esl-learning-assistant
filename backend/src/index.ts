@@ -22,7 +22,7 @@ import {
 import { adminRouter } from "./admin";
 import { ocrAndTranslate } from "./ocrTranslate";
 import { generateWordInfo, type WordInfo } from "./wordInfo";
-import { generateWritingFeedback } from "./writingFeedback";
+import { generateWritingFeedback, type WritingFeedbackRound } from "./writingFeedback";
 import { generateQuizQuestions } from "./quizQuestions";
 import { estimateCostUsd } from "./pricing";
 import { startPricingSync } from "./pricingSync";
@@ -319,11 +319,31 @@ app.post("/api/word-info", async (req, res) => {
 
 const WRITING_TEXT_MAX_LENGTH = 5000;
 const DEFAULT_EXPLANATION_LANGUAGE = "ja";
+// 反復改善の履歴として AI に渡す過去ラウンドの上限（トークン肥大を防ぐため直近のみ）
+const WRITING_HISTORY_MAX_ROUNDS = 20;
+
+/// リクエストの history を防御的に正規化する。配列でなければ [] を返し、各ラウンドの文字列フィールドを
+/// クランプ、直近 WRITING_HISTORY_MAX_ROUNDS 件に丸める。無効な要素は落とす。
+function sanitizeWritingHistory(raw: unknown): WritingFeedbackRound[] {
+  if (!Array.isArray(raw)) return [];
+  const clamp = (value: unknown): string =>
+    typeof value === "string" ? value.slice(0, WRITING_TEXT_MAX_LENGTH) : "";
+  return raw
+    .filter((item): item is Record<string, unknown> => typeof item === "object" && item !== null)
+    .map((item) => ({
+      englishText: clamp(item.englishText),
+      japaneseText: clamp(item.japaneseText),
+      correctedText: clamp(item.correctedText),
+      explanation: clamp(item.explanation),
+    }))
+    .filter((round) => round.englishText.trim() !== "" && round.correctedText.trim() !== "")
+    .slice(-WRITING_HISTORY_MAX_ROUNDS);
+}
 
 // 作文添削。英文と「伝えたかった意図（母語）」を渡し、修正英文＋母語解説を返す。
 // 作文本文は毎回異なりキャッシュが効かないため、サーバ側は保存せずログ用途のみ。
 app.post("/api/writing-feedback", async (req, res) => {
-  const { englishText, japaneseText, explanationLanguage } = req.body ?? {};
+  const { englishText, japaneseText, explanationLanguage, history } = req.body ?? {};
 
   if (typeof englishText !== "string" || !englishText.trim()) {
     logger.warn("writing-feedback: rejected (englishText is required)");
@@ -358,14 +378,21 @@ app.post("/api/writing-feedback", async (req, res) => {
       ? explanationLanguage.trim()
       : DEFAULT_EXPLANATION_LANGUAGE;
 
+  const sanitizedHistory = sanitizeWritingHistory(history);
+
   const startedAt = Date.now();
   logger.info(
     `writing-feedback: start englishLen=${trimmedEnglish.length} japaneseLen=${trimmedJapanese.length} ` +
-      `explanationLanguage=${resolvedLanguage} model=${config.writingFeedbackModel}`
+      `historyRounds=${sanitizedHistory.length} explanationLanguage=${resolvedLanguage} model=${config.writingFeedbackModel}`
   );
 
   try {
-    const result = await generateWritingFeedback(trimmedEnglish, trimmedJapanese, resolvedLanguage);
+    const result = await generateWritingFeedback(
+      trimmedEnglish,
+      trimmedJapanese,
+      resolvedLanguage,
+      sanitizedHistory
+    );
     const latencyMs = Date.now() - startedAt;
     const costUsd = estimateCostUsd(result.model, result.inputTokens, result.outputTokens);
     const feedbackJson = JSON.stringify(result.feedback);

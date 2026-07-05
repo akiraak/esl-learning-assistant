@@ -12,12 +12,21 @@ struct WritingFeedbackResponse: Decodable {
     let model: String
 }
 
+/// 反復改善のために AI へ渡す過去1ラウンド分（iOS の WritingRound / backend の WritingFeedbackRound と対応）
+struct WritingFeedbackRoundPayload: Encodable {
+    let englishText: String
+    let japaneseText: String
+    let correctedText: String
+    let explanation: String
+}
+
 @MainActor
 protocol WritingFeedbackService {
     func fetchFeedback(
         englishText: String,
         japaneseText: String,
-        explanationLanguage: String
+        explanationLanguage: String,
+        history: [WritingFeedbackRoundPayload]
     ) async throws -> WritingFeedbackResponse
 }
 
@@ -29,19 +38,22 @@ final class RemoteWritingFeedbackService: WritingFeedbackService {
         let englishText: String
         let japaneseText: String
         let explanationLanguage: String
+        let history: [WritingFeedbackRoundPayload]
     }
 
     func fetchFeedback(
         englishText: String,
         japaneseText: String,
-        explanationLanguage: String
+        explanationLanguage: String,
+        history: [WritingFeedbackRoundPayload]
     ) async throws -> WritingFeedbackResponse {
         let data = try await BackendAPI.post(
             path: "api/writing-feedback",
             body: RequestBody(
                 englishText: englishText,
                 japaneseText: japaneseText,
-                explanationLanguage: explanationLanguage
+                explanationLanguage: explanationLanguage,
+                history: history
             ),
             // 作文添削は sonnet で数千文字を生成しうるため既定60秒だと切れることがある
             timeout: 120

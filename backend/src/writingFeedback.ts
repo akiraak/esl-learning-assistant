@@ -28,6 +28,14 @@ export interface WritingFeedback {
   explanation: string;
 }
 
+/// 過去の1ラウンド分（iOS の WritingRound と対応）。history として渡され、AI に文脈を与える。
+export interface WritingFeedbackRound {
+  englishText: string;
+  japaneseText: string;
+  correctedText: string;
+  explanation: string;
+}
+
 export interface WritingFeedbackResult {
   feedback: WritingFeedback;
   model: string;
@@ -38,17 +46,40 @@ export interface WritingFeedbackResult {
 export async function generateWritingFeedback(
   englishText: string,
   japaneseText: string,
-  explanationLanguage: string
+  explanationLanguage: string,
+  history: WritingFeedbackRound[] = []
 ): Promise<WritingFeedbackResult> {
+  const hasHistory = history.length > 0;
+
+  // これまでのラウンドを列挙し、改善の文脈を AI に与える
+  const historyLines = hasHistory
+    ? [
+        `この作文は複数回にわたって書き直しながら改善しています。これまでのやり取りを踏まえて添削してください。`,
+        `前回から改善した点があれば解説で前向きに触れ、まだ残る問題を指摘してください。`,
+        ``,
+        `【これまでのやり取り（古い順）】`,
+        ...history.flatMap((round, index) => [
+          `--- ラウンド${index + 1} ---`,
+          `学習者の英文: ${round.englishText}`,
+          `伝えたかった意図: ${round.japaneseText}`,
+          `あなたの添削: ${round.correctedText}`,
+          `解説: ${round.explanation}`,
+          ``,
+        ]),
+      ]
+    : [
+        `学習者が書いた英文と、その学習者が「伝えたかった意図」を表す文章を渡します。`,
+        `意図に沿って、自然で正しい英語に添削してください。`,
+        ``,
+      ];
+
   const prompt = [
     `あなたはESL学習者の英作文を添削する講師です。`,
-    `学習者が書いた英文と、その学習者が「伝えたかった意図」を表す文章を渡します。`,
-    `意図に沿って、自然で正しい英語に添削してください。`,
-    ``,
-    `【学習者が書いた英文】`,
+    ...historyLines,
+    hasHistory ? `【今回学習者が書いた英文】` : `【学習者が書いた英文】`,
     englishText,
     ``,
-    `【伝えたかった意図（学習者の母語で書かれた訳または説明）】`,
+    hasHistory ? `【今回伝えたかった意図】` : `【伝えたかった意図（学習者の母語で書かれた訳または説明）】`,
     japaneseText,
     ``,
     `修正後の英文全文（correctedText）と、どこをなぜ直したかの解説（explanation）を返してください。`,
