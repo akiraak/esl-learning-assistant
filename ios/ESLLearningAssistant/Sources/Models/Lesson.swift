@@ -16,7 +16,8 @@ final class Lesson {
     @Relationship(deleteRule: .cascade, inverse: \WordOccurrence.lesson)
     var wordOccurrences: [WordOccurrence] = []
 
-    @Relationship(deleteRule: .cascade, inverse: \AudioClip.lesson)
+    // 音声は多対多。レッスンを消してもクリップ本体は残す（ライブラリ資産として nullify）
+    @Relationship(deleteRule: .nullify, inverse: \AudioClip.lessons)
     var audioClips: [AudioClip] = []
 
     init(id: UUID = UUID(), schoolClass: Class, title: String, createdAt: Date = .now, memo: String? = nil) {

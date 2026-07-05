@@ -3,7 +3,8 @@ import SwiftData
 
 /// iOSの「ファイル」（Dropbox・iCloud・端末内）から取り込んでアプリの正式データにした音声クリップ。
 /// 実体（音声バイナリ）は AudioStorage（Documents/Audio）にファイルで置き、ここはメタデータのみ持つ。
-/// レッスンへの紐付けは任意（単語と同様、レッスン非依存のライブラリ音声も許容する）。
+/// レッスンへの紐付けは任意かつ複数可（単語と同様、複数レッスンへ付けられるしレッスン非依存の
+/// ライブラリ音声も許容する）。inverse は `Lesson.audioClips` 側で定義する。
 @Model
 final class AudioClip {
     var id: UUID
@@ -15,8 +16,8 @@ final class AudioClip {
     var sourcePath: String?
     var byteSize: Int
     var importedAt: Date
-    /// 紐付くレッスン（任意）
-    var lesson: Lesson?
+    /// 紐付くレッスン（0個以上）。レッスン削除時は nullify されクリップ自体は残る。
+    var lessons: [Lesson] = []
 
     init(
         id: UUID = UUID(),
@@ -25,7 +26,7 @@ final class AudioClip {
         sourcePath: String? = nil,
         byteSize: Int = 0,
         importedAt: Date = .now,
-        lesson: Lesson? = nil
+        lessons: [Lesson] = []
     ) {
         self.id = id
         self.title = title
@@ -33,6 +34,6 @@ final class AudioClip {
         self.sourcePath = sourcePath
         self.byteSize = byteSize
         self.importedAt = importedAt
-        self.lesson = lesson
+        self.lessons = lessons
     }
 }

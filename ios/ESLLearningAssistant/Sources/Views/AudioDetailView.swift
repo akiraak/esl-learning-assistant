@@ -10,10 +10,9 @@ struct AudioDetailView: View {
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
-    @Query(sort: \Lesson.createdAt, order: .reverse) private var lessons: [Lesson]
 
-    /// レッスン割当は UUID で選ぶ（@Model の Picker タグはIDで扱うのが安全）。nil = 未割当
-    @State private var selectedLessonID: UUID?
+    /// レッスン追加シートの提示中フラグ
+    @State private var isAddingLesson = false
     @State private var isConfirmingDelete = false
 
     private var audioURL: URL { AudioStorage.url(fileName: clip.audioFileName) }
@@ -27,18 +26,33 @@ struct AudioDetailView: View {
                     .onChange(of: clip.title) { modelContext.saveOrLog() }
             }
 
-            Section("Lesson") {
-                Picker("Lesson", selection: $selectedLessonID) {
-                    Text("None").tag(UUID?.none)
-                    ForEach(lessons) { lesson in
-                        Text("\(lesson.schoolClass.name) / \(lesson.title)")
-                            .tag(UUID?.some(lesson.id))
+            Section {
+                // 単語詳細（Appears in Lessons）と同型：一覧＋スワイプ解除＋追加ボタン
+                let linked = clip.lessons.sorted { $0.createdAt > $1.createdAt }
+                ForEach(linked) { lesson in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(lesson.title)
+                            .foregroundStyle(.primary)
+                        Text(lesson.schoolClass.name)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .swipeActions(edge: .trailing) {
+                        Button(role: .destructive) {
+                            unlink(lesson)
+                        } label: {
+                            Label("Remove", systemImage: "trash")
+                        }
                     }
                 }
-                .onChange(of: selectedLessonID) {
-                    clip.lesson = lessons.first { $0.id == selectedLessonID }
-                    modelContext.saveOrLog()
+                Button {
+                    isAddingLesson = true
+                } label: {
+                    Label("Add to Lesson", systemImage: "plus.circle")
                 }
+                .accessibilityIdentifier("audioAddToLessonButton")
+            } header: {
+                Text("Lessons")
             }
 
             Section {
@@ -61,9 +75,15 @@ struct AudioDetailView: View {
             }
         }
         .onAppear {
-            selectedLessonID = clip.lesson?.id
             // 自動再生はせず、一時停止状態でロードしてプレイヤーを表示する
             playback.prepare(url: audioURL)
+        }
+        .sheet(isPresented: $isAddingLesson) {
+            // 既にリンク済みのレッスンは除外して二重リンクを防ぐ
+            let linkedLessonIDs = Set(clip.lessons.map(\.id))
+            WordLessonPickerView(excludedLessonIDs: linkedLessonIDs, title: "Add to Lesson") { lesson in
+                link(lesson)
+            }
         }
         .confirmationDialog(
             "Delete this audio?",
@@ -73,6 +93,19 @@ struct AudioDetailView: View {
             Button("Delete", role: .destructive) { delete() }
             Button("Cancel", role: .cancel) {}
         }
+    }
+
+    /// レッスンに紐付ける（既にリンク済みなら何もしない）
+    private func link(_ lesson: Lesson) {
+        guard !clip.lessons.contains(where: { $0.id == lesson.id }) else { return }
+        clip.lessons.append(lesson)
+        modelContext.saveOrLog()
+    }
+
+    /// 指定レッスンとの紐付けを解除する（クリップ本体・レッスンは残る）
+    private func unlink(_ lesson: Lesson) {
+        clip.lessons.removeAll { $0.id == lesson.id }
+        modelContext.saveOrLog()
     }
 
     private func delete() {

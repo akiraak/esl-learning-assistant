@@ -1,5 +1,14 @@
 # DONE
 
+- [x] 2026-07-05 Audio詳細画面で複数レッスンへの追加に対応する
+      単語詳細（Appears in Lessons）と同型の仕組みを Audio 詳細にも展開。
+      `AudioClip.lesson: Lesson?`（to-one）→ `AudioClip.lessons: [Lesson]`（多対多）に変更し、
+      `Lesson.audioClips` の delete rule を cascade → nullify に（レッスン削除でクリップ本体は残す）。
+      `AudioDetailView` の単一 Picker を、一覧＋スワイプ解除＋「Add to Lesson」ボタン（`WordLessonPickerView`
+      を汎用ピッカーとして再利用）に置換。取り込み経路・`AudioClipRow`（先頭＋"+N"表示）・
+      `DebugDataCleaner.deleteClass`（音声ファイルの巻き込み削除を撤去）を多対多に追従。
+      plan: docs/plans/archive/audio-multi-lesson.md
+
 - [x] 2026-07-05 Audioの修正：一覧の再生ボタン削除・詳細の自動再生停止
       Audio一覧（Audioタブ・レッスン画面）の各行から再生/停止ボタンを削除し、AudioClipRow を
       タイトル＋レッスン名のみの表示に簡素化。行タップは詳細遷移のみ（自動再生しない）。

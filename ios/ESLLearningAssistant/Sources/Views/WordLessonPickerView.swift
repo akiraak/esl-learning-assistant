@@ -1,12 +1,12 @@
 import SwiftUI
 import SwiftData
 
-/// 単語をレッスンに紐付ける／別レッスンへ付け替えるための選択シート。
-/// `WordDetailView` の「Appears in Lessons」から追加・編集の両方で使う。
-/// `excludedLessonIDs`（既にリンク済みのレッスン）は一覧から除外し、同一レッスンの
-/// 行が二重に出ないようにする。選択すると `onSelect(lesson)` を呼んで dismiss する。
+/// レッスンをクラスごとにグルーピングして 1つ選ばせる汎用の選択シート。
+/// 単語（`WordDetailView` の「Appears in Lessons」）と音声（`AudioDetailView` の「Lessons」）の
+/// 追加・付け替えで共用する。`excludedLessonIDs`（既にリンク済みのレッスン）は一覧から除外し、
+/// 同一レッスンの行が二重に出ないようにする。選択すると `onSelect(lesson)` を呼んで dismiss する。
 struct WordLessonPickerView: View {
-    /// 一覧から除外するレッスン（既にこの単語がリンク済みのもの）
+    /// 一覧から除外するレッスン（既にリンク済みのもの）
     let excludedLessonIDs: Set<UUID>
     let title: String
     let onSelect: (Lesson) -> Void
@@ -46,7 +46,7 @@ struct WordLessonPickerView: View {
                     ContentUnavailableView(
                         "No Available Lessons",
                         systemImage: "book.closed",
-                        description: Text("This word is already linked to every lesson, or there are no lessons yet.")
+                        description: Text("It is already linked to every lesson, or there are no lessons yet.")
                     )
                 }
             }

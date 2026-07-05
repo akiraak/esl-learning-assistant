@@ -24,7 +24,7 @@ enum AudioFileImporter {
                 audioFileName: fileName,
                 sourcePath: nil,
                 byteSize: data.count,
-                lesson: lesson
+                lessons: lesson.map { [$0] } ?? []
             )
             context.insert(clip)
             count += 1

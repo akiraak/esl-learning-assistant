@@ -24,18 +24,16 @@ enum DebugDataCleaner {
         PhotoStorage.deleteAll()
     }
 
-    /// 指定したClassだけを削除する。cascadeでLesson → Photo / WordOccurrence / AudioClipも消える。
+    /// 指定したClassだけを削除する。cascadeでLesson → Photo / WordOccurrenceが消える。
+    /// AudioClip は多対多（nullify）なのでレッスン紐付けが外れるだけでクリップ本体は残す
+    /// （ライブラリ音声として存続。全消しは deleteAllAudioClips で行う）。
     static func deleteClass(_ schoolClass: Class, context: ModelContext) throws {
         // エンティティ削除後はリレーションを辿れないため、ファイル名を先に集める
         let photoFileNames = schoolClass.lessons.flatMap(\.photos).map(\.imageFileName)
-        let audioFileNames = schoolClass.lessons.flatMap(\.audioClips).map(\.audioFileName)
         context.delete(schoolClass)
         try context.save()
         for fileName in photoFileNames {
             PhotoStorage.delete(fileName: fileName)
-        }
-        for fileName in audioFileNames {
-            AudioStorage.delete(fileName: fileName)
         }
     }
 

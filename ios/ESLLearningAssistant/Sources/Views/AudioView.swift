@@ -139,12 +139,20 @@ struct AudioView: View {
 struct AudioClipRow: View {
     let clip: AudioClip
 
+    /// 紐付くレッスンのサブタイトル。複数時は先頭＋ "+N"。未割当は nil。
+    private var lessonSubtitle: String? {
+        let lessons = clip.lessons.sorted { $0.createdAt > $1.createdAt }
+        guard let first = lessons.first else { return nil }
+        let base = "\(first.schoolClass.name) / \(first.title)"
+        return lessons.count > 1 ? "\(base)  +\(lessons.count - 1)" : base
+    }
+
     var body: some View {
         HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(clip.title).lineLimit(1)
-                if let lesson = clip.lesson {
-                    Text("\(lesson.schoolClass.name) / \(lesson.title)")
+                if let subtitle = lessonSubtitle {
+                    Text(subtitle)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
