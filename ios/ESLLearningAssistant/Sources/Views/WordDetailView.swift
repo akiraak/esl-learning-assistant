@@ -9,6 +9,7 @@ struct WordDetailView: View {
 
     @State private var isConfirmingRegenerate = false
     @State private var isConfirmingDelete = false
+    @State private var lessonPickerMode: LessonPickerMode?
     @StateObject private var speechService = SpeechService()
     @State private var speakingText: String?
     @StateObject private var ttsPlayback = TTSPlaybackService()
@@ -61,14 +62,15 @@ struct WordDetailView: View {
 
             Section {
                 let occurrences = word.occurrences.sorted { $0.occurredAt > $1.occurredAt }
-                if occurrences.isEmpty {
-                    TappableEnglishText(text: "Not linked to any lesson", color: .secondary)
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(occurrences) { occurrence in
+                // 行タップで別レッスンへ付け替え、スワイプでその出現のみ削除できる
+                ForEach(occurrences) { occurrence in
+                    Button {
+                        lessonPickerMode = .relink(occurrence)
+                    } label: {
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(occurrence.lesson.title)
+                                    .foregroundStyle(.primary)
                                 Text(occurrence.lesson.schoolClass.name)
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
@@ -78,8 +80,23 @@ struct WordDetailView: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .swipeActions(edge: .trailing) {
+                        Button(role: .destructive) {
+                            WordRegistrar.unlink(occurrence, in: modelContext)
+                        } label: {
+                            Label("Remove", systemImage: "trash")
+                        }
                     }
                 }
+                Button {
+                    lessonPickerMode = .add
+                } label: {
+                    Label("Add to Lesson", systemImage: "plus.circle")
+                }
+                .accessibilityIdentifier("wordAddToLessonButton")
             } header: {
                 TappableEnglishText(text: "Appears in Lessons")
             }
@@ -125,6 +142,20 @@ struct WordDetailView: View {
             }
         }
         .animation(.snappy(duration: 0.2), value: ttsPlayback.isActive)
+        .sheet(item: $lessonPickerMode) { mode in
+            // 追加・付け替えとも、既にリンク済みのレッスンは除外して二重リンクを防ぐ
+            let linkedLessonIDs = Set(word.occurrences.map(\.lesson.id))
+            switch mode {
+            case .add:
+                WordLessonPickerView(excludedLessonIDs: linkedLessonIDs, title: "Add to Lesson") { lesson in
+                    WordRegistrar.linkManually(word, to: lesson, in: modelContext)
+                }
+            case .relink(let occurrence):
+                WordLessonPickerView(excludedLessonIDs: linkedLessonIDs, title: "Move to Lesson") { lesson in
+                    WordRegistrar.relink(occurrence, to: lesson, in: modelContext)
+                }
+            }
+        }
         .onDisappear {
             speechService.stop()
             ttsPlayback.stop()
@@ -205,6 +236,19 @@ struct WordDetailView: View {
             }
         } header: {
             TappableEnglishText(text: "Review")
+        }
+    }
+
+    /// レッスン選択シートの提示モード（追加 / 既存出現の付け替え）
+    private enum LessonPickerMode: Identifiable {
+        case add
+        case relink(WordOccurrence)
+
+        var id: String {
+            switch self {
+            case .add: return "add"
+            case .relink(let occurrence): return occurrence.id.uuidString
+            }
         }
     }
 

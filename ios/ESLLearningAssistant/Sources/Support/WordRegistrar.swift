@@ -78,4 +78,41 @@ enum WordRegistrar {
         modelContext.insert(occurrence)
         lesson.wordOccurrences.append(occurrence)
     }
+
+    // MARK: - 登録後の手動編集（WordDetailView から使う）
+
+    /// 単語詳細画面から手動でレッスンに紐付ける。OCR 由来ではないため `sourcePhoto = nil`。
+    /// 重複は「そのレッスンに既に出現があるか」を `lesson.id` のみで判定して防ぐ
+    /// （同一レッスンの行が二重に出ないように）。
+    @MainActor
+    static func linkManually(_ word: Word, to lesson: Lesson, in modelContext: ModelContext) {
+        let alreadyLinked = word.occurrences.contains { $0.lesson.id == lesson.id }
+        guard !alreadyLinked else { return }
+        let occurrence = WordOccurrence(word: word, lesson: lesson, sourcePhoto: nil)
+        modelContext.insert(occurrence)
+        lesson.wordOccurrences.append(occurrence)
+        modelContext.saveOrLog()
+    }
+
+    /// 出現記録を別レッスンへ付け替える。`sourcePhoto` は素性メタとして保持する。
+    /// 付け替え先に既に同じ単語の出現があれば重複を作らず削除に倒す。
+    @MainActor
+    static func relink(_ occurrence: WordOccurrence, to lesson: Lesson, in modelContext: ModelContext) {
+        guard occurrence.lesson.id != lesson.id else { return }
+        if occurrence.word.occurrences.contains(where: { $0.lesson.id == lesson.id && $0.id != occurrence.id }) {
+            // 付け替え先が既にリンク済み → 重複を作らずこの出現は削除する
+            unlink(occurrence, in: modelContext)
+            return
+        }
+        occurrence.lesson = lesson
+        lesson.wordOccurrences.append(occurrence)
+        modelContext.saveOrLog()
+    }
+
+    /// 出現記録のみを削除してレッスンとの紐付けを解除する（`Word` 本体・`Lesson` は残る）。
+    @MainActor
+    static func unlink(_ occurrence: WordOccurrence, in modelContext: ModelContext) {
+        modelContext.delete(occurrence)
+        modelContext.saveOrLog()
+    }
 }
