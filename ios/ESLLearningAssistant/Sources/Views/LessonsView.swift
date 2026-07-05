@@ -276,14 +276,11 @@ struct LessonsView: View {
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(clips) { clip in
-                    // 行タップで詳細へ遷移しつつ、同時に再生も開始する（Audioタブと同挙動）
+                    // 行タップで詳細へ遷移する（再生は詳細画面で行う。Audioタブと同挙動）
                     Button {
-                        toggleAudio(clip)
                         selectedAudioClip = clip
                     } label: {
-                        AudioClipRow(clip: clip, isPlaying: isPlayingAudio(clip)) {
-                            toggleAudio(clip)
-                        }
+                        AudioClipRow(clip: clip)
                     }
                     .buttonStyle(.plain)
                 }
@@ -318,20 +315,6 @@ struct LessonsView: View {
             }
         case .failure(let error):
             audioImportError = error.localizedDescription
-        }
-    }
-
-    private func isPlayingAudio(_ clip: AudioClip) -> Bool {
-        let url = AudioStorage.url(fileName: clip.audioFileName)
-        return audioPlayback.isActive && audioPlayback.currentURL == url
-    }
-
-    private func toggleAudio(_ clip: AudioClip) {
-        let url = AudioStorage.url(fileName: clip.audioFileName)
-        if audioPlayback.isActive && audioPlayback.currentURL == url {
-            audioPlayback.stop()
-        } else {
-            audioPlayback.play(url: url)
         }
     }
 

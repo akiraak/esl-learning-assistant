@@ -60,7 +60,11 @@ struct AudioDetailView: View {
                 TTSPlayerBar(playback: playback)
             }
         }
-        .onAppear { selectedLessonID = clip.lesson?.id }
+        .onAppear {
+            selectedLessonID = clip.lesson?.id
+            // 自動再生はせず、一時停止状態でロードしてプレイヤーを表示する
+            playback.prepare(url: audioURL)
+        }
         .confirmationDialog(
             "Delete this audio?",
             isPresented: $isConfirmingDelete,

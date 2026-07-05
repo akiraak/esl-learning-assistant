@@ -32,16 +32,11 @@ struct AudioView: View {
                 } else {
                     List {
                         ForEach(clips) { clip in
-                            // 行タップで詳細へ遷移しつつ、同時に再生も開始する。
-                            // NavigationLink + simultaneousGesture だとタップを食い合って遷移しないため、
-                            // Button で明示的に遷移先を指定する（navigationDestination で push）。
+                            // 行タップで詳細へ遷移する（再生は詳細画面で行う）。
                             Button {
-                                togglePlay(clip)
                                 selectedClip = clip
                             } label: {
-                                AudioClipRow(clip: clip, isPlaying: isPlaying(clip)) {
-                                    togglePlay(clip)
-                                }
+                                AudioClipRow(clip: clip)
                             }
                             .buttonStyle(.plain)
                             .contextMenu {
@@ -128,15 +123,6 @@ struct AudioView: View {
         return playback.isActive && playback.currentURL == url
     }
 
-    private func togglePlay(_ clip: AudioClip) {
-        let url = AudioStorage.url(fileName: clip.audioFileName)
-        if playback.isActive && playback.currentURL == url {
-            playback.stop()
-        } else {
-            playback.play(url: url)
-        }
-    }
-
     private func deleteAt(_ offsets: IndexSet) {
         for index in offsets { delete(clips[index]) }
     }
@@ -149,14 +135,12 @@ struct AudioView: View {
     }
 }
 
-/// 音声ライブラリ 1 行。タイトル＋紐付くレッスン名（あれば）＋再生/停止ボタン。
+/// 音声ライブラリ 1 行。タイトル＋紐付くレッスン名（あれば）。再生は詳細画面で行う。
 struct AudioClipRow: View {
     let clip: AudioClip
-    let isPlaying: Bool
-    let onPlayToggle: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(clip.title).lineLimit(1)
                 if let lesson = clip.lesson {
@@ -166,12 +150,13 @@ struct AudioClipRow: View {
                         .lineLimit(1)
                 }
             }
-            Spacer()
-            Button(action: onPlayToggle) {
-                Image(systemName: isPlaying ? "stop.fill" : "play.fill")
-                    .font(.title3)
-            }
-            .buttonStyle(.borderless)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            // 詳細へ遷移できることを示す標準の開示インジケータ
+            Image(systemName: "chevron.forward")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.tertiary)
         }
+        .contentShape(Rectangle())
     }
 }

@@ -1,5 +1,14 @@
 # DONE
 
+- [x] 2026-07-05 Audioの修正：一覧の再生ボタン削除・詳細の自動再生停止
+      Audio一覧（Audioタブ・レッスン画面）の各行から再生/停止ボタンを削除し、AudioClipRow を
+      タイトル＋レッスン名のみの表示に簡素化。行タップは詳細遷移のみ（自動再生しない）。
+      詳細（AudioDetailView）では onAppear で TTSPlaybackService.prepare(url:) を呼び、一時停止状態で
+      ロード → TTSPlayerBar を表示してユーザーが再生ボタンを押せるようにした。
+      start(player:url:autoPlay:) に autoPlay 引数を追加（false で prepareToPlay のみ）。
+      TTSPlaybackServiceTests に testPrepareLoadsWithoutAutoPlaying を追加。
+      plan: docs/plans/archive/audio-list-play-button-removal.md
+
 - [x] 2026-07-05 レッスンとの関連付け（単語・音声）を登録後も編集できるようにする
       単語・音声とレッスンの紐付けを、後からユーザーが自由に追加・削除・変更できるように統一。
       Phase 1: 単語詳細（WordDetailView）の「Appears in Lessons」を編集可能化。Add行→WordLessonPickerView

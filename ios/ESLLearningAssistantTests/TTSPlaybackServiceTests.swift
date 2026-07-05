@@ -83,6 +83,23 @@ final class TTSPlaybackServiceTests: XCTestCase {
         service.stop()
     }
 
+    func testPrepareLoadsWithoutAutoPlaying() throws {
+        let service = TTSPlaybackService()
+
+        // ロードのみ：アクティブだが再生はしていない
+        service.prepare(url: wavURL)
+        XCTAssertTrue(service.isActive)
+        XCTAssertFalse(service.isPlaying)
+        XCTAssertEqual(service.currentURL, wavURL)
+
+        // 再生ボタン相当（resume）で再生が始まる
+        service.resume()
+        XCTAssertTrue(service.isPlaying)
+
+        service.stop()
+        XCTAssertFalse(service.isActive)
+    }
+
     /// 16bitモノラルPCMの無音WAVを生成する（バックエンドが返すWAVと同形式）
     private static func makeSilentWAV(duration: Double, sampleRate: Int = 8000) -> Data {
         let sampleCount = Int(duration * Double(sampleRate))

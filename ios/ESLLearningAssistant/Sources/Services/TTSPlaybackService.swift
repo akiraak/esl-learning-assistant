@@ -28,6 +28,19 @@ final class TTSPlaybackService: NSObject, ObservableObject {
         }
     }
 
+    /// 再生はせず、音源をロードだけして操作パネル（TTSPlayerBar）を一時停止状態で表示する。
+    /// 詳細画面を開いた時点では自動再生せず、ユーザーが再生ボタンを押せるようにするため。
+    /// 既に同じURLがアクティブなら何もしない（再ロードで再生位置をリセットしない）。
+    func prepare(url: URL) {
+        if isActive && currentURL == url { return }
+        do {
+            let player = try AVAudioPlayer(contentsOf: url)
+            start(player: player, url: url, autoPlay: false)
+        } catch {
+            stop()
+        }
+    }
+
     /// サーバから取得したWAVデータをメモリから直接再生する（PhotoDetailViewのOCR全文読み上げ用）
     func play(data: Data) {
         do {
@@ -38,7 +51,7 @@ final class TTSPlaybackService: NSObject, ObservableObject {
         }
     }
 
-    private func start(player: AVAudioPlayer, url: URL?) {
+    private func start(player: AVAudioPlayer, url: URL?, autoPlay: Bool = true) {
         stop()
         do {
             let session = AVAudioSession.sharedInstance()
@@ -55,9 +68,13 @@ final class TTSPlaybackService: NSObject, ObservableObject {
         isActive = true
         duration = player.duration
         currentTime = 0
-        player.play()
-        isPlaying = true
-        startProgressTimer()
+        if autoPlay {
+            player.play()
+            isPlaying = true
+            startProgressTimer()
+        } else {
+            player.prepareToPlay()
+        }
     }
 
     func pause() {
