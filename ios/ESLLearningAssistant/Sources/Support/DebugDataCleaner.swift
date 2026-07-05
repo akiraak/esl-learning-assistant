@@ -9,6 +9,7 @@ enum DebugDataCleaner {
     static func deleteAllData(context: ModelContext) throws {
         try deleteAllClasses(context: context)
         try deleteAllWords(context: context)
+        try deleteAllCompositions(context: context)
     }
 
     /// 全Classを削除する。cascadeでLesson → Photo / WordOccurrenceも消える。
@@ -38,6 +39,15 @@ enum DebugDataCleaner {
         let words = try context.fetch(FetchDescriptor<Word>())
         for word in words {
             context.delete(word)
+        }
+        try context.save()
+    }
+
+    /// 全Compositionを削除する。
+    static func deleteAllCompositions(context: ModelContext) throws {
+        let compositions = try context.fetch(FetchDescriptor<Composition>())
+        for composition in compositions {
+            context.delete(composition)
         }
         try context.save()
     }

@@ -27,6 +27,12 @@ struct ContentView: View {
                 .badge(dueCount)
                 .tag(AppTab.words)
 
+            CompositionsView()
+                .tabItem {
+                    Label("Writing", systemImage: "pencil.and.scribble")
+                }
+                .tag(AppTab.writing)
+
             SettingsView()
                 .tabItem {
                     Label("Settings", systemImage: "gearshape")
@@ -39,5 +45,5 @@ struct ContentView: View {
 
 #Preview {
     ContentView()
-        .modelContainer(for: [Class.self, Lesson.self, Photo.self, Word.self, WordOccurrence.self], inMemory: true)
+        .modelContainer(for: [Class.self, Lesson.self, Photo.self, Word.self, WordOccurrence.self, Composition.self], inMemory: true)
 }

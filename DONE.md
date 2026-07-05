@@ -1,5 +1,23 @@
 # DONE
 
+- [x] 2026-07-05 作文機能（英作文の添削込み）
+      学習者が英作文を書き、Claude API で添削（修正英文＋日本語解説）を受ける産出練習機能。
+      入力は英文＋「伝えたかった意図（日本語）」の2つで、日本語を AI に渡して添削方向を確定させる。
+      バックエンド: POST /api/writing-feedback（backend/src/writingFeedback.ts）。structured output で
+      correctedText / explanation を返す。config.writingFeedbackModel（既定 claude-sonnet-5）を追加。
+      作文本文は毎回異なりキャッシュが効かないためサーバ保存はせず、db の writing_feedback_requests に
+      通信ログのみ記録。管理画面（admin.ts）に「作文添削ログ」の一覧・詳細と AI料金の用途逆引きを追加。
+      実 API 疎通（過去形・be動詞の誤りを意図どおり修正＋日本語解説）を確認済み。
+      iOS: 独立エンティティ Composition（Lesson 非従属）＋埋め込み WritingFeedback を新設し、
+      ナビに「Writing」タブを追加。詳細画面で英文・日本語をその場編集 →「Review」で添削取得 → 修正英文
+      （単語タップで単語帳登録に接続）＋解説（Markdown）を表示。本文編集後は feedback.generatedAt <
+      updatedAt で「古い（要再添削）」を表示。空作文は離脱時に破棄。RemoteWritingFeedbackService で通信。
+      SwiftData スキーマ全箇所に Composition.self を登録。DebugDataCleaner の Delete All Data にも
+      Composition 削除を追加（UIテスト再実行で未削除バグを検知して修正）。CompositionUITests でタブ遷移・
+      両欄入力での Review 活性・一覧表示・空作文破棄を検証（オフライン範囲）。ビルド・テスト成功。
+      本プロジェクトは XcodeGen 管理のため pbxproj は project.yml から再生成（Sources 配下は自動取り込み）。
+      specs 更新: app-spec.md §3.4 作文・Phase 4、data-model.md §9 Composition / WritingFeedback。
+      plan: docs/plans/archive/writing-composition-feedback.md
 - [x] 2026-07-04 単語クイズの正解時に気持ちいい音／間違い時にそれとない音を出す
       解答が集約される ReviewSessionView.recordAnswer(isCorrect:) で効果音＋ハプティックを再生。
       音源は同梱方式（ユーザー選択）。tools/generate_quiz_sounds.py で合成（numpy非依存）し、

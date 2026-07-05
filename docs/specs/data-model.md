@@ -12,8 +12,9 @@
 - 各エンティティは `id: UUID` を主キーとする
 - 「レッスンごとのビュー」「全体の一覧ビュー」（仕様書4章）は、`Lesson`（および `Class`）との関連を
   辿るクエリ／それらを介さない全件クエリの両方を SwiftData の `@Query` でサポートできる形にする
-- `Word` のみ `Lesson` に従属しない独立エンティティとする（1章参照）。同じ単語が複数レッスンの
-  教科書に出てきても 1つの `Word` レコードに統合され、復習状態（`reviewState`）も共有される
+- `Word` と `Composition` は `Lesson` に従属しない独立エンティティとする（1章参照）。同じ単語が
+  複数レッスンの教科書に出てきても 1つの `Word` レコードに統合され、復習状態（`reviewState`）も
+  共有される。`Composition`（作文）は自主学習として自由に書き溜める
 - 本資料は **スキーマ**を確定するもの。以下は仕様書9章に残課題として残り、本資料のスコープ外
   - 対応言語（母語）の具体的なリスト
 - 単語帳の間隔反復アルゴリズムは固定ステップの Leitner 方式で確定した（§5 参照。
@@ -42,7 +43,7 @@ WordOccurrence ── * (sourcePhoto: Photo?)
 
 ### データ構造ツリー
 
-`Class` 配下の所有階層と、`Lesson` に従属しない `Word` を別ツリーとして示す。
+`Class` 配下の所有階層と、`Lesson` に従属しない `Word` / `Composition` を別ツリーとして示す。
 
 ```
 Class
@@ -90,6 +91,17 @@ Word                                          (Lessonに従属しない独立エ
 │   ├─ correctCount
 │   └─ lapseCount
 └─ occurrences: [WordOccurrence]              (1 Word - * WordOccurrence)
+
+Composition                                   (Lessonに従属しない独立エンティティ)
+├─ id
+├─ englishText / japaneseText
+├─ createdAt / updatedAt
+├─ explanationLanguage
+└─ feedback?: WritingFeedback                 (埋め込み。未添削なら nil)
+    ├─ correctedText
+    ├─ explanation
+    ├─ model
+    └─ generatedAt
 ```
 
 - 実線の `├─ lessons / photos / wordOccurrences / questions / results / occurrences` は
@@ -277,7 +289,45 @@ Word                                          (Lessonに従属しない独立エ
 - 同一 `Question` に対して複数回の `QuizResult` を許容する（再挑戦・履歴表示のため）
 - レッスン単位／全体の正答率は `Lesson.questions.results`（または全件の `QuizResult`）を集計して算出する
 
-## 9. 今後の検討事項
+## 9. Composition（作文）
+
+`Word` と同様に `Lesson` に従属しない独立エンティティ。学習者が英作文を書き溜め、
+AI 添削（修正英文＋母語解説）を受ける（仕様書3.4章）。作文本文・添削結果とも端末ローカルに
+保存する（サーバは添削の通信ログのみ保持し、本文・結果は保存しない）。
+
+| フィールド | 型 | 説明 |
+|---|---|---|
+| id | UUID | 主キー |
+| englishText | String | 学習者が書いた英文 |
+| japaneseText | String | 対応する日本語（訳 or 日本語での説明＝伝えたかった意図）。添削の方向を確定させるため AI に渡す |
+| createdAt | Date | 作成日時 |
+| updatedAt | Date | 本文編集のたびに更新。`feedback.generatedAt` との比較で「添削が古い」判定に使う |
+| explanationLanguage | String | 解説言語（実質 "ja"。生成時のユーザー母語設定を記録） |
+| feedback | WritingFeedback? | 直近の添削結果（埋め込み。未添削なら nil） |
+
+- 入力は englishText / japaneseText の**2フィールド必須**。両方が埋まるまで添削は実行できない。
+- 送信前は何度でも編集でき、編集のたびに `updatedAt` を更新する。添削後に本文を編集すると
+  `feedback.generatedAt < updatedAt` となり、既存の添削は「古い（要再添削）」として扱う。
+- v1 は最新1件の添削のみ保持（`feedback` 単数）。指摘リスト/スコアや添削履歴が必要になったら
+  `WritingFeedback` にフィールド追加 or `feedback: [WritingFeedback]` へ拡張する。
+- 本文も添削も無い空の作文は残さず破棄する（新規作成後に何も書かずに離脱した場合）。
+
+### WritingFeedback（埋め込み構造体）
+
+作文添削の結果。バックエンド `/api/writing-feedback` のレスポンス `feedback` と同構造
+（`backend/src/writingFeedback.ts`）。フィールドを増減する場合は両方を合わせる。
+
+| フィールド | 型 | 説明 |
+|---|---|---|
+| correctedText | String | 修正後の英文（全文） |
+| explanation | String | 解説言語での解説（どこをなぜ直したか。Markdown 箇条書き） |
+| model | String | 生成に使ったモデル |
+| generatedAt | Date | 生成日時（本文編集との前後比較に使う） |
+
+> 埋め込み Codable は SwiftData が実プロパティ名ベースで管理するため CodingKeys は付けない
+> （リネームすると値が黙って未永続化になる。`WordReviewState` と同方針）。
+
+## 10. 今後の検討事項
 
 - 間隔反復アルゴリズムを SM-2 / FSRS へ差し替える場合、`WordReviewState` への
   アルゴリズム固有パラメータ（easeFactor 等）の追加が必要

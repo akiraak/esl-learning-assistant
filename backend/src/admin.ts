@@ -17,6 +17,7 @@ import {
   getTtsAudioById,
   getWordIllustrationById,
   getWordInfoLog,
+  getWritingFeedbackLog,
   insertWordInfoLog,
   listIllustratedWords,
   listQuizQuestions,
@@ -24,6 +25,7 @@ import {
   listRecentRequestLogs,
   listRecentSystemLogs,
   listRecentWordInfoLogs,
+  listRecentWritingFeedbackLogs,
   listStoredWords,
   listStoredWordTexts,
   listTtsAudio,
@@ -34,9 +36,11 @@ import {
   upsertStoredWord,
   upsertWordIllustration,
   WordInfoLogRow,
+  WritingFeedbackLogRow,
 } from "./db";
 import { config } from "./config";
 import { generateWordInfo, type WordInfo } from "./wordInfo";
+import { type WritingFeedback } from "./writingFeedback";
 import { generateQuizQuestions, type QuizQuestion } from "./quizQuestions";
 import { generateIllustration, ILLUSTRATION_MODEL } from "./illustration";
 import { DEFAULT_IMAGE_PRICING, DEFAULT_PRICING, DEFAULT_TTS_PRICING, estimateCostUsd, getCurrentPricing } from "./pricing";
@@ -153,6 +157,12 @@ function escapeHtml(value: string): string {
     .replace(/"/g, "&quot;");
 }
 
+/// 一覧表示用に改行を潰して指定文字数で切り詰める（超過時は末尾に…）
+function truncate(value: string, max: number): string {
+  const oneLine = value.replace(/\s+/g, " ").trim();
+  return oneLine.length > max ? `${oneLine.slice(0, max)}…` : oneLine;
+}
+
 /// Markdown由来の生HTMLタグ注入を防ぐため、パース前に `&`/`<`/`>` のみエスケープする
 /// （Markdownの見出し・箇条書き・強調記法は `"` を使わないため対象外）。
 function renderMarkdown(value: string | null): string {
@@ -161,11 +171,12 @@ function renderMarkdown(value: string | null): string {
   return marked.parse(escaped, { async: false, breaks: true }) as string;
 }
 
-type NavSection = "ocr" | "word-info" | "words" | "quiz-questions" | "tts" | "illustrations" | "pricing" | "logs";
+type NavSection = "ocr" | "word-info" | "writing-feedback" | "words" | "quiz-questions" | "tts" | "illustrations" | "pricing" | "logs";
 
 const NAV_ITEMS: Array<[NavSection, string, string]> = [
   ["ocr", "/admin", "OCR・翻訳ログ"],
   ["word-info", "/admin/word-info", "単語情報ログ"],
+  ["writing-feedback", "/admin/writing-feedback", "作文添削ログ"],
   ["words", "/admin/words", "単語一覧"],
   ["quiz-questions", "/admin/quiz-questions", "単語クイズ"],
   ["tts", "/admin/tts", "TTS一覧"],
@@ -538,6 +549,128 @@ adminRouter.get("/word-info/:id", (req, res) => {
   `;
 
   res.type("html").send(renderPage(`単語情報ログ #${log.id} - ESL Assistant`, "", body, "word-info"));
+});
+
+adminRouter.get("/writing-feedback", (_req, res) => {
+  const logs = listRecentWritingFeedbackLogs(100);
+
+  const totalCostUsd = logs.reduce((sum, log) => sum + log.cost_usd, 0);
+  const errorCount = logs.filter((log) => log.status !== "success").length;
+
+  const rows = logs
+    .map(
+      (log) => `
+        <tr class="log-row">
+          <td class="mono dim">#${log.id}</td>
+          <td class="mono dim">${escapeHtml(formatSeattleTime(log.created_at))}</td>
+          <td>${escapeHtml(truncate(log.english_text, 60))}<br><span class="dim">${escapeHtml(truncate(log.japanese_text, 60))}</span></td>
+          <td>${escapeHtml(log.explanation_language)}</td>
+          <td><strong>${escapeHtml(log.model)}</strong> <span class="dim">(in:${log.input_tokens} / out:${log.output_tokens})</span></td>
+          <td class="mono">$${log.cost_usd.toFixed(5)}</td>
+          <td>${statusLabel(log)}${log.error_message ? `<div class="err-note">${escapeHtml(log.error_message)}</div>` : ""}</td>
+          <td class="mono dim">${log.latency_ms}ms</td>
+          <td><a href="/admin/writing-feedback/${log.id}">詳細 →</a></td>
+        </tr>
+      `
+    )
+    .join("\n");
+
+  res.type("html").send(
+    renderPage(
+      "ESL Assistant - 作文添削ログ",
+      "",
+      `
+        <h1>作文添削ログ</h1>
+        <p class="page-sub">直近${logs.length}件の作文添削リクエスト</p>
+        <div class="stats">
+          <div class="stat"><div class="lbl">直近件数</div><div class="val">${logs.length}<small>件</small></div></div>
+          <div class="stat"><div class="lbl">コスト合計</div><div class="val">$${totalCostUsd.toFixed(2)}</div></div>
+          <div class="stat${errorCount > 0 ? " alert" : ""}"><div class="lbl">エラー</div><div class="val">${errorCount}<small>件</small></div></div>
+        </div>
+        <div class="card">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th><th>日時</th><th>英文 / 意図</th><th>解説言語</th>
+                <th>モデル / トークン</th><th>コスト</th><th>状態</th><th>処理時間</th><th></th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      `,
+      "writing-feedback"
+    )
+  );
+});
+
+/// feedback_json を人が読める形に整形する（パース不能ならJSONをそのまま表示）。
+function renderWritingFeedbackBlock(row: { feedback_json: string | null }): string {
+  if (!row.feedback_json) return "<p>(生成結果なし)</p>";
+
+  let feedback: WritingFeedback;
+  try {
+    feedback = JSON.parse(row.feedback_json) as WritingFeedback;
+  } catch {
+    return `<pre>${escapeHtml(row.feedback_json)}</pre>`;
+  }
+
+  return `
+    <h2>修正後の英文</h2>
+    <div class="markdown-block">${renderMarkdown(feedback.correctedText)}</div>
+    <h2>解説</h2>
+    <div class="markdown-block">${renderMarkdown(feedback.explanation)}</div>
+  `;
+}
+
+adminRouter.get("/writing-feedback/:id", (req, res) => {
+  const id = Number(req.params.id);
+  const log = getWritingFeedbackLog(id);
+  if (!log) {
+    res
+      .status(404)
+      .type("html")
+      .send(
+        renderPage(
+          "ログが見つかりません",
+          "",
+          '<p>指定されたログは存在しません。</p><p><a href="/admin/writing-feedback">← 一覧に戻る</a></p>'
+        )
+      );
+    return;
+  }
+
+  const prev = getWritingFeedbackLog(id + 1); // 新しいログ
+  const next = getWritingFeedbackLog(id - 1); // 古いログ
+
+  const body = `
+    <p><a href="/admin/writing-feedback">← 一覧に戻る</a></p>
+    <h1>作文添削ログ #${log.id}</h1>
+    <table class="meta-table">
+      <tr><th>日時</th><td>${escapeHtml(formatSeattleTime(log.created_at))}</td></tr>
+      <tr><th>解説言語</th><td>${escapeHtml(log.explanation_language)}</td></tr>
+      <tr><th>モデル</th><td>${escapeHtml(log.model)}（in: ${log.input_tokens} / out: ${log.output_tokens}）</td></tr>
+      <tr><th>コスト</th><td>$${log.cost_usd.toFixed(5)}</td></tr>
+      <tr><th>状態</th><td>${statusLabel(log)}${log.error_message ? `<br>${escapeHtml(log.error_message)}` : ""}</td></tr>
+      <tr><th>処理時間</th><td>${log.latency_ms}ms</td></tr>
+    </table>
+
+    <h2>学習者が書いた英文</h2>
+    <div class="markdown-block">${renderMarkdown(log.english_text)}</div>
+
+    <h2>伝えたかった意図</h2>
+    <div class="markdown-block">${renderMarkdown(log.japanese_text)}</div>
+
+    ${renderWritingFeedbackBlock(log)}
+
+    <p class="nav-links">
+      ${prev ? `<a href="/admin/writing-feedback/${prev.id}">← 新しいログ (#${prev.id})</a>` : "<span>(これが最新)</span>"}
+      &nbsp;|&nbsp;
+      ${next ? `<a href="/admin/writing-feedback/${next.id}">古いログ (#${next.id}) →</a>` : "<span>(これが最古)</span>"}
+    </p>
+  `;
+
+  res.type("html").send(renderPage(`作文添削ログ #${log.id} - ESL Assistant`, "", body, "writing-feedback"));
 });
 
 /// 一覧プレビュー用に先頭語義を取り出す（パース不能なら空文字）
@@ -979,6 +1112,7 @@ function modelUsage(model: string): string {
   if (model === config.ocrModel) usages.push("OCR");
   if (model === config.translateModel) usages.push("翻訳");
   if (model === config.wordInfoModel) usages.push("単語情報");
+  if (model === config.writingFeedbackModel) usages.push("作文添削");
   if (model === "gemini-2.5-flash-preview-tts") usages.push("TTS (flash)");
   if (model === "gemini-2.5-pro-preview-tts") usages.push("TTS (pro)");
   if (model === ILLUSTRATION_MODEL) usages.push("単語イラスト");

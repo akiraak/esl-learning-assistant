@@ -11,7 +11,7 @@ struct ESLLearningAssistantApp: App {
         AppSettingsKeys.migrateLegacyTTSEngineIfNeeded()
         do {
             let container = try ModelContainer(
-                for: Class.self, Lesson.self, Photo.self, Word.self, WordOccurrence.self
+                for: Class.self, Lesson.self, Photo.self, Word.self, WordOccurrence.self, Composition.self
             )
             modelContainerResult = .success(container)
         } catch {

@@ -399,5 +399,5 @@ private struct PhotoRow: View {
 
 #Preview {
     LessonsView()
-        .modelContainer(for: [Class.self, Lesson.self, Photo.self, Word.self, WordOccurrence.self], inMemory: true)
+        .modelContainer(for: [Class.self, Lesson.self, Photo.self, Word.self, WordOccurrence.self, Composition.self], inMemory: true)
 }

@@ -81,6 +81,26 @@ if (!wordInfoColumns.has("cache_hit")) {
   db.exec("ALTER TABLE word_info_requests ADD COLUMN cache_hit INTEGER NOT NULL DEFAULT 0");
 }
 
+// 作文添削（/api/writing-feedback）のログ。作文本文は毎回異なりキャッシュが効かないため
+// サーバ側は保存せずログ用途のみ（結果本体の永続化は iOS 側 Composition.feedback）。
+db.exec(`
+  CREATE TABLE IF NOT EXISTS writing_feedback_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    english_text TEXT NOT NULL,
+    japanese_text TEXT NOT NULL,
+    explanation_language TEXT NOT NULL,
+    feedback_json TEXT,
+    model TEXT NOT NULL,
+    input_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    cost_usd REAL NOT NULL DEFAULT 0,
+    status TEXT NOT NULL,
+    error_message TEXT,
+    latency_ms INTEGER NOT NULL DEFAULT 0
+  )
+`);
+
 // サーバ合成したTTS音声の保存（実体は data/tts/<text_hash>.wav、ここはメタデータ）。
 // キャッシュキーは sha256("model|text")（voice は生成時ランダム選択のためキーに含めない。
 // 旧形式 sha256("voice|model|text") の既存行はヒットしなくなるが残置）。
@@ -356,6 +376,77 @@ export function getWordInfoLog(id: number): WordInfoLogRow | undefined {
   return db
     .prepare("SELECT * FROM word_info_requests WHERE id = ?")
     .get(id) as WordInfoLogRow | undefined;
+}
+
+export interface WritingFeedbackLogInput {
+  englishText: string;
+  japaneseText: string;
+  explanationLanguage: string;
+  feedbackJson: string | null;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+  status: "success" | "error";
+  errorMessage: string | null;
+  latencyMs: number;
+}
+
+const insertWritingFeedbackStmt = db.prepare(`
+  INSERT INTO writing_feedback_requests (
+    created_at, english_text, japanese_text, explanation_language,
+    feedback_json, model, input_tokens, output_tokens,
+    cost_usd, status, error_message, latency_ms
+  ) VALUES (
+    @createdAt, @englishText, @japaneseText, @explanationLanguage,
+    @feedbackJson, @model, @inputTokens, @outputTokens,
+    @costUsd, @status, @errorMessage, @latencyMs
+  )
+`);
+
+export function insertWritingFeedbackLog(input: WritingFeedbackLogInput): void {
+  insertWritingFeedbackStmt.run({
+    createdAt: new Date().toISOString(),
+    englishText: input.englishText,
+    japaneseText: input.japaneseText,
+    explanationLanguage: input.explanationLanguage,
+    feedbackJson: input.feedbackJson,
+    model: input.model,
+    inputTokens: input.inputTokens,
+    outputTokens: input.outputTokens,
+    costUsd: input.costUsd,
+    status: input.status,
+    errorMessage: input.errorMessage,
+    latencyMs: input.latencyMs,
+  });
+}
+
+export interface WritingFeedbackLogRow {
+  id: number;
+  created_at: string;
+  english_text: string;
+  japanese_text: string;
+  explanation_language: string;
+  feedback_json: string | null;
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number;
+  status: string;
+  error_message: string | null;
+  latency_ms: number;
+}
+
+export function listRecentWritingFeedbackLogs(limit: number): WritingFeedbackLogRow[] {
+  return db
+    .prepare("SELECT * FROM writing_feedback_requests ORDER BY id DESC LIMIT ?")
+    .all(limit) as WritingFeedbackLogRow[];
+}
+
+export function getWritingFeedbackLog(id: number): WritingFeedbackLogRow | undefined {
+  return db
+    .prepare("SELECT * FROM writing_feedback_requests WHERE id = ?")
+    .get(id) as WritingFeedbackLogRow | undefined;
 }
 
 export interface StoredWordRow {

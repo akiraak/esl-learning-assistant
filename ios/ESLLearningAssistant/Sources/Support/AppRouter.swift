@@ -3,6 +3,7 @@ import SwiftUI
 enum AppTab: Hashable {
     case lessons
     case words
+    case writing
     case settings
 }
 

@@ -10,6 +10,7 @@ import {
   getWordIllustrationByHash,
   insertRequestLog,
   insertWordInfoLog,
+  insertWritingFeedbackLog,
   listIllustratedWords,
   listQuizQuestions,
   listStoredWordTexts,
@@ -21,6 +22,7 @@ import {
 import { adminRouter } from "./admin";
 import { ocrAndTranslate } from "./ocrTranslate";
 import { generateWordInfo, type WordInfo } from "./wordInfo";
+import { generateWritingFeedback } from "./writingFeedback";
 import { generateQuizQuestions } from "./quizQuestions";
 import { estimateCostUsd } from "./pricing";
 import { startPricingSync } from "./pricingSync";
@@ -311,6 +313,98 @@ app.post("/api/word-info", async (req, res) => {
     });
 
     logger.error(`word-info: failed word="${trimmedWord}" latencyMs=${latencyMs} error=${errorMessage}`);
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+const WRITING_TEXT_MAX_LENGTH = 5000;
+const DEFAULT_EXPLANATION_LANGUAGE = "ja";
+
+// 作文添削。英文と「伝えたかった意図（母語）」を渡し、修正英文＋母語解説を返す。
+// 作文本文は毎回異なりキャッシュが効かないため、サーバ側は保存せずログ用途のみ。
+app.post("/api/writing-feedback", async (req, res) => {
+  const { englishText, japaneseText, explanationLanguage } = req.body ?? {};
+
+  if (typeof englishText !== "string" || !englishText.trim()) {
+    logger.warn("writing-feedback: rejected (englishText is required)");
+    res.status(400).json({ error: "englishText is required" });
+    return;
+  }
+  if (englishText.length > WRITING_TEXT_MAX_LENGTH) {
+    logger.warn(`writing-feedback: rejected (englishText too long: ${englishText.length})`);
+    res.status(400).json({ error: `englishText must be ${WRITING_TEXT_MAX_LENGTH} characters or fewer` });
+    return;
+  }
+  if (typeof japaneseText !== "string" || !japaneseText.trim()) {
+    logger.warn("writing-feedback: rejected (japaneseText is required)");
+    res.status(400).json({ error: "japaneseText is required" });
+    return;
+  }
+  if (japaneseText.length > WRITING_TEXT_MAX_LENGTH) {
+    logger.warn(`writing-feedback: rejected (japaneseText too long: ${japaneseText.length})`);
+    res.status(400).json({ error: `japaneseText must be ${WRITING_TEXT_MAX_LENGTH} characters or fewer` });
+    return;
+  }
+  if (explanationLanguage !== undefined && typeof explanationLanguage !== "string") {
+    logger.warn("writing-feedback: rejected (explanationLanguage must be a string)");
+    res.status(400).json({ error: "explanationLanguage must be a string" });
+    return;
+  }
+
+  const trimmedEnglish = englishText.trim();
+  const trimmedJapanese = japaneseText.trim();
+  const resolvedLanguage =
+    typeof explanationLanguage === "string" && explanationLanguage.trim()
+      ? explanationLanguage.trim()
+      : DEFAULT_EXPLANATION_LANGUAGE;
+
+  const startedAt = Date.now();
+  logger.info(
+    `writing-feedback: start englishLen=${trimmedEnglish.length} japaneseLen=${trimmedJapanese.length} ` +
+      `explanationLanguage=${resolvedLanguage} model=${config.writingFeedbackModel}`
+  );
+
+  try {
+    const result = await generateWritingFeedback(trimmedEnglish, trimmedJapanese, resolvedLanguage);
+    const latencyMs = Date.now() - startedAt;
+    const costUsd = estimateCostUsd(result.model, result.inputTokens, result.outputTokens);
+    const feedbackJson = JSON.stringify(result.feedback);
+
+    insertWritingFeedbackLog({
+      englishText: trimmedEnglish,
+      japaneseText: trimmedJapanese,
+      explanationLanguage: resolvedLanguage,
+      feedbackJson,
+      model: result.model,
+      inputTokens: result.inputTokens,
+      outputTokens: result.outputTokens,
+      costUsd,
+      status: "success",
+      errorMessage: null,
+      latencyMs,
+    });
+
+    logger.info(`writing-feedback: success latencyMs=${latencyMs}`);
+    res.json({ feedback: result.feedback, model: result.model });
+  } catch (error) {
+    const latencyMs = Date.now() - startedAt;
+    const errorMessage = error instanceof Error ? error.message : String(error);
+
+    insertWritingFeedbackLog({
+      englishText: trimmedEnglish,
+      japaneseText: trimmedJapanese,
+      explanationLanguage: resolvedLanguage,
+      feedbackJson: null,
+      model: config.writingFeedbackModel,
+      inputTokens: 0,
+      outputTokens: 0,
+      costUsd: 0,
+      status: "error",
+      errorMessage,
+      latencyMs,
+    });
+
+    logger.error(`writing-feedback: failed latencyMs=${latencyMs} error=${errorMessage}`);
     res.status(500).json({ error: errorMessage });
   }
 });
