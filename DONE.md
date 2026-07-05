@@ -1,5 +1,26 @@
 # DONE
 
+- [x] 2026-07-05 写真の扱いを検討する（調査・設計）
+      写真（`Photo`）を3観点で整理: (1)レッスンのコンテンツとして / (2)レッスンのメモとして /
+      (3)レッスンに紐付かない写真の可能性。現状は `Photo.lesson` が非オプショナル＝レッスン必須で、
+      「OCR・翻訳される教科書コンテンツ」に一体化しており用途を選べない・メモに写真添付不可・
+      未所属写真を表現できないことを確認。データモデルの選択肢（`Photo` に種別フラグ追加 /
+      メモ専用エンティティ新設 / `lesson` オプショナル化）をマイグレーション影響とあわせて提示。
+      特に `Photo.lesson` オプショナル化は SwiftData ストア互換に加え、`WordOccurrence.sourcePhoto`→
+      `lesson`→`ocrText` に依存する `WordRegistrar`/`WordAIInfoGenerator`・カスケード削除への波及に注意。
+      具体的なモデル確定・実装は別タスクに切り出す前提。
+      plan: docs/plans/archive/photo-handling-review.md
+
+- [x] 2026-07-05 複数ユーザーで使う場合の実装を検討する（調査のみ）
+      「複数ユーザー」を4シナリオに分解（A:自分の複数端末 / B:少人数が各自独立 /
+      C:データ共有・協働 / D:不特定多数へ配布）。現状は学習データが iOS の SwiftData
+      ローカル専用・識別子なし、バックエンドは個人データを持たない共有 AI キャッシュ（認証は
+      共有シークレット1個）であることを確認。主戦場は iOS の学習データ層で、A/B は CloudKit
+      プライベート DB でバックエンド改修ゼロに解決可能と結論。モデルは `@Attribute(.unique)`
+      不使用で相性良好だが、非オプショナル to-one リレーション（`Lesson.schoolClass` 等）の
+      optional 化が必要。実装方針は未決4点（目的/Apple専用可否/コスト負担/共有要否）の確定後に判断。
+      plan: docs/plans/archive/multi-user-support-review.md
+
 - [x] 2026-07-05 Audio詳細画面で複数レッスンへの追加に対応する
       単語詳細（Appears in Lessons）と同型の仕組みを Audio 詳細にも展開。
       `AudioClip.lesson: Lesson?`（to-one）→ `AudioClip.lessons: [Lesson]`（多対多）に変更し、
