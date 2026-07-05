@@ -1,5 +1,19 @@
 # DONE
 
+- [x] 2026-07-05 レッスンとの関連付け（単語・音声）を登録後も編集できるようにする
+      単語・音声とレッスンの紐付けを、後からユーザーが自由に追加・削除・変更できるように統一。
+      Phase 1: 単語詳細（WordDetailView）の「Appears in Lessons」を編集可能化。Add行→WordLessonPickerView
+      で追加、行スワイプで削除、行タップで別レッスンへ付け替え（既リンク先は除外して二重リンク防止）。
+      WordRegistrar に linkManually / relink / unlink を追加。
+      Phase 2: Audio取り込みを「ファイル選択→レッスン選択（既定 None）→取り込み」のフローに変更。
+      新規 AudioImportLessonView（sheet）でレッスンを選んでから AudioFileImporter.importFiles(into:) 実行。
+      Phase 3: 新規 AudioDetailView。一覧行を NavigationLink 化し、simultaneousGesture で再生と詳細遷移を
+      同時実行。詳細で再生/一時停止・タイトル編集・レッスンの追加/変更/解除（Picker, None=解除）・削除。
+      下部 TTSPlayerBar は NavigationStack の safeAreaInset に移し、push 後も継続表示。
+      AudioClipEditView は詳細画面へ機能移行して廃止（AudioClipRow は LessonsView と共用のため残置）。
+      新エンティティ追加なし（WordOccurrence / AudioClip.lesson の既存モデルで実現）。
+      plan: docs/plans/archive/lesson-association-words-audio.md
+
 - [x] 2026-07-05 音声タブを追加し、音声を取り込み・レッスン紐付け・再生できるようにする
       Audioタブを新設。iOSの「ファイル」（Dropbox・iCloud・端末内）から音声を取り込み、アプリの
       正式データ（AudioClip）として保存 → 既存 TTSPlayerBar で再生（一時停止・±5秒・シーク・速度）。

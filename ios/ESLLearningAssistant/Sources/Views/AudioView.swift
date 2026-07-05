@@ -2,17 +2,27 @@ import SwiftUI
 import SwiftData
 import UniformTypeIdentifiers
 
+/// `.fileImporter` で選ばれたURL群を、レッスン選択シート（`AudioImportLessonView`）へ
+/// 渡すための識別可能ラッパ。`.sheet(item:)` で扱えるようにする。
+private struct PendingAudioImport: Identifiable {
+    let id = UUID()
+    let urls: [URL]
+}
+
 /// Audioタブのトップ。iOSの「ファイル」（Dropbox・iCloud・端末内）から取り込んだ音声
-/// （AudioClip）のライブラリ。行タップで再生（既存 TTSPlayerBar）。
-/// コンテキストメニューからタイトル編集・レッスン割当・削除。
+/// （AudioClip）のライブラリ。行タップで再生＋詳細へ遷移（既存 TTSPlayerBar が継続表示）。
+/// 詳細画面でタイトル編集・レッスン割当・削除を行う。
 struct AudioView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \AudioClip.importedAt, order: .reverse) private var clips: [AudioClip]
     @StateObject private var playback = TTSPlaybackService()
 
     @State private var isShowingFileImporter = false
-    @State private var editingClip: AudioClip?
+    /// ファイル選択後、レッスン選択シートへ渡す取り込み待ちURL群
+    @State private var pendingImport: PendingAudioImport?
     @State private var importError: String?
+    /// 詳細へ push 中のクリップ（行タップで設定 → navigationDestination で遷移）
+    @State private var selectedClip: AudioClip?
 
     var body: some View {
         NavigationStack {
@@ -22,17 +32,26 @@ struct AudioView: View {
                 } else {
                     List {
                         ForEach(clips) { clip in
-                            AudioClipRow(clip: clip, isPlaying: isPlaying(clip)) {
+                            // 行タップで詳細へ遷移しつつ、同時に再生も開始する。
+                            // NavigationLink + simultaneousGesture だとタップを食い合って遷移しないため、
+                            // Button で明示的に遷移先を指定する（navigationDestination で push）。
+                            Button {
                                 togglePlay(clip)
+                                selectedClip = clip
+                            } label: {
+                                AudioClipRow(clip: clip, isPlaying: isPlaying(clip)) {
+                                    togglePlay(clip)
+                                }
                             }
-                            .contentShape(Rectangle())
-                            .onTapGesture { togglePlay(clip) }
+                            .buttonStyle(.plain)
                             .contextMenu {
-                                Button("Edit", systemImage: "pencil") { editingClip = clip }
                                 Button("Delete", systemImage: "trash", role: .destructive) { delete(clip) }
                             }
                         }
                         .onDelete(perform: deleteAt)
+                    }
+                    .navigationDestination(item: $selectedClip) { clip in
+                        AudioDetailView(clip: clip, playback: playback)
                     }
                 }
             }
@@ -47,28 +66,26 @@ struct AudioView: View {
                     .accessibilityLabel("Import Audio")
                 }
             }
-            .sheet(item: $editingClip) { clip in
-                AudioClipEditView(clip: clip)
-            }
             .fileImporter(
                 isPresented: $isShowingFileImporter,
                 allowedContentTypes: [.audio],
                 allowsMultipleSelection: true
             ) { result in
-                handleFileImport(result, into: nil)
+                handleFileSelection(result)
+            }
+            // ファイル選択後にレッスンを選んでから取り込む
+            .sheet(item: $pendingImport) { pending in
+                AudioImportLessonView(urls: pending.urls) { lesson in
+                    importFiles(pending.urls, into: lesson)
+                }
             }
             .alert("Import Failed", isPresented: importErrorBinding) {
                 Button("OK", role: .cancel) { importError = nil }
             } message: {
                 Text(importError ?? "")
             }
-            // 再生中だけ画面下部にプレイヤーを差し込む（コンテンツを隠さない）
-            .safeAreaInset(edge: .bottom) {
-                if playback.isActive {
-                    TTSPlayerBar(playback: playback)
-                }
-            }
         }
+        // 再生UIは AudioDetailView の safeAreaInset に集約する（一覧には出さない）
         .onDisappear { playback.stop() }
     }
 
@@ -83,15 +100,22 @@ struct AudioView: View {
         }
     }
 
-    private func handleFileImport(_ result: Result<[URL], Error>, into lesson: Lesson?) {
+    /// ファイル選択の結果を受け取る。成功時は即取り込まず、レッスン選択シートへ回す。
+    private func handleFileSelection(_ result: Result<[URL], Error>) {
         switch result {
         case .success(let urls):
-            let count = AudioFileImporter.importFiles(urls, into: lesson, context: modelContext)
-            if count == 0 && !urls.isEmpty {
-                importError = "Could not read the selected audio file(s)."
-            }
+            guard !urls.isEmpty else { return }
+            pendingImport = PendingAudioImport(urls: urls)
         case .failure(let error):
             importError = error.localizedDescription
+        }
+    }
+
+    /// レッスン選択シートで確定した後に、実際の取り込みを行う。
+    private func importFiles(_ urls: [URL], into lesson: Lesson?) {
+        let count = AudioFileImporter.importFiles(urls, into: lesson, context: modelContext)
+        if count == 0 && !urls.isEmpty {
+            importError = "Could not read the selected audio file(s)."
         }
     }
 

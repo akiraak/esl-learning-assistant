@@ -24,6 +24,7 @@ struct LessonsView: View {
     @State private var audioFileImportLesson: Lesson?
     @State private var isShowingAudioFileImporter = false
     @State private var audioImportError: String?
+    @State private var selectedAudioClip: AudioClip?
     /// レッスン画面の音声再生（Audioタブとは独立したプレイヤー）
     @StateObject private var audioPlayback = TTSPlaybackService()
 
@@ -69,6 +70,9 @@ struct LessonsView: View {
             .navigationDestination(item: $selectedWord) { word in
                 WordDetailView(word: word)
             }
+            .navigationDestination(item: $selectedAudioClip) { clip in
+                AudioDetailView(clip: clip, playback: audioPlayback)
+            }
             .navigationDestination(isPresented: $isEditingMemo) {
                 if let lesson = currentLesson {
                     LessonMemoEditView(lesson: lesson)
@@ -85,12 +89,6 @@ struct LessonsView: View {
                 Button("OK", role: .cancel) { audioImportError = nil }
             } message: {
                 Text(audioImportError ?? "")
-            }
-            // 再生中だけ画面下部にプレイヤーを差し込む
-            .safeAreaInset(edge: .bottom) {
-                if audioPlayback.isActive {
-                    TTSPlayerBar(playback: audioPlayback)
-                }
             }
         }
         .onDisappear { audioPlayback.stop() }
@@ -278,11 +276,16 @@ struct LessonsView: View {
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(clips) { clip in
-                    AudioClipRow(clip: clip, isPlaying: isPlayingAudio(clip)) {
+                    // 行タップで詳細へ遷移しつつ、同時に再生も開始する（Audioタブと同挙動）
+                    Button {
                         toggleAudio(clip)
+                        selectedAudioClip = clip
+                    } label: {
+                        AudioClipRow(clip: clip, isPlaying: isPlayingAudio(clip)) {
+                            toggleAudio(clip)
+                        }
                     }
-                    .contentShape(Rectangle())
-                    .onTapGesture { toggleAudio(clip) }
+                    .buttonStyle(.plain)
                 }
             }
         } header: {
