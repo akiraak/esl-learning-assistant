@@ -63,8 +63,101 @@
 - 検証観点: (1) 単語ごとのタップ検出が効くか、(2) 登録・重複判定・AI 生成トリガが期待どおり動くか、(3) `openURL` 横取りの見た目と操作感。
 - 検証OK後、この `TappableEnglishText`＋トークナイザを別ファイルへ抽出（Phase 1/2）し、`PhotoDetailView` の OCR 英文へ展開する。
 
-## Phase 構成
+## Phase 構成（旧・初期案）
 
 - **Phase 1**: 登録ロジックを `WordRegistrar` へ抽出し、`WordAddView` をそれ利用へリファクタ（挙動不変・既存テスト緑を維持）。
 - **Phase 2**: 単語トークナイザ + `TappableOCRTextView`（フローレイアウト・タップ登録・登録済み/追加済み表示）を実装し、`PhotoDetailView` にモードトグルと `modelContext` 注入を追加。`sourcePhoto: photo` / `lesson: photo.lesson` で登録。
 - **Phase 3**: 仕上げ（タップフィードバックのアニメーション、既に登録済み単語のハイライト、トークン化のエッジケース対応）とテスト整備。
+
+---
+
+## 本命フェーズ: アプリ全体の英語へ展開（2026-07-04 確定）
+
+検証（Phase 0）が成功し、`WordDetailView` の英文タップ登録が実用に足ることを確認した。
+これをアプリのあらゆる英語箇所へ展開する。
+
+### 重要な技術的発見: MarkdownUI でも単語タップは可能
+
+当初 PhotoDetailView の OCR は MarkdownUI 表示のためタップ不可と考え「トグルで
+プレーン表示へ切替」案を採っていたが、MarkdownUI 2.4.1 のソース調査で以下を確認した:
+
+- MarkdownUI はリンク `[text](url)` を独自ジェスチャではなく **標準の
+  `AttributedString.link`（URL属性）** としてレンダリングするだけで、独自の `openURL` を
+  持たない。よって `Markdown(...)` を `.environment(\.openURL, OpenURLAction{...})` で
+  包めば、プレーン `Text` の検証実装と**まったく同じ仕組み**でタップを横取りできる。
+- 段落は1つの `Text` に連結されるため、1段落に多数の単語リンクを入れても自然に折り返す。
+- リンクの見た目はテーマで完全にカスタム可能。
+  `.markdownTextStyle(\.link) { ForegroundColor(.primary); UnderlineStyle(nil) }`
+  （＋必要なら `.tint(.primary)`）で下線・色を消し、本文と見分けがつかなくできる。
+- インライン単位のタップコールバックAPIは無いので、「各単語をリンク化 → openURL横取り」が
+  唯一かつ正攻法。
+
+→ **OCR は書式（見出しハイライト・太字）を保ったまま、トグル無しで常時タップ可能にする。**
+プレーン英文とマークダウン英文を、共通のトークナイザ・`eslword://` スキーム・登録ハンドラで
+統一する。
+
+### 対応範囲（ユーザー確定・全4項目）
+
+1. **OCR結果（PhotoDetailView）** — 本命。書式維持のまま常時タップ可。
+2. **単語詳細の残り英語欄（WordDetailView）** — 英英定義・コロケーション・語形変化・
+   類義/反意語。
+3. **用法ノート等の混在欄（WordDetailView）** — Usage Notes/Etymology/Common Mistakes。
+   英単語のみリンク化されるため母語混在でも安全。
+4. **復習クイズのフィードバック（ReviewSessionView）** — 解答後のまとめカードの例文・
+   displayText。回答ボタン自体はタップ登録対象外（回答操作と競合するため）。
+
+### 共通アーキテクチャ
+
+- **新規 `Support/EnglishWordLink.swift`（純ロジック・テスト対象）**
+  - `tokenize(_:)`: 英文を単語/区切りへ分割（検証実装から移設）。
+  - `linkedMarkdown(_:)`: マークダウン文字列の**単語だけ**を `[word](eslword://add?w=…)`
+    に包む。見出し `#`・強調 `*`・区切りは非単語として素通し。**コードブロック/インライン
+    コード/既存リンク・URL は破壊しないようガード**する（状態機械で1パス処理）。
+  - `word(from: URL)`: `eslword://` リンクから単語をデコード。
+  - URL は `URLComponents` 経由で組み立て、`'`・`-` を含む語も安全にエンコード。
+- **新規 `Support/WordRegistrar.swift`（登録ロジック共通化・テスト対象）**
+  - `register(text:in:existingWords:lesson:sourcePhoto:generateAIInfo:)`: 同綴り再利用→
+    新規作成→（lesson 指定時）`WordOccurrence` 生成（同一 word+photo は重複ガード）→
+    `saveOrLog`→AI情報生成トリガ。`generateAIInfo` はデフォルト実装を注入可能にして
+    テストではネットワークを呼ばない。
+  - `WordAddView.addWord()` と タップ登録の両方がこれを使う（挙動不変・DRY）。
+- **新規 `Views/TappableEnglishText.swift`（SwiftUI + MarkdownUI）**
+  - `WordTapAction` + `EnvironmentValues.wordTapAction`: `OpenURLAction` に倣った環境値。
+    タップハンドラを環境で配布し、深いビュー階層（`WordAIInfoSections` 等）への
+    `onWordTap` バケツリレーを解消する。
+  - `TappableEnglishText(text:)`: プレーン英文用。`Text(AttributedString)` + 各単語リンク +
+    `openURL` 横取り → `wordTapAction`。
+  - `TappableMarkdown(markdown:)`: OCR等のマークダウン英文用。`Markdown(linkedMarkdown(...))`
+    + リンクスタイル本文同化 + 見出しハイライト + `openURL` 横取り。
+  - `markdownHeadingHighlight()` を PhotoDetailView から移設（Translation 側も引き続き利用）。
+  - `WordRegistrationModifier` + `View.wordTapRegistration(currentWord:sourcePhoto:lesson:)`:
+    `@Query allWords` と登録状態（確認ダイアログ・`navigationDestination`・トースト）を
+    集約し、`\.wordTapAction` を環境へ注入する。既存語タップ→詳細へ遷移（自分自身はスキップ）、
+    未登録語タップ→確認ダイアログ→`WordRegistrar` 登録→トースト。
+
+### 変更ファイル
+
+- `Views/WordDetailView.swift`: 私有の `TappableEnglishText`・タップ状態・
+  `handleTappedWord`/`registerTappedWord`・確認ダイアログ・navigationDestination・トーストを
+  削除し、`.wordTapRegistration(currentWord: word)` へ集約。`WordAIInfoSections` の
+  `onWordTap` 引数を撤去（環境から取得）。残りの英語欄（englishDefinition・collocation・
+  inflection.text・synonyms/antonyms・usageNote/etymology/commonMistakes）を
+  `TappableEnglishText` 化。
+- `Views/PhotoDetailView.swift`: OCR を `TappableMarkdown(photo.ocrText)` へ。ルートに
+  `.wordTapRegistration(sourcePhoto: photo, lesson: photo.lesson)`。`markdownHeadingHighlight`
+  は共通ファイルへ移設。Translation は非タップのまま。
+- `Views/WordAddView.swift`: `addWord()` を `WordRegistrar` 利用へ（挙動不変）。
+- `Views/ReviewSessionView.swift`: フィードバックカードの `example.english` と `displayText`
+  を `TappableEnglishText` 化。ルート（or フィードバック領域）に `.wordTapRegistration()`。
+  回答ボタンは対象外。
+- pbxproj: 新規3ファイルを追加。
+
+### テスト方針（更新）
+
+- **単体（新規 `EnglishWordLinkTests`）**: トークナイザ、`linkedMarkdown` の
+  見出し/強調保持・コード/リンク/URL ガード・アポストロフィ/ハイフン語・URLエンコード/
+  デコード往復。
+- **単体（新規 `WordRegistrarTests`）**: 再利用/新規作成、occurrence 生成と重複ガード、
+  AI生成トリガ（注入した no-op で検証）。`generateAIInfo` 注入でネットワーク非依存。
+- **UI**: 既存 `LessonWordAddUITests`・`WordDetailButtonsUITests` の緑維持。OCR タップ登録の
+  UIテストを追加（PhotoDetailView で単語タップ→確認→単語一覧に追加）。

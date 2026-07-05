@@ -92,6 +92,8 @@ struct ReviewSessionView: View {
             }
             .navigationTitle("Review")
             .navigationBarTitleDisplayMode(.inline)
+            // 出題・フィードバック中の英文の単語タップ→登録/詳細遷移（回答ボタンは対象外）
+            .wordTapRegistration()
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Close") {
@@ -176,7 +178,9 @@ struct ReviewSessionView: View {
                     }
 
                     if let displayText = item.question.displayText {
-                        Text(displayText)
+                        // 英語定義・空所つき例文などの英文。単語タップで登録できる（母語表示の問題では
+                        // 英単語が無いのでリンク化されない）
+                        TappableEnglishText(text: displayText)
                             .font(.title3)
                             .fontWeight(.medium)
                     }
@@ -423,7 +427,7 @@ struct ReviewSessionView: View {
 
             if let example = item.word.aiInfo?.examples.first {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(example.english)
+                    TappableEnglishText(text: example.english)
                         .font(.subheadline)
                     Text(example.translation)
                         .font(.caption)

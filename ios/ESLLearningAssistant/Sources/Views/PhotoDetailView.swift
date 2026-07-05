@@ -54,8 +54,9 @@ struct PhotoDetailView: View {
                             Spacer()
                             speechButton
                         }
-                        Markdown(photo.ocrText ?? "")
-                            .markdownHeadingHighlight()
+                        // OCR英文は書式（見出しハイライト等）を保ったまま単語ごとにタップ可能。
+                        // タップ→登録は下の .wordTapRegistration が受ける（sourcePhoto でOCR文脈もAI生成へ渡る）
+                        TappableMarkdown(markdown: photo.ocrText ?? "")
                     }
                     Divider()
                     VStack(alignment: .leading, spacing: 8) {
@@ -70,6 +71,8 @@ struct PhotoDetailView: View {
             }
             .padding()
         }
+        // OCR英文の単語タップ→登録/詳細遷移。出現元の写真とレッスンを紐付け、AI生成にOCR文脈を渡す
+        .wordTapRegistration(sourcePhoto: photo, lesson: photo.lesson)
         .navigationTitle("Photo Detail")
         .navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .bottom) {
@@ -170,34 +173,4 @@ struct PhotoDetailView: View {
         }
         return String(attributed.characters)
     }
-}
-
-private extension View {
-    /// OCR結果・翻訳結果の本文中に埋め込まれたMarkdown見出し（`#`〜`###`）を、
-    /// 背景色付きのラベルとして表示し、地の文と区別しやすくする。
-    func markdownHeadingHighlight() -> some View {
-        self
-            .markdownBlockStyle(\.heading1) { markdownHeadingLabel($0, fontSize: .em(1.6), opacity: 0.18) }
-            .markdownBlockStyle(\.heading2) { markdownHeadingLabel($0, fontSize: .em(1.35), opacity: 0.14) }
-            .markdownBlockStyle(\.heading3) { markdownHeadingLabel($0, fontSize: .em(1.15), opacity: 0.1) }
-    }
-}
-
-@MainActor
-@ViewBuilder
-private func markdownHeadingLabel(
-    _ configuration: BlockConfiguration,
-    fontSize: RelativeSize,
-    opacity: Double
-) -> some View {
-    configuration.label
-        .markdownTextStyle {
-            FontWeight(.bold)
-            FontSize(fontSize)
-        }
-        .relativePadding(.horizontal, length: .em(0.6))
-        .relativePadding(.vertical, length: .em(0.3))
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.accentColor.opacity(opacity), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .markdownMargin(top: .em(1.2), bottom: .em(0.6))
 }

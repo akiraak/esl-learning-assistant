@@ -6,15 +6,7 @@ struct WordDetailView: View {
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
-    @Query private var allWords: [Word]
 
-    // 検証: 英文タップで単語登録できるかの実験（docs/plans/ocr-tap-word-add.md）。
-    // タップ結果を一時トーストで表示する。
-    @State private var wordAddFeedback: String?
-    // タップされた単語（確認ダイアログ表示中は非nil）。確認後に登録する。
-    @State private var pendingWord: String?
-    // 登録済み単語をタップしたときの遷移先。
-    @State private var navigateToWord: Word?
     @State private var isConfirmingRegenerate = false
     @State private var isConfirmingDelete = false
     @StateObject private var speechService = SpeechService()
@@ -37,7 +29,7 @@ struct WordDetailView: View {
                 Section("Example Sentence") {
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 4) {
-                            TappableEnglishText(text: example, onWordTap: handleTappedWord)
+                            TappableEnglishText(text: example)
                             if let source = word.exampleSentenceSource {
                                 Text(source == .textbook ? "From textbook" : "AI generated")
                                     .font(.caption)
@@ -117,27 +109,8 @@ struct WordDetailView: View {
             }
         }
         .navigationTitle(word.text)
-        .navigationDestination(item: $navigateToWord) { tapped in
-            WordDetailView(word: tapped)
-        }
-        .overlay(alignment: .bottom) {
-            if let wordAddFeedback {
-                Text(wordAddFeedback)
-                    .font(.subheadline)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .shadow(radius: 4, y: 2)
-                    .padding(.bottom, 28)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-        }
-        .animation(.snappy(duration: 0.25), value: wordAddFeedback)
-        .task(id: wordAddFeedback) {
-            guard wordAddFeedback != nil else { return }
-            try? await Task.sleep(for: .seconds(1.6))
-            wordAddFeedback = nil
-        }
+        // 英文中の単語タップ→登録/詳細遷移。今表示中の単語自身への遷移はスキップする
+        .wordTapRegistration(currentWord: word)
         .safeAreaInset(edge: .bottom) {
             if ttsPlayback.isActive {
                 TTSPlayerBar(playback: ttsPlayback)
@@ -158,19 +131,6 @@ struct WordDetailView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(ttsErrorMessage ?? "")
-        }
-        .confirmationDialog(
-            "Add to word list?",
-            isPresented: Binding(
-                get: { pendingWord != nil },
-                set: { if !$0 { pendingWord = nil } }
-            ),
-            presenting: pendingWord
-        ) { word in
-            Button("Add “\(word)”") { registerTappedWord(word) }
-            Button("Cancel", role: .cancel) { pendingWord = nil }
-        } message: { word in
-            Text("Add “\(word)” to your word list?")
         }
         .confirmationDialog(
             "Regenerate AI info?",
@@ -237,47 +197,6 @@ struct WordDetailView: View {
         }
     }
 
-    /// 検証: 英文中で単語がタップされたときの振り分け。
-    /// 既に登録済みの単語ならその詳細へ遷移し、未登録なら追加確認ダイアログを表示する。
-    private func handleTappedWord(_ rawText: String) {
-        let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
-        if let existing = allWords.first(where: {
-            $0.text.compare(text, options: [.caseInsensitive]) == .orderedSame
-        }) {
-            // 今表示中の単語自身なら遷移不要
-            guard existing.id != word.id else { return }
-            navigateToWord = existing
-        } else {
-            pendingWord = text
-        }
-    }
-
-    /// 検証: 英文中でタップされた単語を単語一覧に登録する。
-    /// WordAddView.addWord() のレッスン紐付けなし版（WordsView からの追加と同じ扱い）。
-    /// 同綴りの既存単語があれば再利用し、無ければ新規作成して AI 情報生成を開始する。
-    private func registerTappedWord(_ rawText: String) {
-        let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
-        let target: Word
-        let isNew: Bool
-        if let existing = allWords.first(where: {
-            $0.text.compare(text, options: [.caseInsensitive]) == .orderedSame
-        }) {
-            target = existing
-            isNew = false
-        } else {
-            target = Word(text: text, translation: "")
-            modelContext.insert(target)
-            isNew = true
-        }
-        modelContext.saveOrLog()
-        if target.aiInfoStatus == .none || target.aiInfoStatus == .failed {
-            WordAIInfoGenerator.shared.generateInBackground(for: target)
-        }
-        wordAddFeedback = isNew ? "Added “\(target.text)”" : "Already added: “\(target.text)”"
-    }
-
     /// 単語本体を削除して一覧に戻る。cascade で全レッスンの WordOccurrence も消える
     private func deleteWord() {
         dismiss()
@@ -328,7 +247,6 @@ struct WordDetailView: View {
             if let info = word.aiInfo {
                 WordAIInfoSections(
                     info: info,
-                    onWordTap: handleTappedWord,
                     wordText: word.text,
                     // イラストのキャッシュキーはAI情報を生成した言語に揃える（未記録の旧データは設定値）
                     targetLanguage: word.aiInfoLanguage
@@ -347,8 +265,6 @@ struct WordDetailView: View {
 /// AI生成情報の表示セクション群。空の項目（nil・空配列）はセクションごと非表示にする。
 private struct WordAIInfoSections: View {
     let info: WordAIInfo
-    /// 検証: 英文中の単語がタップされたときの登録ハンドラ
-    let onWordTap: (String) -> Void
     let wordText: String
     let targetLanguage: String
     @ObservedObject var speechService: SpeechService
@@ -395,9 +311,8 @@ private struct WordAIInfoSections: View {
                                         .fontWeight(.semibold)
                                 }
                                 HStack(alignment: .top) {
-                                    Text(sense.englishDefinition)
+                                    TappableEnglishText(text: sense.englishDefinition, color: .secondary)
                                         .font(.subheadline)
-                                        .foregroundStyle(.secondary)
                                     Spacer()
                                     TTSButton(text: sense.englishDefinition, playback: ttsPlayback, errorMessage: $ttsErrorMessage)
                                 }
@@ -417,7 +332,9 @@ private struct WordAIInfoSections: View {
         if !info.inflections.isEmpty {
             Section("Word Forms") {
                 ForEach(Array(info.inflections.enumerated()), id: \.offset) { _, inflection in
-                    LabeledContent(Self.englishInflectionLabel(inflection.form), value: inflection.text)
+                    LabeledContent(Self.englishInflectionLabel(inflection.form)) {
+                        TappableEnglishText(text: inflection.text)
+                    }
                 }
             }
         }
@@ -427,7 +344,7 @@ private struct WordAIInfoSections: View {
                 ForEach(Array(info.examples.enumerated()), id: \.offset) { _, example in
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 4) {
-                            TappableEnglishText(text: example.english, onWordTap: onWordTap)
+                            TappableEnglishText(text: example.english)
                             Text(example.translation)
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
@@ -444,7 +361,7 @@ private struct WordAIInfoSections: View {
             Section("Collocations") {
                 ForEach(info.collocations, id: \.self) { collocation in
                     HStack {
-                        Text(collocation)
+                        TappableEnglishText(text: collocation)
                         Spacer()
                         SpeechButton(text: collocation, speechService: speechService, speakingText: $speakingText)
                     }
@@ -509,21 +426,25 @@ private struct WordAIInfoSections: View {
             .contains { !($0 ?? "").isEmpty }
     }
 
-    /// 類義語・反意語のような単語リスト行。カンマ区切りのリスト全体を読み上げ対象にする。
+    /// 類義語・反意語のような単語リスト行。カンマ区切りのリスト全体を読み上げ対象にしつつ、
+    /// 各語はタップで登録/詳細遷移できる（区切りのカンマ・空白は非単語として素通し）。
     private func wordListRow(title: String, words: [String]) -> some View {
         let joined = words.joined(separator: ", ")
         return HStack(alignment: .top) {
-            LabeledContent(title, value: joined)
+            LabeledContent(title) {
+                TappableEnglishText(text: joined)
+            }
             SpeechButton(text: joined, speechService: speechService, speakingText: $speakingText)
         }
     }
 
+    /// 学習ノート行。本文は英語・母語が混在しうるが、英単語だけがリンク化されるため安全にタップできる。
     private func noteRow(title: String, text: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            Text(text)
+            TappableEnglishText(text: text)
         }
         .padding(.vertical, 2)
     }
@@ -682,78 +603,6 @@ private struct TTSButton: View {
                 errorMessage = error.localizedDescription
             }
         }
-    }
-}
-
-/// 検証用: 英文を単語ごとにタップ可能にする Text。
-/// MarkdownUI を使わないプレーンな英文（例文など）向け。各単語に独自スキーム
-/// `eslword://add?w=<word>` のリンクを張り、`openURL` を横取りしてタップを検出する。
-/// リンク色はプレーン文字色（.primary）に上書きして通常の本文と同じ見た目にする。
-/// 自然な文の折り返しはそのまま SwiftUI の Text に任せる。
-private struct TappableEnglishText: View {
-    let text: String
-    let onWordTap: (String) -> Void
-
-    var body: some View {
-        Text(attributed)
-            .environment(\.openURL, OpenURLAction { url in
-                guard url.scheme == "eslword",
-                      let comps = URLComponents(url: url, resolvingAgainstBaseURL: false),
-                      let word = comps.queryItems?.first(where: { $0.name == "w" })?.value,
-                      !word.isEmpty
-                else { return .discarded }
-                onWordTap(word)
-                return .handled
-            })
-    }
-
-    private var attributed: AttributedString {
-        var result = AttributedString()
-        for token in Self.tokenize(text) {
-            // 単語トークンでも前後の記号を除いた芯に英字が無ければ（"-" 単体等）リンクにしない
-            let core = token.text.trimmingCharacters(in: CharacterSet.letters.inverted)
-            if token.isWord, core.contains(where: { $0.isLetter }) {
-                var run = AttributedString(token.text)
-                var comps = URLComponents()
-                comps.scheme = "eslword"
-                comps.host = "add"
-                comps.queryItems = [URLQueryItem(name: "w", value: core)]
-                run.link = comps.url
-                run.foregroundColor = .primary
-                result.append(run)
-            } else {
-                result.append(AttributedString(token.text))
-            }
-        }
-        return result
-    }
-
-    /// 英文を「単語」と「区切り（空白・記号）」のトークン列へ分割する。
-    /// アポストロフィ・ハイフンは単語内文字として扱う（don't, well-known）。
-    static func tokenize(_ s: String) -> [(text: String, isWord: Bool)] {
-        func isWordChar(_ c: Character) -> Bool {
-            c.isLetter || c == "'" || c == "\u{2019}" || c == "-"
-        }
-        var tokens: [(text: String, isWord: Bool)] = []
-        var current = ""
-        var currentIsWord = false
-        for c in s {
-            let w = isWordChar(c)
-            if current.isEmpty {
-                current = String(c)
-                currentIsWord = w
-            } else if w == currentIsWord {
-                current.append(c)
-            } else {
-                tokens.append((current, currentIsWord))
-                current = String(c)
-                currentIsWord = w
-            }
-        }
-        if !current.isEmpty {
-            tokens.append((current, currentIsWord))
-        }
-        return tokens
     }
 }
 

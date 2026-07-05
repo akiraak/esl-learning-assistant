@@ -78,41 +78,17 @@ struct WordAddView: View {
     }
 
     private func addWord() {
-        // 同一 text の既存 Word がある場合は新規作成せず、出現記録のみ追加する（data-model.md 6章）
-        let word: Word
-        if let existing = allWords.first(where: {
-            $0.text.compare(trimmedText, options: [.caseInsensitive]) == .orderedSame
-        }) {
-            word = existing
-        } else {
-            // 訳語はAI生成の完了時に自動補完される（WordAIInfoGenerator）
-            word = Word(text: trimmedText, translation: "")
-            modelContext.insert(word)
-        }
-
-        if let lesson = fixedLesson {
-            link(word, to: lesson)
-        } else if let lessonID = selectedLessonID,
-                  let lesson = classes.flatMap(\.lessons).first(where: { $0.id == lessonID }) {
-            link(word, to: lesson)
-        }
-        // autosave任せだと直後にアプリを強制終了された場合に失われるため明示的に保存する
-        modelContext.saveOrLog()
-
-        // AI単語情報を未生成なら生成開始（画面は閉じてバックグラウンドで継続）
-        if word.aiInfoStatus == .none || word.aiInfoStatus == .failed {
-            WordAIInfoGenerator.shared.generateInBackground(for: word)
-        }
+        // 同綴りの既存Word再利用・新規作成・レッスン紐付け・保存・AI生成トリガは WordRegistrar に集約
+        // （英文タップ登録と共通。data-model.md 6章）
+        let lesson = fixedLesson
+            ?? selectedLessonID.flatMap { id in classes.flatMap(\.lessons).first { $0.id == id } }
+        WordRegistrar.register(
+            text: trimmedText,
+            in: modelContext,
+            existingWords: allWords,
+            lesson: lesson
+        )
         dismiss()
-    }
-
-    /// 出現記録を作ってレッスンに紐付ける。to-one側（occurrence.lesson）の設定だけだと
-    /// 逆側 lesson.wordOccurrences への反映と変更通知が次の保存まで遅れ、レッスン画面に
-    /// 即時表示されないため、lesson側の配列にも明示的に追加する（関係の実体は同一）。
-    private func link(_ word: Word, to lesson: Lesson) {
-        let occurrence = WordOccurrence(word: word, lesson: lesson)
-        modelContext.insert(occurrence)
-        lesson.wordOccurrences.append(occurrence)
     }
 }
 

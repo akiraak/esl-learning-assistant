@@ -1,5 +1,21 @@
 # DONE
 
+- [x] 2026-07-04 英文の単語タップで登録をアプリ全体へ展開 [plan](docs/plans/archive/ocr-tap-word-add.md)
+      検証（Phase 0, commit 3e903d5）で確認したプレーン英文のタップ登録を、共通の仕組みに
+      抽出してアプリ全体の英語へ展開。MarkdownUI 2.4.1 のソース調査で「リンクは標準の
+      `AttributedString.link` として描かれ独自 openURL を持たない」ことを確認し、OCR英文も
+      見出しハイライト等の書式を保ったまま**トグル無しで常時タップ可能**にできた。
+      共通化: `Support/EnglishWordLink.swift`（トークナイザ・マークダウン単語リンク化・
+      `eslword://` URL 往復。コード/URL ガード。CJK 混在を除外し英単語のみリンク化）、
+      `Support/WordRegistrar.swift`（再利用/新規作成・出現記録の重複ガード付き紐付け・AI生成
+      トリガを注入可能に）、`Views/TappableEnglishText.swift`（`WordTapAction` 環境値・
+      `TappableEnglishText`/`TappableMarkdown`・`WordRegistrationModifier`＋
+      `.wordTapRegistration()`・見出しハイライトを PhotoDetailView から移設）。
+      展開先: PhotoDetailView（OCR・`sourcePhoto`/`lesson` 紐付け）、WordDetailView（英英定義・
+      語形変化・コロケーション・類義/反意語・用法ノート等の英語欄）、ReviewSessionView
+      （フィードバック例文・displayText。回答ボタンは対象外）。WordAddView も WordRegistrar
+      利用へ集約（挙動不変）。テスト: `EnglishWordLinkTests`・`WordRegistrarTests` 新規追加、
+      全55テスト＋関連UIテスト（LessonWordAdd/WordDetailButtons）緑。
 - [x] 2026-07-04 単語問題テキスト入力の自動フォーカスとフォーム改善 [plan](docs/plans/archive/word-quiz-typing-focus-and-form.md)
       復習クイズの `.typing` 形式で、(1) `advance()` で次問が typing の場合に ~0.3s 遅延後
       `isAnswerFieldFocused = true` を立て、出題時にキーボードを自動表示。(2) `typingArea` を刷新：
