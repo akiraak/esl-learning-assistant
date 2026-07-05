@@ -4,6 +4,7 @@ vibeboard/node_modules/
 # iOS (xcodegen で project.yml から生成)
 ios/*.xcodeproj
 ios/.build/
+ios/build/
 ios/DerivedData/
 .DS_Store
 

@@ -33,6 +33,12 @@ struct ContentView: View {
                 }
                 .tag(AppTab.writing)
 
+            AudioView()
+                .tabItem {
+                    Label("Audio", systemImage: "waveform")
+                }
+                .tag(AppTab.audio)
+
             SettingsView()
                 .tabItem {
                     Label("Settings", systemImage: "gearshape")
@@ -45,5 +51,5 @@ struct ContentView: View {
 
 #Preview {
     ContentView()
-        .modelContainer(for: [Class.self, Lesson.self, Photo.self, Word.self, WordOccurrence.self, Composition.self], inMemory: true)
+        .modelContainer(for: [Class.self, Lesson.self, Photo.self, Word.self, WordOccurrence.self, Composition.self, AudioClip.self], inMemory: true)
 }

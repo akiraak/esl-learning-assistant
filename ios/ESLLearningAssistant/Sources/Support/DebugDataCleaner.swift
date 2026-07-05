@@ -10,6 +10,7 @@ enum DebugDataCleaner {
         try deleteAllClasses(context: context)
         try deleteAllWords(context: context)
         try deleteAllCompositions(context: context)
+        try deleteAllAudioClips(context: context)
     }
 
     /// 全Classを削除する。cascadeでLesson → Photo / WordOccurrenceも消える。
@@ -23,15 +24,30 @@ enum DebugDataCleaner {
         PhotoStorage.deleteAll()
     }
 
-    /// 指定したClassだけを削除する。cascadeでLesson → Photo / WordOccurrenceも消える。
+    /// 指定したClassだけを削除する。cascadeでLesson → Photo / WordOccurrence / AudioClipも消える。
     static func deleteClass(_ schoolClass: Class, context: ModelContext) throws {
-        // エンティティ削除後はリレーションを辿れないため、画像ファイル名を先に集める
-        let fileNames = schoolClass.lessons.flatMap(\.photos).map(\.imageFileName)
+        // エンティティ削除後はリレーションを辿れないため、ファイル名を先に集める
+        let photoFileNames = schoolClass.lessons.flatMap(\.photos).map(\.imageFileName)
+        let audioFileNames = schoolClass.lessons.flatMap(\.audioClips).map(\.audioFileName)
         context.delete(schoolClass)
         try context.save()
-        for fileName in fileNames {
+        for fileName in photoFileNames {
             PhotoStorage.delete(fileName: fileName)
         }
+        for fileName in audioFileNames {
+            AudioStorage.delete(fileName: fileName)
+        }
+    }
+
+    /// 全AudioClipを削除する。実ファイルはディレクトリごと削除する。
+    /// （紐付きクリップは deleteAllClasses でも消えるが、レッスン非依存のライブラリ音声も含めて全消しする）
+    static func deleteAllAudioClips(context: ModelContext) throws {
+        let clips = try context.fetch(FetchDescriptor<AudioClip>())
+        for clip in clips {
+            context.delete(clip)
+        }
+        try context.save()
+        AudioStorage.deleteAll()
     }
 
     /// 全Wordを削除する。cascadeでWordOccurrenceも消える。

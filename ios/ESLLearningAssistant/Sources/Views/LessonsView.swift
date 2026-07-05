@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UniformTypeIdentifiers
 
 struct LessonsView: View {
     @Environment(\.modelContext) private var modelContext
@@ -19,6 +20,12 @@ struct LessonsView: View {
     @State private var isBulkTranslating = false
     @State private var bulkTranslateDone = 0
     @State private var bulkTranslateTotal = 0
+    /// ファイルピッカーからの音声取り込み対象レッスン（ピッカー提示の状態とは分けて保持する）
+    @State private var audioFileImportLesson: Lesson?
+    @State private var isShowingAudioFileImporter = false
+    @State private var audioImportError: String?
+    /// レッスン画面の音声再生（Audioタブとは独立したプレイヤー）
+    @StateObject private var audioPlayback = TTSPlaybackService()
 
     private let ocrTranslationService: OCRTranslationService = RemoteOCRTranslationService()
 
@@ -67,7 +74,26 @@ struct LessonsView: View {
                     LessonMemoEditView(lesson: lesson)
                 }
             }
+            .fileImporter(
+                isPresented: $isShowingAudioFileImporter,
+                allowedContentTypes: [.audio],
+                allowsMultipleSelection: true
+            ) { result in
+                handleAudioFileImport(result)
+            }
+            .alert("Import Failed", isPresented: audioImportErrorBinding) {
+                Button("OK", role: .cancel) { audioImportError = nil }
+            } message: {
+                Text(audioImportError ?? "")
+            }
+            // 再生中だけ画面下部にプレイヤーを差し込む
+            .safeAreaInset(edge: .bottom) {
+                if audioPlayback.isActive {
+                    TTSPlayerBar(playback: audioPlayback)
+                }
+            }
         }
+        .onDisappear { audioPlayback.stop() }
     }
 
     // MARK: - 現在のクラス・レッスン
@@ -182,6 +208,8 @@ struct LessonsView: View {
 
         wordsSection(lesson)
 
+        audioSection(lesson)
+
         memoSection(lesson)
 
         Section {
@@ -238,6 +266,69 @@ struct LessonsView: View {
                 .accessibilityIdentifier("lessonWordAddButton")
                 .accessibilityLabel("Add Word")
             }
+        }
+    }
+
+    @ViewBuilder
+    private func audioSection(_ lesson: Lesson) -> some View {
+        let clips = lesson.audioClips.sorted { $0.importedAt > $1.importedAt }
+        Section {
+            if clips.isEmpty {
+                TappableEnglishText(text: "No audio yet", color: .secondary)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(clips) { clip in
+                    AudioClipRow(clip: clip, isPlaying: isPlayingAudio(clip)) {
+                        toggleAudio(clip)
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture { toggleAudio(clip) }
+                }
+            }
+        } header: {
+            HStack {
+                TappableEnglishText(text: "Audio (\(lesson.audioClips.count))")
+                Spacer()
+                Button {
+                    audioFileImportLesson = lesson
+                    isShowingAudioFileImporter = true
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .accessibilityLabel("Import Audio")
+            }
+        }
+    }
+
+    private var audioImportErrorBinding: Binding<Bool> {
+        Binding(get: { audioImportError != nil }, set: { if !$0 { audioImportError = nil } })
+    }
+
+    private func handleAudioFileImport(_ result: Result<[URL], Error>) {
+        let lesson = audioFileImportLesson
+        audioFileImportLesson = nil
+        switch result {
+        case .success(let urls):
+            let count = AudioFileImporter.importFiles(urls, into: lesson, context: modelContext)
+            if count == 0 && !urls.isEmpty {
+                audioImportError = "Could not read the selected audio file(s)."
+            }
+        case .failure(let error):
+            audioImportError = error.localizedDescription
+        }
+    }
+
+    private func isPlayingAudio(_ clip: AudioClip) -> Bool {
+        let url = AudioStorage.url(fileName: clip.audioFileName)
+        return audioPlayback.isActive && audioPlayback.currentURL == url
+    }
+
+    private func toggleAudio(_ clip: AudioClip) {
+        let url = AudioStorage.url(fileName: clip.audioFileName)
+        if audioPlayback.isActive && audioPlayback.currentURL == url {
+            audioPlayback.stop()
+        } else {
+            audioPlayback.play(url: url)
         }
     }
 
@@ -399,5 +490,5 @@ private struct PhotoRow: View {
 
 #Preview {
     LessonsView()
-        .modelContainer(for: [Class.self, Lesson.self, Photo.self, Word.self, WordOccurrence.self, Composition.self], inMemory: true)
+        .modelContainer(for: [Class.self, Lesson.self, Photo.self, Word.self, WordOccurrence.self, Composition.self, AudioClip.self], inMemory: true)
 }

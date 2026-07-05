@@ -1,5 +1,21 @@
 # DONE
 
+- [x] 2026-07-05 音声タブを追加し、音声を取り込み・レッスン紐付け・再生できるようにする
+      Audioタブを新設。iOSの「ファイル」（Dropbox・iCloud・端末内）から音声を取り込み、アプリの
+      正式データ（AudioClip）として保存 → 既存 TTSPlayerBar で再生（一時停止・±5秒・シーク・速度）。
+      レッスンへの紐付けは任意（単語同様、未紐付けのライブラリ音声も可）。Audioタブのクリップ編集で
+      タイトル変更＋レッスン割当、レッスン画面の「Audio」セクションからも取り込み・再生できる。
+      データモデル: AudioClip（@Model, title/audioFileName/sourcePath?/byteSize/importedAt/lesson?）＋
+      Lesson.audioClips（cascade）。バイナリは AudioStorage（Documents/Audio, UUID.ext, 写真と同作法）。
+      新エンティティは全ModelContainer登録＋DebugDataCleaner（全削除・クラス削除でファイルも掃除）対応。
+      取り込みは iOS 標準 .fileImporter（allowedContentTypes: [.audio]）＋ AudioFileImporter で、
+      セキュリティスコープ付きURLを開閉して読み込む。
+      経緯: 当初 Dropbox 直結（SwiftyDropbox の OAuth・案A）で実装したが、App folder スコープだと
+      アプリ専用フォルダしか参照できず、普段のフォルダを扱うには Full Dropbox（新アプリ作成が必要）に
+      なるため、ユーザー判断で iOSファイルピッカー方式に一本化。SwiftyDropbox 依存・DropboxService・
+      DropboxImportView・URLスキーム・DROPBOX_APP_KEY は撤去済み（Dropbox App Console のアプリも削除可）。
+      調査/実装プランは docs/plans/archive/ に格納。
+
 - [x] 2026-07-05 writingタブのReviewボタンをもっとボタンに見えるようにする
       Composition 詳細の Review / Re-review ボタンが Form 内で素の青文字だったのを、
       `.buttonStyle(.borderedProminent)` ＋ `.controlSize(.large)` の全幅塗りボタンに変更。

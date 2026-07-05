@@ -48,5 +48,5 @@ struct ClassEditView: View {
     NavigationStack {
         ClassEditView(schoolClass: Class(name: "ESL Beginner A"))
     }
-    .modelContainer(for: [Class.self, Lesson.self, Photo.self, Word.self, WordOccurrence.self, Composition.self], inMemory: true)
+    .modelContainer(for: [Class.self, Lesson.self, Photo.self, Word.self, WordOccurrence.self, Composition.self, AudioClip.self], inMemory: true)
 }

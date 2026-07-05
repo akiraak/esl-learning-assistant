@@ -16,6 +16,9 @@ final class Lesson {
     @Relationship(deleteRule: .cascade, inverse: \WordOccurrence.lesson)
     var wordOccurrences: [WordOccurrence] = []
 
+    @Relationship(deleteRule: .cascade, inverse: \AudioClip.lesson)
+    var audioClips: [AudioClip] = []
+
     init(id: UUID = UUID(), schoolClass: Class, title: String, createdAt: Date = .now, memo: String? = nil) {
         self.id = id
         self.schoolClass = schoolClass
