@@ -1,5 +1,15 @@
 # DONE
 
+- [x] 2026-07-04 単語クイズの正解時に気持ちいい音／間違い時にそれとない音を出す
+      解答が集約される ReviewSessionView.recordAnswer(isCorrect:) で効果音＋ハプティックを再生。
+      音源は同梱方式（ユーザー選択）。tools/generate_quiz_sounds.py で合成（numpy非依存）し、
+      Resources/Sounds/correct.caf（C6→E6→G6→C7 の上昇ベルチャイム＝気持ちいい音）と
+      wrong.caf（E♭4→B♭3 の低め柔らか下降ブリップ・低音量＝それとない音）を生成。XcodeGen が
+      Resources 配下を自動でリソース取り込みするため pbxproj 手編集は不要（xcodegen generate で再生成）。
+      再生層は SoundEffectService（AVAudioPlayer 事前ロード、.ambient+mixWithOthers で TTS を止めず
+      消音スイッチ尊重、UINotificationFeedbackGenerator の success/warning ハプティック）を新規追加。
+      シミュレータ（iPhone 17 Pro）でビルド成功・両cafのバンドル同梱を確認。
+      plan: docs/plans/archive/quiz-answer-sounds.md
 - [x] 2026-07-04 単語に複数品詞があった場合に単語一覧の訳表示にも表示する
       単語一覧（WordRow）は translation（先頭語義の意味のみ自動補完）を表示していたため、複数品詞を
       持つ単語でも1つの意味しか見えなかった。Word に派生プロパティ listTranslation を追加し、

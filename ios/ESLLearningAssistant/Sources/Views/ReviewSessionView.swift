@@ -27,6 +27,8 @@ struct ReviewSessionView: View {
 
     @StateObject private var speechService = SpeechService()
     @StateObject private var ttsPlayback = TTSPlaybackService()
+    /// 正誤フィードバックの効果音・ハプティック（TTS 再生とは独立した短時間再生）
+    @State private var soundEffects = SoundEffectService()
 
     @State private var hasStarted = false
     @State private var isLoading = true
@@ -699,6 +701,8 @@ struct ReviewSessionView: View {
         guard let item = current else { return }
         speechService.stop()
         ttsPlayback.stop()
+        // 正解=気持ちいい音／不正解=それとない音＋ハプティック
+        soundEffects.playAnswerFeedback(isCorrect: isCorrect)
 
         // 解答のたびに反映する（正解+25% / 不正解−25%、100%でクリア）
         let newState = ReviewScheduler.answered(item.word.reviewState, isCorrect: isCorrect)
