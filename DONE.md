@@ -1,5 +1,19 @@
 # DONE
 
+- [x] 2026-07-04 英文タップ登録をUIラベル・項目名まで拡張
+      「あらゆる英単語の表示を登録可能に」の要望を受け、コンテンツ英文に加えて UI の項目名・
+      見出し・静的値・説明文・ナビタイトルも `TappableEnglishText` 化。WordDetailView（全セクション
+      見出し・LabeledContent ラベル）、SettingsView（Backend/Native Language/Text-to-Speech/Debug
+      見出し・フッター説明文）、LessonsView（Content/Words/Memo/Questions 見出し・空状態文）、
+      WordsView（今日の復習カード・空状態）、PhotoDetailView（見出し・状態文）、ReviewSessionView
+      （指示文・サマリー・フィードバックラベル）、WordAddView（フッター・Lesson ラベル）を対応。
+      各画面ルートに `.wordTapRegistration()` を付与。ナビタイトルは principal ツールバー項目で
+      "Photo Detail"/"Review" をタップ可能化（"Add Word" は "Add" ボタンと a11y 衝突するため除外、
+      WordDetailView は word.text＝現在語かつUIテスト参照のため据え置き）。
+      技術対応: `WordRegistrationModifier` の遷移を `Word` 直接ではなく専用 `WordRoute` 型に変更し、
+      既に `Word` 型 navigationDestination を持つ LessonsView との同一スタック型衝突を解消。
+      制約（SwiftUI 由来・未対応）: Button/Picker/TextField はコントロール自身がタップを消費するため、
+      ラベルの単語タップ化とコントロール操作を両立できず対象外。全55単体テスト＋UI回帰緑。
 - [x] 2026-07-04 英文の単語タップで登録をアプリ全体へ展開 [plan](docs/plans/archive/ocr-tap-word-add.md)
       検証（Phase 0, commit 3e903d5）で確認したプレーン英文のタップ登録を、共通の仕組みに
       抽出してアプリ全体の英語へ展開。MarkdownUI 2.4.1 のソース調査で「リンクは標準の

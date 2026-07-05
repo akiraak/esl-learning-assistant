@@ -33,6 +33,7 @@ struct WordsView: View {
                     }
                 }
             }
+            .wordTapRegistration()
             .searchable(text: $searchText, prompt: "Search words")
             .overlay(alignment: .bottomTrailing) {
                 // 空状態では中央の Add Word ボタンを使うため、一覧があるときだけ表示する
@@ -64,9 +65,9 @@ struct WordsView: View {
                         .font(.title2)
                         .foregroundStyle(.tint)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Today's Review")
+                        TappableEnglishText(text: "Today's Review")
                             .font(.headline)
-                        Text("\(dueCount) word\(dueCount == 1 ? "" : "s") to review")
+                        TappableEnglishText(text: "\(dueCount) word\(dueCount == 1 ? "" : "s") to review", color: .secondary)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -126,10 +127,10 @@ struct WordsView: View {
             Image(systemName: "book")
                 .font(.system(size: 48))
                 .foregroundStyle(.secondary)
-            Text("No Words")
+            TappableEnglishText(text: "No Words")
                 .font(.title2)
                 .fontWeight(.semibold)
-            Text("Add words you come across in your textbooks and lessons.")
+            TappableEnglishText(text: "Add words you come across in your textbooks and lessons.", color: .secondary)
                 .font(.body)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

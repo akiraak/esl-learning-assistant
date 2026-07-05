@@ -26,18 +26,18 @@ struct PhotoDetailView: View {
                 case .pending:
                     HStack {
                         ProgressView()
-                        Text("Starting OCR & translation…")
+                        TappableEnglishText(text: "Starting OCR & translation…", color: .secondary)
                             .foregroundStyle(.secondary)
                     }
                 case .processing:
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("OCR & translation did not finish (it may have been interrupted)")
+                        TappableEnglishText(text: "OCR & translation did not finish (it may have been interrupted)", color: .secondary)
                             .foregroundStyle(.secondary)
                         retryButton
                     }
                 case .failed:
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("OCR & translation failed")
+                        TappableEnglishText(text: "OCR & translation failed", color: .red)
                             .foregroundStyle(.red)
                         if let errorMessage = photo.processingErrorMessage {
                             Text(errorMessage)
@@ -49,7 +49,7 @@ struct PhotoDetailView: View {
                 case .completed:
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
-                            Text("OCR Result (English)")
+                            TappableEnglishText(text: "OCR Result (English)")
                                 .font(.headline)
                             Spacer()
                             speechButton
@@ -60,7 +60,7 @@ struct PhotoDetailView: View {
                     }
                     Divider()
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Translation")
+                        TappableEnglishText(text: "Translation")
                             .font(.headline)
                         Markdown(photo.translatedText ?? "")
                             .markdownHeadingHighlight()
@@ -75,6 +75,13 @@ struct PhotoDetailView: View {
         .wordTapRegistration(sourcePhoto: photo, lesson: photo.lesson)
         .navigationTitle("Photo Detail")
         .navigationBarTitleDisplayMode(.inline)
+        // ナビタイトルも単語タップ可能にする（principal 項目でタイトル表示を差し替え）
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                TappableEnglishText(text: "Photo Detail")
+                    .font(.headline)
+            }
+        }
         .safeAreaInset(edge: .bottom) {
             if ttsPlayback.isActive {
                 TTSPlayerBar(playback: ttsPlayback)

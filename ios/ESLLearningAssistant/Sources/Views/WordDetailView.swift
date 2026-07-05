@@ -18,20 +18,22 @@ struct WordDetailView: View {
         List {
             // 訳語はAI生成完了時に自動補完されるため、それまではセクションごと出さない
             if !word.translation.isEmpty {
-                Section("Translation") {
+                Section {
                     Text(word.translation)
+                } header: {
+                    TappableEnglishText(text: "Translation")
                 }
             }
 
             aiInfoSections
 
             if let example = word.exampleSentence, !example.isEmpty {
-                Section("Example Sentence") {
+                Section {
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 4) {
                             TappableEnglishText(text: example)
                             if let source = word.exampleSentenceSource {
-                                Text(source == .textbook ? "From textbook" : "AI generated")
+                                TappableEnglishText(text: source == .textbook ? "From textbook" : "AI generated", color: .secondary)
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
@@ -39,24 +41,28 @@ struct WordDetailView: View {
                         Spacer()
                         SpeechButton(text: example, speechService: speechService, speakingText: $speakingText)
                     }
+                } header: {
+                    TappableEnglishText(text: "Example Sentence")
                 }
             }
 
             if word.partOfSpeech != nil || word.grammarNote != nil {
-                Section("Part of Speech & Grammar") {
+                Section {
                     if let partOfSpeech = word.partOfSpeech {
-                        LabeledContent("Part of Speech", value: partOfSpeech)
+                        LabeledContent { Text(partOfSpeech) } label: { TappableEnglishText(text: "Part of Speech") }
                     }
                     if let grammarNote = word.grammarNote {
-                        LabeledContent("Grammar", value: grammarNote)
+                        LabeledContent { Text(grammarNote) } label: { TappableEnglishText(text: "Grammar") }
                     }
+                } header: {
+                    TappableEnglishText(text: "Part of Speech & Grammar")
                 }
             }
 
-            Section("Appears in Lessons") {
+            Section {
                 let occurrences = word.occurrences.sorted { $0.occurredAt > $1.occurredAt }
                 if occurrences.isEmpty {
-                    Text("Not linked to any lesson")
+                    TappableEnglishText(text: "Not linked to any lesson", color: .secondary)
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(occurrences) { occurrence in
@@ -74,14 +80,16 @@ struct WordDetailView: View {
                         }
                     }
                 }
+            } header: {
+                TappableEnglishText(text: "Appears in Lessons")
             }
 
             reviewStatusSection
 
-            Section("Details") {
-                LabeledContent("Added") {
-                    Text(word.registeredAt, style: .date)
-                }
+            Section {
+                LabeledContent { Text(word.registeredAt, style: .date) } label: { TappableEnglishText(text: "Added") }
+            } header: {
+                TappableEnglishText(text: "Details")
             }
 
             Section {
@@ -161,39 +169,42 @@ struct WordDetailView: View {
     /// 次回復習日・ステップ・回数・正答率・最終復習日時を表示する
     private var reviewStatusSection: some View {
         let state = word.reviewState
-        return Section("Review") {
-            LabeledContent("Next Review") {
+        return Section {
+            LabeledContent {
                 if ReviewScheduler.isDue(state) {
-                    Text("Due today")
+                    TappableEnglishText(text: "Due today")
                         .foregroundStyle(.orange)
                         .fontWeight(.medium)
                 } else {
                     Text(state.dueDate, style: .date)
                 }
+            } label: {
+                TappableEnglishText(text: "Next Review")
             }
             .accessibilityIdentifier("wordReviewNextRow")
             // 現在の周回の習熟度（100%到達で次回復習日に進み、0%から再スタート）
-            LabeledContent("Mastery", value: "\(state.masteryPercent)%")
+            LabeledContent { Text("\(state.masteryPercent)%") } label: { TappableEnglishText(text: "Mastery") }
                 .accessibilityIdentifier("wordReviewMasteryRow")
             // stepIndex は「次の正解で適用される間隔」のインデックス（0始まり）
             let step = min(state.stepIndex, ReviewScheduler.stepIntervalsInDays.count - 1)
-            LabeledContent(
-                "Step",
-                value: "\(step + 1) / \(ReviewScheduler.stepIntervalsInDays.count)"
-                    + " (+\(ReviewScheduler.stepIntervalsInDays[step]) days)"
-            )
+            LabeledContent {
+                Text("\(step + 1) / \(ReviewScheduler.stepIntervalsInDays.count)"
+                    + " (+\(ReviewScheduler.stepIntervalsInDays[step]) days)")
+            } label: {
+                TappableEnglishText(text: "Step")
+            }
             .accessibilityIdentifier("wordReviewStepRow")
-            LabeledContent("Reviews", value: "\(state.reviewCount)")
+            LabeledContent { Text("\(state.reviewCount)") } label: { TappableEnglishText(text: "Reviews") }
             if state.reviewCount > 0 {
                 let percent = Int((Double(state.correctCount) / Double(state.reviewCount) * 100).rounded())
-                LabeledContent("Accuracy", value: "\(percent)% (\(state.correctCount)/\(state.reviewCount))")
+                LabeledContent { Text("\(percent)% (\(state.correctCount)/\(state.reviewCount))") } label: { TappableEnglishText(text: "Accuracy") }
                     .accessibilityIdentifier("wordReviewAccuracyRow")
                 if let lastReviewedAt = state.lastReviewedAt {
-                    LabeledContent("Last Reviewed") {
-                        Text(lastReviewedAt, style: .date)
-                    }
+                    LabeledContent { Text(lastReviewedAt, style: .date) } label: { TappableEnglishText(text: "Last Reviewed") }
                 }
             }
+        } header: {
+            TappableEnglishText(text: "Review")
         }
     }
 
@@ -210,26 +221,30 @@ struct WordDetailView: View {
     private var aiInfoSections: some View {
         switch word.aiInfoStatus {
         case .none:
-            Section("AI Word Info") {
-                Text("AI word info has not been generated yet")
+            Section {
+                TappableEnglishText(text: "AI word info has not been generated yet", color: .secondary)
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier("wordAIInfoNoneLabel")
                 Button("Generate AI Word Info") {
                     WordAIInfoGenerator.shared.generateInBackground(for: word)
                 }
                 .accessibilityIdentifier("wordAIInfoGenerateButton")
+            } header: {
+                TappableEnglishText(text: "AI Word Info")
             }
         case .generating:
-            Section("AI Word Info") {
+            Section {
                 HStack(spacing: 12) {
                     ProgressView()
-                    Text("Generating…")
+                    TappableEnglishText(text: "Generating…", color: .secondary)
                         .foregroundStyle(.secondary)
                 }
                 .accessibilityIdentifier("wordAIInfoGeneratingLabel")
+            } header: {
+                TappableEnglishText(text: "AI Word Info")
             }
         case .failed:
-            Section("AI Word Info") {
+            Section {
                 Label("Generation failed", systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.red)
                     .accessibilityIdentifier("wordAIInfoFailedLabel")
@@ -242,6 +257,8 @@ struct WordDetailView: View {
                     WordAIInfoGenerator.shared.generateInBackground(for: word)
                 }
                 .accessibilityIdentifier("wordAIInfoRetryButton")
+            } header: {
+                TappableEnglishText(text: "AI Word Info")
             }
         case .completed:
             if let info = word.aiInfo {
@@ -273,11 +290,13 @@ private struct WordAIInfoSections: View {
     @Binding var ttsErrorMessage: String?
 
     var body: some View {
-        Section("Illustration") {
+        Section {
             WordIllustrationRow(wordText: wordText, targetLanguage: targetLanguage)
+        } header: {
+            TappableEnglishText(text: "Illustration")
         }
 
-        Section("Pronunciation") {
+        Section {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(info.pronunciation.ipa)
@@ -291,10 +310,12 @@ private struct WordAIInfoSections: View {
                 TTSButton(text: wordText, playback: ttsPlayback, errorMessage: $ttsErrorMessage)
             }
             badgeRow
+        } header: {
+            TappableEnglishText(text: "Pronunciation")
         }
 
         if !info.senses.isEmpty {
-            Section("Meanings") {
+            Section {
                 ForEach(Array(info.senses.enumerated()), id: \.offset) { index, sense in
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -326,21 +347,27 @@ private struct WordAIInfoSections: View {
                     }
                     .padding(.vertical, 2)
                 }
+            } header: {
+                TappableEnglishText(text: "Meanings")
             }
         }
 
         if !info.inflections.isEmpty {
-            Section("Word Forms") {
+            Section {
                 ForEach(Array(info.inflections.enumerated()), id: \.offset) { _, inflection in
-                    LabeledContent(Self.englishInflectionLabel(inflection.form)) {
+                    LabeledContent {
                         TappableEnglishText(text: inflection.text)
+                    } label: {
+                        TappableEnglishText(text: Self.englishInflectionLabel(inflection.form))
                     }
                 }
+            } header: {
+                TappableEnglishText(text: "Word Forms")
             }
         }
 
         if !info.examples.isEmpty {
-            Section("Examples") {
+            Section {
                 ForEach(Array(info.examples.enumerated()), id: \.offset) { _, example in
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 4) {
@@ -354,11 +381,13 @@ private struct WordAIInfoSections: View {
                     }
                     .padding(.vertical, 2)
                 }
+            } header: {
+                TappableEnglishText(text: "Examples")
             }
         }
 
         if !info.collocations.isEmpty {
-            Section("Collocations") {
+            Section {
                 ForEach(info.collocations, id: \.self) { collocation in
                     HStack {
                         TappableEnglishText(text: collocation)
@@ -366,22 +395,26 @@ private struct WordAIInfoSections: View {
                         SpeechButton(text: collocation, speechService: speechService, speakingText: $speakingText)
                     }
                 }
+            } header: {
+                TappableEnglishText(text: "Collocations")
             }
         }
 
         if !info.synonyms.isEmpty || !info.antonyms.isEmpty {
-            Section("Synonyms & Antonyms") {
+            Section {
                 if !info.synonyms.isEmpty {
                     wordListRow(title: "Synonyms", words: info.synonyms)
                 }
                 if !info.antonyms.isEmpty {
                     wordListRow(title: "Antonyms", words: info.antonyms)
                 }
+            } header: {
+                TappableEnglishText(text: "Synonyms & Antonyms")
             }
         }
 
         if hasNotes {
-            Section("Study Notes") {
+            Section {
                 if let usageNote = info.usageNote, !usageNote.isEmpty {
                     noteRow(title: "Usage Notes", text: usageNote)
                 }
@@ -391,6 +424,8 @@ private struct WordAIInfoSections: View {
                 if let commonMistakes = info.commonMistakes, !commonMistakes.isEmpty {
                     noteRow(title: "Common Mistakes", text: commonMistakes)
                 }
+            } header: {
+                TappableEnglishText(text: "Study Notes")
             }
         }
     }
@@ -431,8 +466,10 @@ private struct WordAIInfoSections: View {
     private func wordListRow(title: String, words: [String]) -> some View {
         let joined = words.joined(separator: ", ")
         return HStack(alignment: .top) {
-            LabeledContent(title) {
+            LabeledContent {
                 TappableEnglishText(text: joined)
+            } label: {
+                TappableEnglishText(text: title)
             }
             SpeechButton(text: joined, speechService: speechService, speakingText: $speakingText)
         }
@@ -441,7 +478,7 @@ private struct WordAIInfoSections: View {
     /// 学習ノート行。本文は英語・母語が混在しうるが、英単語だけがリンク化されるため安全にタップできる。
     private func noteRow(title: String, text: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(title)
+            TappableEnglishText(text: title, color: .secondary)
                 .font(.caption)
                 .foregroundStyle(.secondary)
             TappableEnglishText(text: text)
@@ -512,7 +549,7 @@ private struct WordIllustrationRow: View {
             } else {
                 HStack(spacing: 12) {
                     ProgressView()
-                    Text("Generating illustration…")
+                    TappableEnglishText(text: "Generating illustration…", color: .secondary)
                         .foregroundStyle(.secondary)
                 }
                 .accessibilityIdentifier("wordIllustrationGeneratingLabel")

@@ -86,10 +86,10 @@ struct SettingsView: View {
                         .font(.footnote.monospaced())
                     }
                 } header: {
-                    Text("Backend")
+                    TappableEnglishText(text: "Backend")
                 } footer: {
-                    Text(
-                        "URL of the backend that handles OCR & translation. The default is "
+                    TappableEnglishText(
+                        text: "URL of the backend that handles OCR & translation. The default is "
                             + AppSettingsKeys.defaultBackendBaseURL
                             + ". For local development, switch to http://localhost:8801 "
                             + "(run-ios-device.sh sets device builds to your Mac's IP). "
@@ -99,12 +99,12 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    Text("Japanese (fixed)")
+                    TappableEnglishText(text: "Japanese (fixed)", color: .secondary)
                         .foregroundStyle(.secondary)
                 } header: {
-                    Text("Native Language")
+                    TappableEnglishText(text: "Native Language")
                 } footer: {
-                    Text("Language selection is coming soon.")
+                    TappableEnglishText(text: "Language selection is coming soon.")
                 }
 
                 Section {
@@ -114,10 +114,10 @@ struct SettingsView: View {
                         Text("Gemini 2.5 Pro TTS").tag("pro")
                     }
                 } header: {
-                    Text("Text-to-Speech")
+                    TappableEnglishText(text: "Text-to-Speech")
                 } footer: {
-                    Text(
-                        "Model used to read the OCR result (English) aloud. On-Device plays "
+                    TappableEnglishText(
+                        text: "Model used to read the OCR result (English) aloud. On-Device plays "
                             + "instantly without network access. Gemini 2.5 Flash TTS is fast; "
                             + "Gemini 2.5 Pro TTS sounds more natural but may take longer to "
                             + "generate. The Gemini voice character is picked randomly for "
@@ -138,15 +138,17 @@ struct SettingsView: View {
                         pendingDeleteAction = .words
                     }
                 } header: {
-                    Text("Debug")
+                    TappableEnglishText(text: "Debug")
                 } footer: {
-                    Text(
-                        "Current data: \(classes.count) classes, \(lessons.count) lessons, "
+                    TappableEnglishText(
+                        text: "Current data: \(classes.count) classes, \(lessons.count) lessons, "
                             + "\(photos.count) photos, \(words.count) words (Debug builds only)"
                     )
                 }
                 #endif
             }
+            // 設定画面の英語ラベル・見出し・説明文の単語タップ→登録/詳細遷移
+            .wordTapRegistration()
             #if DEBUG
             .confirmationDialog(
                 pendingDeleteAction?.title ?? "",

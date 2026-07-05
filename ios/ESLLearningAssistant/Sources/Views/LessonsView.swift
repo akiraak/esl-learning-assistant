@@ -38,6 +38,8 @@ struct LessonsView: View {
                     emptyClassState
                 }
             }
+            // 画面内の英語UIテキストの単語タップ→登録/詳細遷移
+            .wordTapRegistration()
             .sheet(isPresented: $isShowingSwitcher) {
                 ClassLessonSwitcherView(
                     currentClassID: currentClassIDBinding,
@@ -137,7 +139,7 @@ struct LessonsView: View {
             let photos = lesson.photos.sorted { $0.capturedAt > $1.capturedAt }
             let untranslatedCount = photos.filter { $0.processingStatus == .pending || $0.processingStatus == .failed }.count
             if photos.isEmpty {
-                Text("No content yet")
+                TappableEnglishText(text: "No content yet", color: .secondary)
                     .foregroundStyle(.secondary)
             } else {
                 if untranslatedCount > 0 {
@@ -166,7 +168,7 @@ struct LessonsView: View {
             }
         } header: {
             HStack {
-                Text("Content (\(lesson.photos.count))")
+                TappableEnglishText(text: "Content (\(lesson.photos.count))")
                 Spacer()
                 Button {
                     isShowingCapture = true
@@ -182,9 +184,11 @@ struct LessonsView: View {
 
         memoSection(lesson)
 
-        Section("Questions") {
-            Text("Question features are coming soon")
+        Section {
+            TappableEnglishText(text: "Question features are coming soon", color: .secondary)
                 .foregroundStyle(.secondary)
+        } header: {
+            TappableEnglishText(text: "Questions")
         }
     }
 
@@ -193,7 +197,7 @@ struct LessonsView: View {
         let words = lessonWords(lesson)
         Section {
             if words.isEmpty {
-                Text("No words yet")
+                TappableEnglishText(text: "No words yet", color: .secondary)
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(words) { word in
@@ -223,7 +227,7 @@ struct LessonsView: View {
             }
         } header: {
             HStack {
-                Text("Words (\(words.count))")
+                TappableEnglishText(text: "Words (\(words.count))")
                 Spacer()
                 // このレッスンを固定した追加シートをこの画面上で開く（閉じればレッスンに戻る）
                 Button {
@@ -239,7 +243,7 @@ struct LessonsView: View {
 
     @ViewBuilder
     private func memoSection(_ lesson: Lesson) -> some View {
-        Section("Memo") {
+        Section {
             Button {
                 isEditingMemo = true
             } label: {
@@ -259,6 +263,8 @@ struct LessonsView: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("lessonMemoButton")
+        } header: {
+            TappableEnglishText(text: "Memo")
         }
     }
 
@@ -280,10 +286,10 @@ struct LessonsView: View {
             Image(systemName: "person.3")
                 .font(.system(size: 48))
                 .foregroundStyle(.secondary)
-            Text("No Classes")
+            TappableEnglishText(text: "No Classes")
                 .font(.title2)
                 .fontWeight(.semibold)
-            Text("Add a class you are taking to get started.")
+            TappableEnglishText(text: "Add a class you are taking to get started.", color: .secondary)
                 .font(.body)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -304,9 +310,9 @@ struct LessonsView: View {
                 Image(systemName: "book.closed")
                     .font(.system(size: 40))
                     .foregroundStyle(.secondary)
-                Text("No Lessons")
+                TappableEnglishText(text: "No Lessons")
                     .font(.headline)
-                Text("Add a lesson to \(schoolClass.name) to get started.")
+                TappableEnglishText(text: "Add a lesson to \(schoolClass.name) to get started.", color: .secondary)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

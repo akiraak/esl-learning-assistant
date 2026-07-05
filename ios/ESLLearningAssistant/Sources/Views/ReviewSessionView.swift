@@ -101,6 +101,11 @@ struct ReviewSessionView: View {
                     }
                     .accessibilityIdentifier("reviewCloseButton")
                 }
+                // ナビタイトルも単語タップ可能にする
+                ToolbarItem(placement: .principal) {
+                    TappableEnglishText(text: "Review")
+                        .font(.headline)
+                }
             }
         }
         .interactiveDismissDisabled()
@@ -117,7 +122,7 @@ struct ReviewSessionView: View {
     private var loadingView: some View {
         VStack(spacing: 12) {
             ProgressView()
-            Text("Loading questions…")
+            TappableEnglishText(text: "Loading questions…", color: .secondary)
                 .foregroundStyle(.secondary)
         }
         .accessibilityIdentifier("reviewLoadingLabel")
@@ -128,7 +133,7 @@ struct ReviewSessionView: View {
         VStack(spacing: 12) {
             ProgressView(value: Double(progress.completed), total: Double(max(progress.total, 1)))
                 .frame(maxWidth: 240)
-            Text("Preparing audio… \(progress.completed)/\(progress.total)")
+            TappableEnglishText(text: "Preparing audio… \(progress.completed)/\(progress.total)", color: .secondary)
                 .foregroundStyle(.secondary)
         }
         .accessibilityIdentifier("reviewAudioDownloadLabel")
@@ -139,7 +144,7 @@ struct ReviewSessionView: View {
             Image(systemName: "wifi.exclamationmark")
                 .font(.system(size: 48))
                 .foregroundStyle(.secondary)
-            Text("Couldn't Load Questions")
+            TappableEnglishText(text: "Couldn't Load Questions")
                 .font(.title3)
                 .fontWeight(.semibold)
             Text(message)
@@ -166,7 +171,7 @@ struct ReviewSessionView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    Text(item.question.instruction)
+                    TappableEnglishText(text: item.question.instruction)
                         .font(.headline)
 
                     if let audioText = item.question.audioText {
@@ -381,13 +386,13 @@ struct ReviewSessionView: View {
             .accessibilityIdentifier(feedback.isCorrect ? "reviewFeedbackCorrect" : "reviewFeedbackIncorrect")
 
             if !feedback.isCorrect {
-                Text("Answer: \(feedback.correctAnswer)")
+                TappableEnglishText(text: "Answer: \(feedback.correctAnswer)")
                     .fontWeight(.medium)
             }
 
             // この単語の習熟度。100%（クリア）は次回復習日に進んだことを示す
             HStack(spacing: 8) {
-                Text("Mastery")
+                TappableEnglishText(text: "Mastery", color: .secondary)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 ProgressView(value: Double(feedback.masteryPercent), total: 100)
@@ -474,11 +479,11 @@ struct ReviewSessionView: View {
                 Image(systemName: "hourglass")
                     .font(.system(size: 56))
                     .foregroundStyle(.secondary)
-                Text("Preparing Questions")
+                TappableEnglishText(text: "Preparing Questions")
                     .font(.title2)
                     .fontWeight(.semibold)
                     .accessibilityIdentifier("reviewPreparingLabel")
-                Text("Questions for today's words are being generated on the server. Please try again in a moment.")
+                TappableEnglishText(text: "Questions for today's words are being generated on the server. Please try again in a moment.", color: .secondary)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -498,26 +503,26 @@ struct ReviewSessionView: View {
                 Image(systemName: "checkmark.seal.fill")
                     .font(.system(size: 56))
                     .foregroundStyle(.green)
-                Text("Session Complete")
+                TappableEnglishText(text: "Session Complete")
                     .font(.title2)
                     .fontWeight(.semibold)
                 if answerCount > 0 {
-                    Text("\(correctAnswerCount) of \(answerCount) correct")
+                    TappableEnglishText(text: "\(correctAnswerCount) of \(answerCount) correct", color: .secondary)
                         .foregroundStyle(.secondary)
                     if clearedWordCount > 0 {
-                        Text("\(clearedWordCount) word\(clearedWordCount == 1 ? "" : "s") mastered 🎉")
+                        TappableEnglishText(text: "\(clearedWordCount) word\(clearedWordCount == 1 ? "" : "s") mastered 🎉", color: .secondary)
                             .foregroundStyle(.secondary)
                     }
                 }
                 if skippedWordCount > 0 {
-                    Text("\(skippedWordCount) word\(skippedWordCount == 1 ? "" : "s") skipped (questions being prepared)")
+                    TappableEnglishText(text: "\(skippedWordCount) word\(skippedWordCount == 1 ? "" : "s") skipped (questions being prepared)", color: .secondary)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
                 // 未クリアの単語は due に残るため、続けてセッションを開始できることを知らせる
                 let remainingDue = dueWords.filter { ReviewScheduler.isDue($0.reviewState) }.count
                 if remainingDue > 0 {
-                    Text("\(remainingDue) word\(remainingDue == 1 ? "" : "s") still due today. Start again to continue.")
+                    TappableEnglishText(text: "\(remainingDue) word\(remainingDue == 1 ? "" : "s") still due today. Start again to continue.", color: .secondary)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }

@@ -29,13 +29,15 @@ struct WordAddView: View {
                         .focused($isTextFocused)
                         .accessibilityIdentifier("wordTextField")
                 } footer: {
-                    Text("The translation, meanings, and examples will be generated automatically by AI.")
+                    TappableEnglishText(text: "The translation, meanings, and examples will be generated automatically by AI.")
                 }
 
                 Section {
                     if let fixedLesson {
-                        LabeledContent("Lesson") {
+                        LabeledContent {
                             Text("\(fixedLesson.schoolClass.name) / \(fixedLesson.title)")
+                        } label: {
+                            TappableEnglishText(text: "Lesson")
                         }
                         .accessibilityIdentifier("wordLessonFixedLabel")
                     } else {
@@ -52,12 +54,13 @@ struct WordAddView: View {
                     }
                 } footer: {
                     if fixedLesson != nil {
-                        Text("This word will be linked to this lesson.")
+                        TappableEnglishText(text: "This word will be linked to this lesson.")
                     } else {
-                        Text("If you select a lesson, this word will be linked to it. You can also add it without a lesson.")
+                        TappableEnglishText(text: "If you select a lesson, this word will be linked to it. You can also add it without a lesson.")
                     }
                 }
             }
+            .wordTapRegistration()
             .navigationTitle("Add Word")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -68,6 +71,8 @@ struct WordAddView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
+                // ナビタイトル "Add Word" は principal 化しない: 単語 "Add" がツールバーの
+                // Add ボタンと a11y クエリ（navigationBars.buttons["Add"]）で衝突し、UIテストを壊すため
             }
             .onAppear { isTextFocused = true }
         }

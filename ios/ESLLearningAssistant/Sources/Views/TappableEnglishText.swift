@@ -122,14 +122,22 @@ struct WordRegistrationModifier: ViewModifier {
     @Query private var allWords: [Word]
 
     @State private var pendingWord: String?
-    @State private var navigateToWord: Word?
+    @State private var navigateToWord: WordRoute?
     @State private var feedback: String?
+
+    /// 遷移先の単語を包む専用型。`navigationDestination(item:)` の型を `Word` そのものではなく
+    /// この型にすることで、既に `Word` 型の navigationDestination を持つ画面（LessonsView 等）と
+    /// 同一スタックで衝突しない（同一型の二重宣言による警告・片方の無効化を避ける）。
+    private struct WordRoute: Identifiable, Hashable {
+        let word: Word
+        var id: UUID { word.id }
+    }
 
     func body(content: Content) -> some View {
         content
             .environment(\.wordTapAction, WordTapAction(handleTap))
-            .navigationDestination(item: $navigateToWord) { tapped in
-                WordDetailView(word: tapped)
+            .navigationDestination(item: $navigateToWord) { route in
+                WordDetailView(word: route.word)
             }
             .overlay(alignment: .bottom) {
                 if let feedback {
@@ -172,7 +180,7 @@ struct WordRegistrationModifier: ViewModifier {
             $0.text.compare(text, options: [.caseInsensitive]) == .orderedSame
         }) {
             guard existing.id != currentWord?.id else { return }
-            navigateToWord = existing
+            navigateToWord = WordRoute(word: existing)
         } else {
             pendingWord = text
         }
