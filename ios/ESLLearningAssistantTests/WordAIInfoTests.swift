@@ -101,6 +101,73 @@ final class WordAIInfoDecodingTests: XCTestCase {
     }
 }
 
+/// 一覧表示用の派生訳語 `Word.listTranslation`（複数品詞の反映）の確認。
+final class WordListTranslationTests: XCTestCase {
+    private func makeInfo(senses: [WordAIInfo.Sense]) -> WordAIInfo {
+        WordAIInfo(
+            senses: senses,
+            pronunciation: .init(ipa: "/x/", syllables: nil),
+            inflections: [],
+            examples: [],
+            collocations: [],
+            synonyms: [],
+            antonyms: [],
+            usageNote: nil,
+            cefrLevel: nil,
+            etymology: nil,
+            register: nil,
+            commonMistakes: nil
+        )
+    }
+
+    /// 複数品詞: 先頭は translation、他品詞の代表意味を「 / 」で連結する
+    func testMultiplePartsOfSpeechAreJoined() {
+        let word = Word(text: "book", translation: "本")
+        word.aiInfo = makeInfo(senses: [
+            .init(meaning: "本", englishDefinition: "a written work", partOfSpeech: "名詞", note: nil),
+            .init(meaning: "予約する", englishDefinition: "to reserve", partOfSpeech: "動詞", note: nil),
+        ])
+        XCTAssertEqual(word.listTranslation, "本 / 予約する")
+    }
+
+    /// 同一品詞の複数語義は連結せず translation のまま
+    func testSamePartOfSpeechIsNotJoined() {
+        let word = Word(text: "run", translation: "経営する")
+        word.aiInfo = makeInfo(senses: [
+            .init(meaning: "経営する", englishDefinition: "to operate", partOfSpeech: "動詞", note: nil),
+            .init(meaning: "走る", englishDefinition: "to move quickly", partOfSpeech: "動詞", note: nil),
+        ])
+        XCTAssertEqual(word.listTranslation, "経営する")
+    }
+
+    /// 3品詞以上でも品詞ごとに1つずつ、出現順で連結する（重複品詞はスキップ）
+    func testThreePartsOfSpeechInOrder() {
+        let word = Word(text: "light", translation: "光")
+        word.aiInfo = makeInfo(senses: [
+            .init(meaning: "光", englishDefinition: "brightness", partOfSpeech: "名詞", note: nil),
+            .init(meaning: "軽い", englishDefinition: "not heavy", partOfSpeech: "形容詞", note: nil),
+            .init(meaning: "明かり", englishDefinition: "a lamp", partOfSpeech: "名詞", note: nil),
+            .init(meaning: "火をつける", englishDefinition: "to ignite", partOfSpeech: "動詞", note: nil),
+        ])
+        XCTAssertEqual(word.listTranslation, "光 / 軽い / 火をつける")
+    }
+
+    /// aiInfo 無しは translation のまま
+    func testNoAIInfoReturnsTranslation() {
+        let word = Word(text: "apple", translation: "りんご")
+        XCTAssertEqual(word.listTranslation, "りんご")
+    }
+
+    /// 訳語が空なら空のまま（一覧では非表示）
+    func testEmptyTranslationStaysEmpty() {
+        let word = Word(text: "apple", translation: "")
+        word.aiInfo = makeInfo(senses: [
+            .init(meaning: "りんご", englishDefinition: "a fruit", partOfSpeech: "名詞", note: nil),
+        ])
+        XCTAssertEqual(word.listTranslation, "")
+    }
+}
+
 @MainActor
 private final class MockWordInfoService: WordInfoService {
     var result: Result<WordInfoResponse, Error> = .failure(BackendAPIError.serverError(statusCode: 500, message: nil))

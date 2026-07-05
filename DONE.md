@@ -1,5 +1,12 @@
 # DONE
 
+- [x] 2026-07-04 単語に複数品詞があった場合に単語一覧の訳表示にも表示する
+      単語一覧（WordRow）は translation（先頭語義の意味のみ自動補完）を表示していたため、複数品詞を
+      持つ単語でも1つの意味しか見えなかった。Word に派生プロパティ listTranslation を追加し、
+      aiInfo.senses を走査して先頭語義と異なる品詞の代表意味を「 / 」区切りで連結（例: book → 「本 / 予約する」）。
+      先頭は translation を使いユーザー編集を尊重、同一品詞の複数語義は連結しない。WordRow を listTranslation
+      表示に差し替え。WordListTranslationTests（複数品詞/同一品詞/3品詞/aiInfo無し/訳語空）を追加、全パス。
+      表示形式はユーザー確認済み（「/」区切り）。plan: docs/plans/archive/word-list-multiple-pos.md
 - [x] 2026-07-04 英文タップ登録をUIラベル・項目名まで拡張
       「あらゆる英単語の表示を登録可能に」の要望を受け、コンテンツ英文に加えて UI の項目名・
       見出し・静的値・説明文・ナビタイトルも `TappableEnglishText` 化。WordDetailView（全セクション

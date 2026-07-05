@@ -49,6 +49,30 @@ final class Word {
     }
 }
 
+extension Word {
+    /// 単語一覧に表示する訳語。複数の品詞にまたがる語義を持つ場合は、先頭語義（translation に
+    /// 自動補完済み・ユーザー編集済み）に加えて、他品詞の代表的な意味を「 / 」で連結する。
+    /// 例: book → "本 / 予約する"。aiInfo が無い・訳語が空・単一品詞なら translation をそのまま返す。
+    var listTranslation: String {
+        guard let senses = aiInfo?.senses, !senses.isEmpty, !translation.isEmpty else {
+            return translation
+        }
+        // 先頭語義の意味は translation が担うため、その品詞は連結済み扱いにする。
+        var seenPartsOfSpeech: Set<String> = []
+        if let first = senses.first?.partOfSpeech, !first.isEmpty {
+            seenPartsOfSpeech.insert(first)
+        }
+        var parts = [translation]
+        for sense in senses.dropFirst() {
+            let partOfSpeech = sense.partOfSpeech
+            guard !partOfSpeech.isEmpty, !seenPartsOfSpeech.contains(partOfSpeech) else { continue }
+            seenPartsOfSpeech.insert(partOfSpeech)
+            parts.append(sense.meaning)
+        }
+        return parts.joined(separator: " / ")
+    }
+}
+
 enum ExampleSentenceSource: String, Codable {
     case textbook
     case aiGenerated

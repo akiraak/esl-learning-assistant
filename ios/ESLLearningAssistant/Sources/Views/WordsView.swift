@@ -159,9 +159,10 @@ struct WordRow: View {
                     .lineLimit(1)
                     // 幅が足りないときは訳語側から省略する
                     .layoutPriority(1)
-                // 訳語はAI生成完了時に自動補完されるため、それまでは空（表示しない）
-                if !word.translation.isEmpty {
-                    Text(word.translation)
+                // 訳語はAI生成完了時に自動補完されるため、それまでは空（表示しない）。
+                // 複数品詞を持つ単語は listTranslation で他品詞の意味も「 / 」区切りで見せる。
+                if !word.listTranslation.isEmpty {
+                    Text(word.listTranslation)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
