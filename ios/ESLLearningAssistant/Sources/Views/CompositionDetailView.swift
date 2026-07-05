@@ -129,8 +129,14 @@ struct CompositionDetailView: View {
                         composition.hasFeedback ? "Re-review" : "Review",
                         systemImage: "checkmark.circle"
                     )
+                    .fontWeight(.semibold)
+                    .frame(maxWidth: .infinity)
                 }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
                 .disabled(!canReview)
+                .listRowInsets(EdgeInsets())
+                .listRowBackground(Color.clear)
                 .accessibilityIdentifier("compositionReviewButton")
             }
         } footer: {

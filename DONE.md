@@ -1,5 +1,10 @@
 # DONE
 
+- [x] 2026-07-05 writingタブのReviewボタンをもっとボタンに見えるようにする
+      Composition 詳細の Review / Re-review ボタンが Form 内で素の青文字だったのを、
+      `.buttonStyle(.borderedProminent)` ＋ `.controlSize(.large)` の全幅塗りボタンに変更。
+      空状態の「New Composition」ボタンと同じ見た目に揃え、明確にタップ可能に見せた。
+
 - [x] 2026-07-05 作文の反復改善（ラウンド式の履歴スレッド）
       一度添削した後、フィードバックを踏まえて下書きを直し「Re-review」すると次のラウンドとして
       積み上がる反復改善機能。再添削時は過去の全ラウンド（英文・修正・解説）を history として AI に渡し、
