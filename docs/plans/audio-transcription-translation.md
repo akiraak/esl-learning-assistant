@@ -103,21 +103,24 @@ backend 呼び出し → ③ pending/manual を状態遷移 → ④ 詳細 View 
 
 ## Phase / Step
 
-### Phase 1: バックエンド — 文字起こしAPI
-- [ ] `config.ts` に `transcriptionModel`（例 `GEMINI_TRANSCRIPTION_MODEL ?? "gemini-2.5-flash"`）と
+### Phase 1: バックエンド — 文字起こしAPI ✅ 完了（2026-07-06）
+- [x] `config.ts` に `transcriptionModel`（`GEMINI_TRANSCRIPTION_MODEL ?? "gemini-2.5-flash"`）と
       `audioDir` を追加。`db.ts` の `fs.mkdirSync` 群に `audioDir` を追加
-- [ ] `pricing.ts` の単価表に transcription モデルを登録
-- [ ] `transcribe.ts`（新規）: `tts.ts:115` `synthesizeChunk` を反転した Gemini `generateContent`
-      呼び出し（`inlineData: { mimeType, data: audioBase64 }` ＋ `text: "Transcribe the spoken English verbatim."`、
-      `responseModalities` は付けずテキスト出力）。fetch/リトライ/timeout/`usageMetadata` 抽出は流用。
-      戻り値 `{ englishText, inputTokens, outputTokens }`
-- [ ] `index.ts` に `POST /api/transcribe-translate` を追加（`/api/ocr-translate` を雛形）。
-      入力 `{ audioBase64, mediaType, targetLanguage }` を検証（サイズ・mimeType）→ 音声を `audioDir` 保存 →
-      `transcribe()` → 既存 `translateText()` → コストを Gemini分/Claude分に分けて `insert...Log` →
-      `{ englishText, translatedText, translationLanguage }` を返す
-- [ ] `db.ts` に `transcription_requests` ログテーブル（`requests` / `tts_audio` に倣う）＋ insert/list/get 関数
-- [ ] `.env.example` に Gemini モデル変数を追記
-- [ ] `tsc` ビルド確認、`curl` で英語音声サンプルを投げて英文＋日本語訳・コスト記録を確認
+- [x] `pricing.ts` の単価表に transcription モデルを登録（`DEFAULT_TRANSCRIPTION_PRICING`:
+      `gemini-2.5-flash` 音声入力 $1.00 / テキスト出力 $2.50。currentPricing init と restorePricing にも合流）
+- [x] `transcribe.ts`（新規）: `tts.ts` `synthesizeChunk` を反転した Gemini `generateContent`
+      呼び出し（`inlineData: { mimeType, data: audioBase64 }` ＋ 逐語文字起こしプロンプト、テキスト出力）。
+      思考は `thinkingBudget: 0` で無効化。fetch/リトライ/timeout/`usageMetadata` 抽出は流用。
+      戻り値 `{ englishText, inputTokens, outputTokens }`。対応 mimeType 判定＋拡張子マップも同ファイル
+- [x] `index.ts` に `POST /api/transcribe-translate` を追加（`/api/ocr-translate` を雛形）。
+      `{ audioBase64, mediaType, targetLanguage }` を検証（mimeType・14MBサイズ上限）→ 音声を `audioDir` 保存 →
+      `transcribeAudio()` → 既存 `translateText()`（export 化）→ コストを Gemini分/Claude分に分けて記録 →
+      `{ englishText, translatedText, translationLanguage }` を返す。`express.json` 上限は 25mb に引き上げ
+      （14MB ガードが 413 より先に働くため）
+- [x] `db.ts` に `transcription_requests` ログテーブル（`requests` に倣う）＋ insert/list/get 関数
+- [x] `.env.example` に `GEMINI_TRANSCRIPTION_MODEL` を追記
+- [x] `tsc` ビルド確認、`curl` で実 Gemini に英語音声（/api/tts 生成の WAV）を投げて
+      英文逐語文字起こし＋日本語訳・コスト記録・各種バリデーション（400/401/413）を確認
 
 ### Phase 2: iOS — モデル拡張
 - [ ] `AudioClip.swift` に `AudioProcessingStatus`（`String, Codable`: pending/processing/completed/failed）と

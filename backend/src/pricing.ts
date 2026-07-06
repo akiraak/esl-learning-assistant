@@ -24,6 +24,15 @@ export const DEFAULT_TTS_PRICING: PricingTable = {
   "gemini-2.5-pro-preview-tts": { input: 1.0, output: 20.0 },
 };
 
+// Gemini 音声文字起こし（generateContent 音声入力）の100万トークンあたり単価（USD）。
+// TTS モデル（音声出力）とは別物で、こちらは音声入力＋テキスト出力。入力は主に音声トークン
+// （Gemini は音声を約32トークン/秒で課金）なので input は音声入力単価を採用する。
+// TTS 同様 LiteLLM の値は当てにできないため自動更新の対象外（手動管理の固定値）。
+// 参照: https://ai.google.dev/gemini-api/docs/pricing（2026-07-06 確認、gemini-2.5-flash 音声入力 $1.00 / テキスト出力 $2.50）
+export const DEFAULT_TRANSCRIPTION_PRICING: PricingTable = {
+  "gemini-2.5-flash": { input: 1.0, output: 2.5 },
+};
+
 // 画像生成モデルの100万トークンあたり単価（USD）。GPT Image 2 は per-image の固定額ではなく
 // トークン単価制（input=テキスト入力、output=画像出力）で、Images API レスポンスの usage から
 // 料金を算出できる。自動更新の対象外（手動管理の固定値）。
@@ -39,6 +48,7 @@ const MAX_DEVIATION_FACTOR = 10;
 let currentPricing: PricingTable = {
   ...structuredClone(DEFAULT_PRICING),
   ...structuredClone(DEFAULT_TTS_PRICING),
+  ...structuredClone(DEFAULT_TRANSCRIPTION_PRICING),
   ...structuredClone(DEFAULT_IMAGE_PRICING),
 };
 
@@ -164,7 +174,12 @@ function matchPrice(section: string, pattern: RegExp): number | null {
 
 /// pricing_state に保存済みの単価表（per-1M）を復元する。検証ガードを通ったモデルだけ採用する。
 export function restorePricing(saved: PricingTable): void {
-  const defaults: PricingTable = { ...DEFAULT_PRICING, ...DEFAULT_TTS_PRICING, ...DEFAULT_IMAGE_PRICING };
+  const defaults: PricingTable = {
+    ...DEFAULT_PRICING,
+    ...DEFAULT_TTS_PRICING,
+    ...DEFAULT_TRANSCRIPTION_PRICING,
+    ...DEFAULT_IMAGE_PRICING,
+  };
   const next = getCurrentPricing();
   for (const model of Object.keys(defaults)) {
     const entry = saved[model];

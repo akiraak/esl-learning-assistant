@@ -4,6 +4,7 @@ import { config } from "./config";
 
 fs.mkdirSync(config.imagesDir, { recursive: true });
 fs.mkdirSync(config.ttsDir, { recursive: true });
+fs.mkdirSync(config.audioDir, { recursive: true });
 fs.mkdirSync(config.illustrationsDir, { recursive: true });
 
 export const db = new Database(config.dbPath);
@@ -149,6 +150,34 @@ db.exec(`
     input_tokens INTEGER NOT NULL DEFAULT 0,
     output_tokens INTEGER NOT NULL DEFAULT 0,
     cost_usd REAL NOT NULL DEFAULT 0
+  )
+`);
+
+// 音声文字起こし＋翻訳（/api/transcribe-translate）のログ。写真OCRの requests に倣った構造で、
+// OCR→transcription に読み替えたもの。写真OCR同様サーバキャッシュは持たず、結果本体は
+// iOS 側 AudioClip に保存する。ここは料金・履歴・管理画面での音声試聴のためのログ用途。
+db.exec(`
+  CREATE TABLE IF NOT EXISTS transcription_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    audio_filename TEXT,
+    media_type TEXT NOT NULL,
+    target_language TEXT NOT NULL,
+    byte_size INTEGER NOT NULL DEFAULT 0,
+    english_text TEXT,
+    translated_text TEXT,
+    transcription_model TEXT NOT NULL,
+    transcription_input_tokens INTEGER NOT NULL DEFAULT 0,
+    transcription_output_tokens INTEGER NOT NULL DEFAULT 0,
+    translate_model TEXT,
+    translate_input_tokens INTEGER NOT NULL DEFAULT 0,
+    translate_output_tokens INTEGER NOT NULL DEFAULT 0,
+    transcription_cost_usd REAL NOT NULL DEFAULT 0,
+    translate_cost_usd REAL NOT NULL DEFAULT 0,
+    cost_usd REAL NOT NULL DEFAULT 0,
+    status TEXT NOT NULL,
+    error_message TEXT,
+    latency_ms INTEGER NOT NULL DEFAULT 0
   )
 `);
 
@@ -447,6 +476,102 @@ export function getWritingFeedbackLog(id: number): WritingFeedbackLogRow | undef
   return db
     .prepare("SELECT * FROM writing_feedback_requests WHERE id = ?")
     .get(id) as WritingFeedbackLogRow | undefined;
+}
+
+export interface TranscriptionLogInput {
+  audioFilename: string | null;
+  mediaType: string;
+  targetLanguage: string;
+  byteSize: number;
+  englishText: string | null;
+  translatedText: string | null;
+  transcriptionModel: string;
+  transcriptionInputTokens: number;
+  transcriptionOutputTokens: number;
+  translateModel: string | null;
+  translateInputTokens: number;
+  translateOutputTokens: number;
+  transcriptionCostUsd: number;
+  translateCostUsd: number;
+  costUsd: number;
+  status: "success" | "error";
+  errorMessage: string | null;
+  latencyMs: number;
+}
+
+const insertTranscriptionStmt = db.prepare(`
+  INSERT INTO transcription_requests (
+    created_at, audio_filename, media_type, target_language, byte_size,
+    english_text, translated_text,
+    transcription_model, transcription_input_tokens, transcription_output_tokens,
+    translate_model, translate_input_tokens, translate_output_tokens,
+    transcription_cost_usd, translate_cost_usd, cost_usd, status, error_message, latency_ms
+  ) VALUES (
+    @createdAt, @audioFilename, @mediaType, @targetLanguage, @byteSize,
+    @englishText, @translatedText,
+    @transcriptionModel, @transcriptionInputTokens, @transcriptionOutputTokens,
+    @translateModel, @translateInputTokens, @translateOutputTokens,
+    @transcriptionCostUsd, @translateCostUsd, @costUsd, @status, @errorMessage, @latencyMs
+  )
+`);
+
+export function insertTranscriptionLog(input: TranscriptionLogInput): void {
+  insertTranscriptionStmt.run({
+    createdAt: new Date().toISOString(),
+    audioFilename: input.audioFilename,
+    mediaType: input.mediaType,
+    targetLanguage: input.targetLanguage,
+    byteSize: input.byteSize,
+    englishText: input.englishText,
+    translatedText: input.translatedText,
+    transcriptionModel: input.transcriptionModel,
+    transcriptionInputTokens: input.transcriptionInputTokens,
+    transcriptionOutputTokens: input.transcriptionOutputTokens,
+    translateModel: input.translateModel,
+    translateInputTokens: input.translateInputTokens,
+    translateOutputTokens: input.translateOutputTokens,
+    transcriptionCostUsd: input.transcriptionCostUsd,
+    translateCostUsd: input.translateCostUsd,
+    costUsd: input.costUsd,
+    status: input.status,
+    errorMessage: input.errorMessage,
+    latencyMs: input.latencyMs,
+  });
+}
+
+export interface TranscriptionLogRow {
+  id: number;
+  created_at: string;
+  audio_filename: string | null;
+  media_type: string;
+  target_language: string;
+  byte_size: number;
+  english_text: string | null;
+  translated_text: string | null;
+  transcription_model: string;
+  transcription_input_tokens: number;
+  transcription_output_tokens: number;
+  translate_model: string | null;
+  translate_input_tokens: number;
+  translate_output_tokens: number;
+  transcription_cost_usd: number;
+  translate_cost_usd: number;
+  cost_usd: number;
+  status: string;
+  error_message: string | null;
+  latency_ms: number;
+}
+
+export function listRecentTranscriptionLogs(limit: number): TranscriptionLogRow[] {
+  return db
+    .prepare("SELECT * FROM transcription_requests ORDER BY id DESC LIMIT ?")
+    .all(limit) as TranscriptionLogRow[];
+}
+
+export function getTranscriptionLog(id: number): TranscriptionLogRow | undefined {
+  return db
+    .prepare("SELECT * FROM transcription_requests WHERE id = ?")
+    .get(id) as TranscriptionLogRow | undefined;
 }
 
 export interface StoredWordRow {

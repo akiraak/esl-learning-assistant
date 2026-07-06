@@ -106,7 +106,9 @@ async function ocrImage(imageBase64: string, mediaType: "image/jpeg" | "image/pn
   return { text: json.ocrText, inputTokens, outputTokens };
 }
 
-async function translateText(ocrText: string, targetLanguageCode: string) {
+/// Markdown英文を目的言語へ翻訳する（config.translateModel 使用）。写真OCRだけでなく
+/// 音声文字起こしの英→日にも使い回すため export する。戻り値の text は翻訳後テキスト。
+export async function translateText(ocrText: string, targetLanguageCode: string) {
   const { json, inputTokens, outputTokens } = await callStructured<{ translatedText: string }>(
     config.translateModel,
     TRANSLATE_SCHEMA,

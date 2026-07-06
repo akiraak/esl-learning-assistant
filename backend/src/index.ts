@@ -9,6 +9,7 @@ import {
   getStoredWord,
   getWordIllustrationByHash,
   insertRequestLog,
+  insertTranscriptionLog,
   insertWordInfoLog,
   insertWritingFeedbackLog,
   listIllustratedWords,
@@ -20,7 +21,12 @@ import {
   upsertWordIllustration,
 } from "./db";
 import { adminRouter } from "./admin";
-import { ocrAndTranslate } from "./ocrTranslate";
+import { ocrAndTranslate, translateText } from "./ocrTranslate";
+import {
+  transcribeAudio,
+  isSupportedAudioMimeType,
+  SUPPORTED_AUDIO_MIME_EXTENSIONS,
+} from "./transcribe";
 import { generateWordInfo, type WordInfo } from "./wordInfo";
 import { generateWritingFeedback, type WritingFeedbackRound } from "./writingFeedback";
 import { generateQuizQuestions } from "./quizQuestions";
@@ -57,7 +63,10 @@ function isValidApiSecret(provided: unknown): boolean {
 }
 
 const app = express();
-app.use(express.json({ limit: "20mb" }));
+// 音声文字起こしの base64 音声（生 MAX_AUDIO_BYTES=14MB → base64 ~18.7MB）を、ルート側の
+// 「audio too large」400 ガードが必ず先に働くだけの余裕を持って受けられるよう 25mb にしている。
+// 画像OCRの base64 はこれよりずっと小さい。
+app.use(express.json({ limit: "25mb" }));
 
 app.use((req, _res, next) => {
   logger.info(`${req.method} ${req.path} from ${req.ip}`);
@@ -170,6 +179,138 @@ app.post("/api/ocr-translate", async (req, res) => {
     });
 
     logger.error(`ocr-translate: failed image=${imageFilename} latencyMs=${latencyMs} error=${errorMessage}`);
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// 音声インライン送信の上限（生バイト）。base64 は約1.33倍に膨らむため 14MB でも
+// JSON ボディは ~18.7MB で express.json の 25mb 上限に収まり、この 400 ガードが 413 より先に働く。
+// Gemini のインライン上限（~20MB/リクエスト）にも収まる。超過分は「短いクリップに分割」を促す
+// （長尺は将来 File API 対応）。iOS 側も送信前に同じ上限でチェックする（Phase 3）。
+const MAX_AUDIO_BYTES = 14 * 1024 * 1024;
+
+// 音声（base64）→ Gemini で英文文字起こし → 既存 translateText で英→目的言語。
+// 写真OCR（/api/ocr-translate）と同型: サーバキャッシュは持たず結果は iOS 側 AudioClip に保存、
+// ここでは料金・履歴を transcription_requests に記録する（管理画面表示は Phase 5）。
+app.post("/api/transcribe-translate", async (req, res) => {
+  const { audioBase64, mediaType, targetLanguage } = req.body ?? {};
+
+  if (typeof audioBase64 !== "string" || !audioBase64) {
+    logger.warn("transcribe-translate: rejected (audioBase64 is required)");
+    res.status(400).json({ error: "audioBase64 is required" });
+    return;
+  }
+  if (!isSupportedAudioMimeType(mediaType)) {
+    logger.warn(`transcribe-translate: rejected (unsupported mediaType: ${String(mediaType)})`);
+    res.status(400).json({
+      error: `mediaType must be one of: ${Object.keys(SUPPORTED_AUDIO_MIME_EXTENSIONS).join(", ")}`,
+    });
+    return;
+  }
+  if (typeof targetLanguage !== "string" || !targetLanguage) {
+    logger.warn("transcribe-translate: rejected (targetLanguage is required)");
+    res.status(400).json({ error: "targetLanguage is required" });
+    return;
+  }
+
+  const audioBuffer = Buffer.from(audioBase64, "base64");
+  if (audioBuffer.length === 0) {
+    logger.warn("transcribe-translate: rejected (audioBase64 decoded to 0 bytes)");
+    res.status(400).json({ error: "audioBase64 is not valid base64 audio" });
+    return;
+  }
+  if (audioBuffer.length > MAX_AUDIO_BYTES) {
+    logger.warn(`transcribe-translate: rejected (audio too large: ${audioBuffer.length} bytes)`);
+    res.status(400).json({
+      error: `audio too large (${(audioBuffer.length / 1024 / 1024).toFixed(1)}MB, max ${MAX_AUDIO_BYTES / 1024 / 1024}MB). split into shorter clips`,
+    });
+    return;
+  }
+
+  const extension = SUPPORTED_AUDIO_MIME_EXTENSIONS[mediaType];
+  const audioFilename = `${Date.now()}-${crypto.randomUUID()}.${extension}`;
+  fs.writeFileSync(path.join(config.audioDir, audioFilename), audioBuffer);
+
+  const startedAt = Date.now();
+  logger.info(
+    `transcribe-translate: start audio=${audioFilename} bytes=${audioBuffer.length} ` +
+      `mediaType=${mediaType} targetLanguage=${targetLanguage} ` +
+      `transcriptionModel=${config.transcriptionModel} translateModel=${config.translateModel}`
+  );
+  try {
+    const transcription = await transcribeAudio(audioBase64, mediaType);
+    const translation = await translateText(transcription.englishText, targetLanguage);
+    const latencyMs = Date.now() - startedAt;
+
+    const transcriptionCostUsd = estimateCostUsd(
+      config.transcriptionModel,
+      transcription.inputTokens,
+      transcription.outputTokens
+    );
+    const translateCostUsd = estimateCostUsd(
+      config.translateModel,
+      translation.inputTokens,
+      translation.outputTokens
+    );
+
+    insertTranscriptionLog({
+      audioFilename,
+      mediaType,
+      targetLanguage,
+      byteSize: audioBuffer.length,
+      englishText: transcription.englishText,
+      translatedText: translation.text,
+      transcriptionModel: config.transcriptionModel,
+      transcriptionInputTokens: transcription.inputTokens,
+      transcriptionOutputTokens: transcription.outputTokens,
+      translateModel: config.translateModel,
+      translateInputTokens: translation.inputTokens,
+      translateOutputTokens: translation.outputTokens,
+      transcriptionCostUsd,
+      translateCostUsd,
+      costUsd: transcriptionCostUsd + translateCostUsd,
+      status: "success",
+      errorMessage: null,
+      latencyMs,
+    });
+
+    logger.info(
+      `transcribe-translate: success audio=${audioFilename} latencyMs=${latencyMs} ` +
+        `tokens=transcribe:${transcription.inputTokens}/${transcription.outputTokens} ` +
+        `translate:${translation.inputTokens}/${translation.outputTokens} ` +
+        `cost=$${(transcriptionCostUsd + translateCostUsd).toFixed(4)}`
+    );
+    res.json({
+      englishText: transcription.englishText,
+      translatedText: translation.text,
+      translationLanguage: targetLanguage,
+    });
+  } catch (error) {
+    const latencyMs = Date.now() - startedAt;
+    const errorMessage = error instanceof Error ? error.message : String(error);
+
+    insertTranscriptionLog({
+      audioFilename,
+      mediaType,
+      targetLanguage,
+      byteSize: audioBuffer.length,
+      englishText: null,
+      translatedText: null,
+      transcriptionModel: config.transcriptionModel,
+      transcriptionInputTokens: 0,
+      transcriptionOutputTokens: 0,
+      translateModel: null,
+      translateInputTokens: 0,
+      translateOutputTokens: 0,
+      transcriptionCostUsd: 0,
+      translateCostUsd: 0,
+      costUsd: 0,
+      status: "error",
+      errorMessage,
+      latencyMs,
+    });
+
+    logger.error(`transcribe-translate: failed audio=${audioFilename} latencyMs=${latencyMs} error=${errorMessage}`);
     res.status(500).json({ error: errorMessage });
   }
 });
