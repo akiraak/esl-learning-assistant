@@ -1,5 +1,20 @@
 # DONE
 
+- [x] 2026-07-06 レッスンの YouTube 再生で「エラー153 動画プレイヤーの設定エラー」を修正
+      原因は 2025 年後半の YouTube 仕様変更。埋め込みプレイヤーはホスト環境を HTTP `Referer`
+      で名乗ることが必須になり、`Referer` が空／不正だと 153 を返す。従来実装は
+      `youtube-nocookie.com/embed/<id>` を `WKWebView` のトップレベルナビゲーションとして
+      直接 `load(URLRequest:)` していたため、iframe ホストページが無く有効な `Referer`/
+      オリジンが渡らず 153 になっていた。対応として `EmbeddedWebView` を、embed URL を `src` に
+      持つ iframe 最小 HTML を有効な http(s) オリジン（`baseURL=youtube-nocookie.com`）で
+      `loadHTMLString(_:baseURL:)` する方式へ変更。`<meta name="referrer">` と iframe の
+      `referrerpolicy="strict-origin-when-cross-origin"`、`allow=...`/`allowfullscreen` を付与。
+      `YouTubeLink.embedURL` に `playsinline=1&rel=0` を追加（インライン再生・関連動画抑制）。
+      videoID は不変のため `makeUIView` で1度だけ読み込み、`updateUIView` の再読込は撤去。
+      再生経路のみの変更でモデルスキーマ・保存・他コンテンツ種別に影響なし。
+      検証: xcodebuild BUILD SUCCEEDED。実機での再生確認は要ユーザー確認（ネットワーク必須）。
+      plan: docs/plans/archive/youtube-error-153-fix.md
+
 - [x] 2026-07-06 YouTube タイトルの自動取得（oEmbed・キー不要）
       レッスンコンテンツの YouTube 行に、キー不要の oEmbed
       （`youtube.com/oembed?url=...&format=json`）で取得したタイトルを表示。取得タイミングは

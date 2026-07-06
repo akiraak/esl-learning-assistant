@@ -38,8 +38,9 @@ extension YouTubeLink {
     }
 
     /// アプリ内 WebView 埋め込み再生用 URL（cookie を使わない nocookie ドメイン）。
+    /// `playsinline=1` で iPhone でもインライン再生、`rel=0` で関連動画を抑制する。
     var embedURL: URL? {
-        URL(string: "https://www.youtube-nocookie.com/embed/\(videoID)")
+        URL(string: "https://www.youtube-nocookie.com/embed/\(videoID)?playsinline=1&rel=0")
     }
 
     /// 一覧サムネイル URL（中解像度）。
