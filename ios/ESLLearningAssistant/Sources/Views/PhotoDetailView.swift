@@ -9,10 +9,10 @@ struct PhotoDetailView: View {
 
     @State private var isRetrying = false
     @State private var isConfirmingDelete = false
+    /// サーバTTS失敗で端末内蔵TTSへフォールバックしたときに、控えめな告知を数秒だけ表示する
+    @State private var isUsingFallbackVoice = false
     @StateObject private var speechService = SpeechService()
-    @StateObject private var geminiSpeechService = GeminiSpeechService()
     @StateObject private var ttsPlayback = TTSPlaybackService()
-    @AppStorage(AppSettingsKeys.ttsModel) private var ttsModel = AppSettingsKeys.defaultTTSModel
     private let ocrTranslationService: OCRTranslationService = RemoteOCRTranslationService()
 
     var body: some View {
@@ -50,7 +50,23 @@ struct PhotoDetailView: View {
                             TappableEnglishText(text: "OCR Result (English)")
                                 .font(.headline)
                             Spacer()
-                            speechButton
+                            // AI音声（サーバTTS）の生成→キャッシュ→再生。単語詳細と同じ TTSButton を共有。
+                            // 生成失敗時は端末内蔵TTSへフォールバックする（onGenerateFailure）。
+                            TTSButton(
+                                text: plainText(photo.ocrText),
+                                playback: ttsPlayback,
+                                errorMessage: .constant(nil),
+                                onGenerateFailure: { fallBackToOnDeviceVoice(plainText(photo.ocrText)) }
+                            )
+                        }
+                        if isUsingFallbackVoice {
+                            Label(
+                                "Server voice unavailable — using on-device voice",
+                                systemImage: "iphone"
+                            )
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .transition(.opacity)
                         }
                         // OCR英文は書式（見出しハイライト等）を保ったまま単語ごとにタップ可能。
                         // タップ→登録は下の .wordTapRegistration が受ける（sourcePhoto でOCR文脈もAI生成へ渡る）
@@ -98,21 +114,6 @@ struct PhotoDetailView: View {
         .onDisappear {
             stopSpeaking()
         }
-        .alert(
-            "Speech Failed",
-            isPresented: Binding(
-                get: { geminiSpeechService.errorMessage != nil },
-                set: { if !$0 { geminiSpeechService.errorMessage = nil } }
-            )
-        ) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(geminiSpeechService.errorMessage ?? "")
-        }
-    }
-
-    private var isSpeaking: Bool {
-        speechService.isSpeaking || ttsPlayback.isActive
     }
 
     private func stopSpeaking() {
@@ -120,24 +121,14 @@ struct PhotoDetailView: View {
         ttsPlayback.stop()
     }
 
-    private var speechButton: some View {
-        Button {
-            if isSpeaking {
-                stopSpeaking()
-            } else if ttsModel != "local" {
-                geminiSpeechService.speak(plainText(photo.ocrText), model: ttsModel, playback: ttsPlayback)
-            } else {
-                speechService.speak(plainText(photo.ocrText))
-            }
-        } label: {
-            if geminiSpeechService.isLoading {
-                ProgressView()
-            } else {
-                Image(systemName: isSpeaking ? "stop.fill" : "speaker.wave.2.fill")
-            }
+    /// サーバTTSが使えないとき、端末内蔵TTSで読み上げつつ控えめな告知を数秒表示する
+    private func fallBackToOnDeviceVoice(_ text: String) {
+        speechService.speak(text)
+        withAnimation(.snappy) { isUsingFallbackVoice = true }
+        Task {
+            try? await Task.sleep(for: .seconds(5))
+            withAnimation(.snappy) { isUsingFallbackVoice = false }
         }
-        .buttonStyle(.bordered)
-        .disabled((photo.ocrText ?? "").isEmpty || geminiSpeechService.isLoading)
     }
 
     private var retryButton: some View {

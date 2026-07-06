@@ -1,5 +1,26 @@
 # DONE
 
+- [x] 2026-07-05 コンテンツの音声生成と再生を単語と同じ仕組みにする
+      写真コンテンツ詳細（`PhotoDetailView`）の音声を、単語詳細と同じ生成→ローカルキャッシュ→URL再生
+      ＋`TTSPlayerBar` の仕組みに統一。`WordDetailView` 内の `private struct TTSButton` を共有コンポーネント
+      `Views/TTSButton.swift` へ切り出し（単語側は参照差し替えのみで挙動不変）。`TTSButton` に任意の
+      `onGenerateFailure` フックを追加し、写真だけ生成失敗時に端末内蔵TTS（`SpeechService`）へフォールバック
+      ＋控えめ告知を維持できるようにした（単語は従来どおり `.alert`）。生成音声は `TTSAudioStore`
+      （`sha256("model|text")`）にキャッシュされ 2 回目以降は即「再生」。用途が消えた `GeminiSpeechService`
+      は削除。写真は AI 音声ボタン 1 つに集約（端末TTS即読みボタンは併設しない）。
+      検証: xcodebuild BUILD SUCCEEDED / 全61テスト pass。plan: docs/plans/archive/content-tts-align-with-words.md
+
+- [x] 2026-07-05 コンテンツの音声再生ボタンが効かない
+      写真コンテンツ詳細（`PhotoDetailView`）のスピーカーが、サーバTTS（Flash/Pro）失敗時に無音で
+      戻る不具合を修正。原因は 2 層: (1) Gemini の TTS プレビューモデルが `HTTP 429 credits depleted`
+      で失敗（課金枯渇。ローカル再現済み、テキスト系モデルは正常）、(2) `GeminiSpeechService` が
+      401 以外のエラーを握りつぶし無音終了していた。対応: サーバTTS失敗（401/429/500・通信失敗・空応答）
+      時は端末内蔵TTS（`SpeechService`）へ自動フォールバックし、"Server voice unavailable — using
+      on-device voice" を数秒だけ控えめ表示する（モーダルアラートは廃止）。失敗詳細は BackendAPI の
+      os.Logger で追える。`GeminiSpeechService.speak` に `onServerFailure` コールバックを追加。
+      ※ Flash/Pro で高音質音声を鳴らすには Gemini の課金（プリペイドクレジット）の補充が必要。
+      plan: docs/plans/archive/photo-tts-fallback.md
+
 - [x] 2026-07-05 コンテンツ一覧の項目名を OCR の最初のタイトルにする
       Content セクションの一覧行（`PhotoRow`）の主表示を撮影日から OCR タイトルへ変更。
       `Photo.contentTitle` を追加し、OCR 本文（Markdown）の最初の見出し（#…）を、無ければ
