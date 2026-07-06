@@ -178,6 +178,10 @@ struct ReviewSessionView: View {
 
                     if let audioText = item.question.audioText {
                         audioReplayButton(audioText)
+                        // 解答後は読み上げられた英文を表示し、聞き取れなかった内容を目で確認できるようにする
+                        if feedback != nil {
+                            audioScript(audioText)
+                        }
                     }
 
                     if let illustrationWord = item.question.promptIllustrationWord {
@@ -238,6 +242,22 @@ struct ReviewSessionView: View {
                 .background(.tint.opacity(0.12), in: Capsule())
         }
         .accessibilityIdentifier("reviewPlayAudioButton")
+    }
+
+    /// 解答後に表示する、読み上げられた英文（聞き取り確認用）。単語タップ登録に対応する
+    private func audioScript(_ text: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Label("Script", systemImage: "text.quote")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            TappableEnglishText(text: text)
+                .font(.title3)
+                .fontWeight(.medium)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding()
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+        .accessibilityIdentifier("reviewAudioScript")
     }
 
     @ViewBuilder
@@ -754,12 +774,18 @@ struct ReviewSessionView: View {
         } else {
             wordQueue.append(item.word)
         }
-        feedback = Feedback(
-            isCorrect: isCorrect,
-            correctAnswer: correctAnswer,
-            masteryPercent: isCleared ? 100 : newState.masteryPercent,
-            isCleared: isCleared
-        )
+        // 読み上げ英文・フィードバック欄の出現と選択肢の色変化を同じ更新でアニメーションさせると、
+        // 色が変わる選択肢（正答/選んだ誤答）だけ移動が遅れて見えるため、この反映は瞬時に行う
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            feedback = Feedback(
+                isCorrect: isCorrect,
+                correctAnswer: correctAnswer,
+                masteryPercent: isCleared ? 100 : newState.masteryPercent,
+                isCleared: isCleared
+            )
+        }
     }
 
     // MARK: - 音声・イラスト

@@ -1,5 +1,14 @@
 # DONE
 
+- [x] 2026-07-05 単語出題の音声読み上げ解答後に英文を表示する
+      復習クイズ（`ReviewSessionView`）の音声出題（`audioText` を持つ VC/VT/VTC/VTT 系）で、
+      解答後（`feedback != nil`）に読み上げられた英文を Play Audio ボタン直下に表示する
+      `audioScript` ビューを追加。純リスニング形式（`displayText` が nil）でも聞き取れなかった
+      内容を目で確認できる。英文は `TappableEnglishText` 表示で単語タップ登録に対応。
+      `accessibilityIdentifier` は `reviewAudioScript`。非音声出題は表示変更なし。データモデル・
+      サーバAPIの変更なし。検証: xcodebuild BUILD SUCCEEDED。
+      plan: docs/plans/archive/quiz-audio-show-script-after-answer.md
+
 - [x] 2026-07-05 単語出題で自動読み上げは行わない。ボタンタップで再生のみ
       復習クイズ（`ReviewSessionView`）の音声出題で、問題表示と同時に音声を1回自動再生していた
       処理（`advance()` 内）を削除。ユーザーが「Play Audio」ボタン（`reviewPlayAudioButton`）を
