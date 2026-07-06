@@ -9,6 +9,8 @@ final class LessonYouTubeAddUITests: XCTestCase {
 
     func testAddYouTubeFromContentTypePicker() throws {
         let app = XCUIApplication()
+        // oEmbed のタイトル取得をスタブ化し、videoID → タイトル差し替えを決定的に検証する
+        app.launchArguments += ["-uiTestStubYouTubeTitle", "Never Gonna Give You Up"]
         app.launch()
 
         // 前回実行のデータが残っていると初期状態から始められないため、先に全クリアする
@@ -63,11 +65,15 @@ final class LessonYouTubeAddUITests: XCTestCase {
         XCTAssertTrue(input.waitForNonExistence(timeout: 5))
         XCTAssertTrue(app.tabBars.buttons["Lessons"].isSelected)
         XCTAssertTrue(app.staticTexts["Content (1)"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["dQw4w9WgXcQ"].exists)
+
+        // oEmbed バックフィルにより、行表示が videoID から取得タイトルへ差し替わる
+        let titleText = app.staticTexts["Never Gonna Give You Up"]
+        XCTAssertTrue(titleText.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["dQw4w9WgXcQ"].exists)
         attach(app, "22-youtube-in-content-list")
 
         // 行タップで YouTube 詳細へ遷移できる
-        app.staticTexts["dQw4w9WgXcQ"].tap()
+        titleText.tap()
         XCTAssertTrue(app.navigationBars["YouTube"].waitForExistence(timeout: 5))
         attach(app, "23-youtube-detail")
     }

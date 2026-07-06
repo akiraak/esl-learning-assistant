@@ -1,5 +1,18 @@
 # DONE
 
+- [x] 2026-07-06 YouTube タイトルの自動取得（oEmbed・キー不要）
+      レッスンコンテンツの YouTube 行に、キー不要の oEmbed
+      （`youtube.com/oembed?url=...&format=json`）で取得したタイトルを表示。取得タイミングは
+      一覧行での遅延バックフィル（`YouTubeRow.task(id:)` で `title==nil` のときだけ取得・永続化）とし、
+      追加時の同期取得は避けつつ既存リンクも同経路で埋める。取得失敗（オフライン/4xx/デコード失敗）は
+      `displayTitle` の videoID フォールバックで従来表示。新規 `Support/YouTubeOEmbed.swift`
+      （`fetchTitle`/`endpoint`、10s タイムアウト、os.Logger 記録、UIテスト用スタブは
+      UserDefaults キー `uiTestStubYouTubeTitle`）。サーバ変更なし。
+      検証: 新規ユニット `YouTubeOEmbedTests` 4件（endpoint 構築/不正ID/スタブ短絡）PASSED、
+      E2E `LessonYouTubeAddUITests` をスタブ注入に更新し「追加→videoID がタイトルへ差し替わる→
+      詳細遷移」を決定的に検証 PASSED、実 oEmbed が `{title}` を返すことを curl で確認。
+      plan: docs/plans/archive/youtube-title-oembed.md
+
 - [x] 2026-07-06 レッスン詳細のコンテンツを複数タイプ（写真/Audio/YouTube）に対応
       レッスン詳細の「コンテンツ」を種別ごとの別セクションから、写真＋Audio＋YouTube を
       追加日時の降順で1つにまとめた統合一覧へ変更。追加は「＋」でタイプ選択シート

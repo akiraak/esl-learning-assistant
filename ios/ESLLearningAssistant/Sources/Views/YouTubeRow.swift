@@ -6,6 +6,8 @@ import SwiftUI
 struct YouTubeRow: View {
     let link: YouTubeLink
 
+    @Environment(\.modelContext) private var modelContext
+
     var body: some View {
         HStack(spacing: 12) {
             YouTubeThumbnail(videoID: link.videoID, badgeFont: .title3)
@@ -30,5 +32,19 @@ struct YouTubeRow: View {
                 .foregroundStyle(.tertiary)
         }
         .contentShape(Rectangle())
+        // タイトル未取得なら oEmbed で補完する（表示のたびに再取得しないよう title==nil のときだけ）
+        .task(id: link.id) {
+            await backfillTitleIfNeeded()
+        }
+    }
+
+    /// `title` が未設定なら oEmbed で取得して永続化する。取得済み・取得失敗時は videoID 表示のまま。
+    private func backfillTitleIfNeeded() async {
+        guard link.title == nil else { return }
+        guard let title = await YouTubeOEmbed.fetchTitle(videoID: link.videoID) else { return }
+        // await 中に他経路で入っていないか再確認してから書き込む
+        guard link.title == nil else { return }
+        link.title = title
+        modelContext.saveOrLog()
     }
 }
