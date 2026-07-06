@@ -1,5 +1,11 @@
 # DONE
 
+- [x] 2026-07-05 単語出題で自動読み上げは行わない。ボタンタップで再生のみ
+      復習クイズ（`ReviewSessionView`）の音声出題で、問題表示と同時に音声を1回自動再生していた
+      処理（`advance()` 内）を削除。ユーザーが「Play Audio」ボタン（`reviewPlayAudioButton`）を
+      押したときのみ再生する。手動再生ボタン・フィードバック欄の単語読み上げは変更なし。
+      検証: xcodebuild BUILD SUCCEEDED。plan: docs/plans/archive/word-quiz-no-autoplay.md
+
 - [x] 2026-07-05 単語出題に分からないときのボタンをつける
       復習クイズ（`ReviewSessionView`）の出題中、全形式（選択肢・イラスト選択・タイピング）に
       「I don't know」ボタンを追加。未回答時のみ表示し、押すと不正解扱いで `recordAnswer(isCorrect: false)`

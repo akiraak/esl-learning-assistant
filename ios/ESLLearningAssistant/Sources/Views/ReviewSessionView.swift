@@ -671,10 +671,7 @@ struct ReviewSessionView: View {
             sessionCounts[question.format, default: 0] += 1
             current = CurrentQuestion(word: word, question: question)
 
-            // 音声出題は表示と同時に1回自動再生する
-            if let audioText = question.audioText {
-                playAudio(audioText)
-            }
+            // 音声出題は自動再生しない。ユーザーが「Play Audio」ボタンを押したときのみ再生する。
             // テキスト入力形式はキーボードをすぐ出せるよう自動でフォーカスを当てる。
             // TextField の描画完了を待つため、わずかに遅延させてからフォーカスする。
             if case .typing = question.answer {
