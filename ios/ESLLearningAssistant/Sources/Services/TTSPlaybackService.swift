@@ -72,6 +72,7 @@ final class TTSPlaybackService: NSObject, ObservableObject {
             player.play()
             isPlaying = true
             startProgressTimer()
+            updateScreenWakeLock()
         } else {
             player.prepareToPlay()
         }
@@ -83,6 +84,7 @@ final class TTSPlaybackService: NSObject, ObservableObject {
         isPlaying = false
         currentTime = player.currentTime
         stopProgressTimer()
+        updateScreenWakeLock()
     }
 
     func resume() {
@@ -90,6 +92,7 @@ final class TTSPlaybackService: NSObject, ObservableObject {
         player.play()
         isPlaying = true
         startProgressTimer()
+        updateScreenWakeLock()
     }
 
     func togglePlayPause() {
@@ -121,6 +124,12 @@ final class TTSPlaybackService: NSObject, ObservableObject {
         isPlaying = false
         currentTime = 0
         duration = 0
+        updateScreenWakeLock()
+    }
+
+    /// 再生中だけ自動ロック（スリープ）を止め、途中で音が切れないようにする
+    private func updateScreenWakeLock() {
+        ScreenWakeLock.setActive(isPlaying, owner: self)
     }
 
     private func startProgressTimer() {

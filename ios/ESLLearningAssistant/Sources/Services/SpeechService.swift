@@ -29,6 +29,7 @@ final class SpeechService: NSObject, ObservableObject {
         let utterance = AVSpeechUtterance(string: text)
         utterance.voice = AVSpeechSynthesisVoice(language: languageCode)
         isSpeaking = true
+        ScreenWakeLock.setActive(true, owner: self)
         synthesizer.speak(utterance)
     }
 
@@ -36,6 +37,7 @@ final class SpeechService: NSObject, ObservableObject {
         guard synthesizer.isSpeaking else { return }
         synthesizer.stopSpeaking(at: .immediate)
         isSpeaking = false
+        ScreenWakeLock.setActive(false, owner: self)
     }
 }
 
@@ -43,12 +45,14 @@ extension SpeechService: AVSpeechSynthesizerDelegate {
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
         Task { @MainActor in
             isSpeaking = false
+            ScreenWakeLock.setActive(false, owner: self)
         }
     }
 
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
         Task { @MainActor in
             isSpeaking = false
+            ScreenWakeLock.setActive(false, owner: self)
         }
     }
 }

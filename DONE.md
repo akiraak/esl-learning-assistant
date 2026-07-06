@@ -1,5 +1,9 @@
 # DONE
 
+- [x] 2026-07-05 音声再生中にiPhoneがスリープになって音が止まった
+      再生中だけ `isIdleTimerDisabled = true` にして自動ロックを止める。複数の再生サービスが
+      共有フラグを取り合っても壊れないよう、所有者ベースの `ScreenWakeLock`（Support）で集約。
+      `TTSPlaybackService`（コンテンツ音声）と `SpeechService`（単語読み上げ）の再生状態に連動。
 - [x] 2026-07-05 コンテンツの音声生成と再生を単語と同じ仕組みにする
       写真コンテンツ詳細（`PhotoDetailView`）の音声を、単語詳細と同じ生成→ローカルキャッシュ→URL再生
       ＋`TTSPlayerBar` の仕組みに統一。`WordDetailView` 内の `private struct TTSButton` を共有コンポーネント
