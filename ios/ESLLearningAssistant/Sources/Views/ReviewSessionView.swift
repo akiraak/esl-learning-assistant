@@ -194,6 +194,10 @@ struct ReviewSessionView: View {
 
                     answerArea(item)
 
+                    if feedback == nil {
+                        dontKnowButton(item)
+                    }
+
                     if let feedback {
                         feedbackCard(feedback, item: item)
                     }
@@ -372,6 +376,20 @@ struct ReviewSessionView: View {
                 .accessibilityIdentifier("reviewSubmitButton")
             }
         }
+    }
+
+    /// 分からないときは誤答扱いで正解を提示する（全出題形式で共通）
+    private func dontKnowButton(_ item: CurrentQuestion) -> some View {
+        Button {
+            submitDontKnow(item)
+        } label: {
+            Text("I don't know")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.large)
+        .tint(.secondary)
+        .accessibilityIdentifier("reviewDontKnowButton")
     }
 
     // MARK: - フィードバック
@@ -695,6 +713,24 @@ struct ReviewSessionView: View {
             isCorrect: ReviewAnswerJudge.isCorrect(input: typedAnswer, spec: spec),
             correctAnswer: spec.acceptedAnswers.first ?? item.word.text
         )
+    }
+
+    /// 「分からない」= 誤答扱い。選択肢は選ばせないので赤ハイライトは出ず、正解のみ提示する
+    private func submitDontKnow(_ item: CurrentQuestion) {
+        guard feedback == nil else { return }
+        isAnswerFieldFocused = false
+        recordAnswer(isCorrect: false, correctAnswer: correctAnswer(for: item))
+    }
+
+    /// 出題形式ごとの正解文字列
+    private func correctAnswer(for item: CurrentQuestion) -> String {
+        switch item.question.answer {
+        case .choices(let options, let correctIndex),
+             .illustrationChoices(let options, let correctIndex):
+            return options[correctIndex]
+        case .typing(let spec):
+            return spec.acceptedAnswers.first ?? item.word.text
+        }
     }
 
     private func recordAnswer(isCorrect: Bool, correctAnswer: String) {

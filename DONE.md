@@ -1,5 +1,13 @@
 # DONE
 
+- [x] 2026-07-05 単語出題に分からないときのボタンをつける
+      復習クイズ（`ReviewSessionView`）の出題中、全形式（選択肢・イラスト選択・タイピング）に
+      「I don't know」ボタンを追加。未回答時のみ表示し、押すと不正解扱いで `recordAnswer(isCorrect: false)`
+      を呼んで正解を提示する。得点・習熟度（−25%/stepリセット/当日再出題）は通常の誤答と完全に同一。
+      選択肢は選ばせないので赤ハイライトは出ず正解のみ緑表示。`accessibilityIdentifier` は
+      `reviewDontKnowButton`。データモデル・スケジューラは変更なし。検証: xcodebuild BUILD SUCCEEDED。
+      plan: docs/plans/archive/review-dont-know-button.md
+
 - [x] 2026-07-05 音声再生中にiPhoneがスリープになって音が止まった
       再生中だけ `isIdleTimerDisabled = true` にして自動ロックを止める。複数の再生サービスが
       共有フラグを取り合っても壊れないよう、所有者ベースの `ScreenWakeLock`（Support）で集約。
