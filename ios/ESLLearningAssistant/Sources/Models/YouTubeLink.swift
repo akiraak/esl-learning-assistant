@@ -44,6 +44,12 @@ extension YouTubeLink {
 
     /// 一覧サムネイル URL（中解像度）。
     var thumbnailURL: URL? {
+        Self.thumbnailURL(for: videoID)
+    }
+
+    /// videoID から一覧サムネイル URL を組み立てる。まだ `YouTubeLink` を作る前
+    /// （追加画面のプレビュー）でも使えるよう static で公開する。
+    static func thumbnailURL(for videoID: String) -> URL? {
         URL(string: "https://img.youtube.com/vi/\(videoID)/mqdefault.jpg")
     }
 
