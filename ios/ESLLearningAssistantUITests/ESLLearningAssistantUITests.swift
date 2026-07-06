@@ -60,10 +60,16 @@ final class ESLLearningAssistantUITests: XCTestCase {
         app.navigationBars.buttons["Add"].tap()
         attach(app, "04-lesson-with-lesson")
 
-        let capturePhotoButton = app.buttons["lessonPhotoAddButton"]
-        XCTAssertTrue(capturePhotoButton.waitForExistence(timeout: 5))
-        capturePhotoButton.tap()
-        attach(app, "05-capture-sheet")
+        let addContentButton = app.buttons["lessonContentAddButton"]
+        XCTAssertTrue(addContentButton.waitForExistence(timeout: 5))
+        addContentButton.tap()
+        attach(app, "05-add-content-type")
+
+        // タイプ選択シートで「Photo」を選ぶと写真取り込みへ進む
+        let choosePhotoTypeButton = app.buttons["addContentPhotoButton"]
+        XCTAssertTrue(choosePhotoTypeButton.waitForExistence(timeout: 5))
+        choosePhotoTypeButton.tap()
+        attach(app, "05b-capture-sheet")
 
         let pickPhotoButton = app.buttons["Choose Photo"]
         XCTAssertTrue(pickPhotoButton.waitForExistence(timeout: 5))

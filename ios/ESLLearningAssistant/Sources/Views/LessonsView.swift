@@ -1,6 +1,5 @@
 import SwiftUI
 import SwiftData
-import UniformTypeIdentifiers
 
 struct LessonsView: View {
     @Environment(\.modelContext) private var modelContext
@@ -10,7 +9,8 @@ struct LessonsView: View {
     @AppStorage("currentLessonID") private var currentLessonIDString: String?
 
     @State private var isShowingSwitcher = false
-    @State private var isShowingCapture = false
+    /// コンテンツ追加の入口（タイプ選択シート）。写真/Audio/YouTube をここから追加する
+    @State private var isShowingAddContent = false
     @State private var isEditingMemo = false
     /// レッスン固定の単語追加シートを開く対象。閉じればこのレッスン画面に戻る
     @State private var wordAddLesson: Lesson?
@@ -22,11 +22,9 @@ struct LessonsView: View {
     @State private var isBulkTranslating = false
     @State private var bulkTranslateDone = 0
     @State private var bulkTranslateTotal = 0
-    /// ファイルピッカーからの音声取り込み対象レッスン（ピッカー提示の状態とは分けて保持する）
-    @State private var audioFileImportLesson: Lesson?
-    @State private var isShowingAudioFileImporter = false
-    @State private var audioImportError: String?
     @State private var selectedAudioClip: AudioClip?
+    /// この画面のスタックで開く YouTube 詳細。戻ればレッスンに戻る
+    @State private var selectedYouTubeLink: YouTubeLink?
     /// レッスン画面の音声再生（Audioタブとは独立したプレイヤー）
     @StateObject private var audioPlayback = TTSPlaybackService()
 
@@ -56,10 +54,10 @@ struct LessonsView: View {
                     currentLessonID: currentLessonIDBinding
                 )
             }
-            .sheet(isPresented: $isShowingCapture) {
+            .sheet(isPresented: $isShowingAddContent) {
                 if let lesson = currentLesson {
-                    CaptureView(lesson: lesson) {
-                        // 追加後は詳細へ自動遷移せずレッスン画面に留まり、
+                    AddContentTypeView(lesson: lesson) {
+                        // 写真追加後は詳細へ自動遷移せずレッスン画面に留まり、
                         // OCR/翻訳は永続する LessonsView 側でバックグラウンド実行する
                         Task { await translateAllPending(in: lesson) }
                     }
@@ -77,22 +75,13 @@ struct LessonsView: View {
             .navigationDestination(item: $selectedAudioClip) { clip in
                 AudioDetailView(clip: clip, playback: audioPlayback)
             }
+            .navigationDestination(item: $selectedYouTubeLink) { link in
+                YouTubeDetailView(link: link)
+            }
             .navigationDestination(isPresented: $isEditingMemo) {
                 if let lesson = currentLesson {
                     LessonMemoEditView(lesson: lesson)
                 }
-            }
-            .fileImporter(
-                isPresented: $isShowingAudioFileImporter,
-                allowedContentTypes: [.audio],
-                allowsMultipleSelection: true
-            ) { result in
-                handleAudioFileImport(result)
-            }
-            .alert("Import Failed", isPresented: audioImportErrorBinding) {
-                Button("OK", role: .cancel) { audioImportError = nil }
-            } message: {
-                Text(audioImportError ?? "")
             }
             .confirmationDialog(
                 "Delete this photo?",
@@ -179,10 +168,11 @@ struct LessonsView: View {
 
     @ViewBuilder
     private func lessonContent(_ lesson: Lesson) -> some View {
+        // 写真・Audio・YouTube を1つに束ね、追加日時の降順で並べた統合コンテンツ一覧
+        let items = lesson.contentItems
         Section {
-            let photos = lesson.photos.sorted { $0.capturedAt > $1.capturedAt }
-            let untranslatedCount = photos.filter { $0.processingStatus == .pending || $0.processingStatus == .failed }.count
-            if photos.isEmpty {
+            let untranslatedCount = lesson.photos.filter { $0.processingStatus == .pending || $0.processingStatus == .failed }.count
+            if items.isEmpty {
                 TappableEnglishText(text: "No content yet", color: .secondary)
                     .foregroundStyle(.secondary)
             } else {
@@ -201,39 +191,25 @@ struct LessonsView: View {
                     }
                     .disabled(isBulkTranslating)
                 }
-                ForEach(photos) { photo in
-                    Button {
-                        selectedPhoto = photo
-                    } label: {
-                        PhotoRow(photo: photo)
-                    }
-                    .buttonStyle(.plain)
-                    .swipeActions(edge: .trailing) {
-                        Button(role: .destructive) {
-                            photoPendingDeletion = photo
-                        } label: {
-                            Label("Delete", systemImage: "trash")
-                        }
-                    }
+                ForEach(items) { item in
+                    contentRow(item)
                 }
             }
         } header: {
             HStack {
-                TappableEnglishText(text: "Content (\(lesson.photos.count))")
+                TappableEnglishText(text: "Content (\(items.count))")
                 Spacer()
                 Button {
-                    isShowingCapture = true
+                    isShowingAddContent = true
                 } label: {
                     Image(systemName: "plus")
                 }
-                .accessibilityIdentifier("lessonPhotoAddButton")
-                .accessibilityLabel("Add Photo")
+                .accessibilityIdentifier("lessonContentAddButton")
+                .accessibilityLabel("Add Content")
             }
         }
 
         wordsSection(lesson)
-
-        audioSection(lesson)
 
         memoSection(lesson)
 
@@ -242,6 +218,49 @@ struct LessonsView: View {
                 .foregroundStyle(.secondary)
         } header: {
             TappableEnglishText(text: "Questions")
+        }
+    }
+
+    /// 統合コンテンツ一覧の1行。種別ごとに行の見た目・タップ先・スワイプ削除を分岐する。
+    @ViewBuilder
+    private func contentRow(_ item: LessonContentItem) -> some View {
+        switch item {
+        case .photo(let photo):
+            Button {
+                selectedPhoto = photo
+            } label: {
+                PhotoRow(photo: photo)
+            }
+            .buttonStyle(.plain)
+            .swipeActions(edge: .trailing) {
+                Button(role: .destructive) {
+                    photoPendingDeletion = photo
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+            }
+        case .audio(let clip):
+            // 行タップで詳細へ遷移する（再生は詳細画面で行う。Audioタブと同挙動）
+            Button {
+                selectedAudioClip = clip
+            } label: {
+                AudioClipRow(clip: clip)
+            }
+            .buttonStyle(.plain)
+        case .youtube(let link):
+            Button {
+                selectedYouTubeLink = link
+            } label: {
+                YouTubeRow(link: link)
+            }
+            .buttonStyle(.plain)
+            .swipeActions(edge: .trailing) {
+                Button(role: .destructive) {
+                    deleteYouTubeLink(link)
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+            }
         }
     }
 
@@ -294,59 +313,14 @@ struct LessonsView: View {
         }
     }
 
-    @ViewBuilder
-    private func audioSection(_ lesson: Lesson) -> some View {
-        let clips = lesson.audioClips.sorted { $0.importedAt > $1.importedAt }
-        Section {
-            if clips.isEmpty {
-                TappableEnglishText(text: "No audio yet", color: .secondary)
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(clips) { clip in
-                    // 行タップで詳細へ遷移する（再生は詳細画面で行う。Audioタブと同挙動）
-                    Button {
-                        selectedAudioClip = clip
-                    } label: {
-                        AudioClipRow(clip: clip)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        } header: {
-            HStack {
-                TappableEnglishText(text: "Audio (\(lesson.audioClips.count))")
-                Spacer()
-                Button {
-                    audioFileImportLesson = lesson
-                    isShowingAudioFileImporter = true
-                } label: {
-                    Image(systemName: "plus")
-                }
-                .accessibilityLabel("Import Audio")
-            }
-        }
-    }
-
-    private var audioImportErrorBinding: Binding<Bool> {
-        Binding(get: { audioImportError != nil }, set: { if !$0 { audioImportError = nil } })
-    }
-
     private var photoDeletionConfirmationBinding: Binding<Bool> {
         Binding(get: { photoPendingDeletion != nil }, set: { if !$0 { photoPendingDeletion = nil } })
     }
 
-    private func handleAudioFileImport(_ result: Result<[URL], Error>) {
-        let lesson = audioFileImportLesson
-        audioFileImportLesson = nil
-        switch result {
-        case .success(let urls):
-            let count = AudioFileImporter.importFiles(urls, into: lesson, context: modelContext)
-            if count == 0 && !urls.isEmpty {
-                audioImportError = "Could not read the selected audio file(s)."
-            }
-        case .failure(let error):
-            audioImportError = error.localizedDescription
-        }
+    /// YouTube リンクを削除する。to-one/cascade（レッスン固有）なので実体の後始末は不要。
+    private func deleteYouTubeLink(_ link: YouTubeLink) {
+        modelContext.delete(link)
+        modelContext.saveOrLog()
     }
 
     @ViewBuilder

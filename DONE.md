@@ -1,5 +1,22 @@
 # DONE
 
+- [x] 2026-07-06 レッスン詳細のコンテンツを複数タイプ（写真/Audio/YouTube）に対応
+      レッスン詳細の「コンテンツ」を種別ごとの別セクションから、写真＋Audio＋YouTube を
+      追加日時の降順で1つにまとめた統合一覧へ変更。追加は「＋」でタイプ選択シート
+      （`AddContentTypeView`）を1枚挟み、写真=`CaptureView` / Audio=`.fileImporter` /
+      YouTube=`YouTubeAddView` へルーティング。完了時はフロー全体を閉じてレッスンへ戻る。
+      YouTube は API キー・バックエンド不要で、動画ID または URL から `YouTubeURL` で
+      11桁 videoID を抽出して `YouTubeLink`（to-one/cascade）を追加、`WKWebView` の
+      nocookie 埋め込みで再生。モデル統合はせずビュー層 `LessonContentItem` で束ねる方針。
+      Audio 独立セクションは廃止（Audio タブ `AudioView` は据え置き）。行タップ/スワイプ削除は
+      種別ごとに維持（写真は確認ダイアログ、YouTube は直削除）。カウント・空状態は合算。
+      Phase 1（モデル基盤）〜4（追加フロー）を実装。Phase 5（oEmbed でのタイトル自動取得）は
+      任意のため TODO に残置。
+      検証: xcodebuild BUILD/TEST BUILD SUCCEEDED。新規 UITest
+      `LessonYouTubeAddUITests`（タイプ選択→YouTube追加→統合一覧反映→詳細遷移、不正入力で
+      Add 無効）2件 PASSED。既存の写真取り込み UITest はタイプ選択の1タップ追加に更新。
+      plan: docs/plans/archive/lesson-content-multi-type.md
+
 - [x] 2026-07-06 単語出題の頻度・習熟度増減幅を変更
       `ReviewScheduler` の復習間隔を `[3,7,14,30,90]`→`[1,2,3,7,14,30,90]` 日（最終ステップは90日維持）に、
       1問正解あたりの習熟度増減幅を 25%→20%（クリアまで4連続正解→5連続正解）に変更。
