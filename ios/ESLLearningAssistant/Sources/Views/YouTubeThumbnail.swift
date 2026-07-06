@@ -11,39 +11,39 @@ struct YouTubeThumbnail: View {
     var cornerRadius: CGFloat = 8
 
     var body: some View {
-        AsyncImage(url: YouTubeLink.thumbnailURL(for: videoID)) { phase in
-            switch phase {
-            case .success(let image):
-                image
-                    .resizable()
-                    .scaledToFill()
-            case .empty:
-                placeholder { ProgressView() }
-            case .failure:
-                placeholder {
-                    Image(systemName: "play.rectangle")
-                        .foregroundStyle(.secondary)
+        // 与えられた枠（44pt 四方や 16:9 など）をこの矩形が確定させ、画像は overlay で
+        // その枠を満たす。scaledToFill の画像は枠より大きくなるが、合成後に `.clipped()` で
+        // 枠へクリップするため、左右へのあふれ（隣接テキストへの被り）が起きない。
+        // ※ AsyncImage 自身に clipped を付けると scaledToFill 後の拡大サイズを基準にクリップされ、
+        //   枠をはみ出してしまうため、必ず固定サイズの土台越しにクリップする。
+        Rectangle()
+            .fill(.secondary.opacity(0.15))
+            .overlay {
+                AsyncImage(url: YouTubeLink.thumbnailURL(for: videoID)) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .scaledToFill()
+                    case .empty:
+                        ProgressView()
+                    case .failure:
+                        Image(systemName: "play.rectangle")
+                            .foregroundStyle(.secondary)
+                    @unknown default:
+                        Color.clear
+                    }
                 }
-            @unknown default:
-                placeholder { Color.clear }
             }
-        }
-        .clipped()
-        .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
-        .overlay {
-            // 動画（YouTube）だと一目で分かるよう再生バッジを重ねる
-            Image(systemName: "play.circle.fill")
-                .font(badgeFont)
-                .foregroundStyle(.white, .black.opacity(0.45))
-                .shadow(radius: 2)
-        }
-    }
-
-    private func placeholder<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        ZStack {
-            Rectangle().fill(.secondary.opacity(0.15))
-            content()
-        }
+            .clipped()
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+            .overlay {
+                // 動画（YouTube）だと一目で分かるよう再生バッジを重ねる
+                Image(systemName: "play.circle.fill")
+                    .font(badgeFont)
+                    .foregroundStyle(.white, .black.opacity(0.45))
+                    .shadow(radius: 2)
+            }
     }
 }
 
