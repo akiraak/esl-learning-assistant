@@ -56,8 +56,10 @@ struct LessonsView: View {
             }
             .sheet(isPresented: $isShowingCapture) {
                 if let lesson = currentLesson {
-                    CaptureView(lesson: lesson) { photo in
-                        selectedPhoto = photo
+                    CaptureView(lesson: lesson) {
+                        // 追加後は詳細へ自動遷移せずレッスン画面に留まり、
+                        // OCR/翻訳は永続する LessonsView 側でバックグラウンド実行する
+                        Task { await translateAllPending(in: lesson) }
                     }
                 }
             }
@@ -442,6 +444,7 @@ private struct PhotoRow: View {
             }
             Spacer()
         }
+        .animation(.snappy(duration: 0.25), value: photo.processingStatus)
     }
 
     @ViewBuilder
@@ -459,18 +462,34 @@ private struct PhotoRow: View {
         }
     }
 
+    @ViewBuilder
     private var statusLabel: some View {
-        let (text, systemImage, color): (String, String, Color) = {
-            switch photo.processingStatus {
-            case .pending: return ("Pending", "clock", .secondary)
-            case .processing: return ("Processing", "hourglass", .secondary)
-            case .completed: return ("Done", "checkmark.circle", .green)
-            case .failed: return ("Failed", "exclamationmark.triangle", .red)
+        switch photo.processingStatus {
+        case .pending:
+            // 順番待ち。穏やかに明滅させて「これから処理される」ことを示す
+            Label("Pending", systemImage: "clock")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .pulse()
+        case .processing:
+            // 処理中はインラインスピナー + 明滅テキストで動きを見せる
+            HStack(spacing: 4) {
+                ProgressView()
+                    .controlSize(.mini)
+                Text("Processing")
             }
-        }()
-        return Label(text, systemImage: systemImage)
             .font(.caption)
-            .foregroundStyle(color)
+            .foregroundStyle(.secondary)
+            .pulse()
+        case .completed:
+            Label("Done", systemImage: "checkmark.circle")
+                .font(.caption)
+                .foregroundStyle(.green)
+        case .failed:
+            Label("Failed", systemImage: "exclamationmark.triangle")
+                .font(.caption)
+                .foregroundStyle(.red)
+        }
     }
 }
 

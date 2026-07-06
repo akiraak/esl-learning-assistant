@@ -1,5 +1,23 @@
 # DONE
 
+- [x] 2026-07-05 レッスンへの写真コンテンツ追加を素早く複数枚
+      Phase 1（OCR/翻訳の非同期化・即 dismiss）に続き Phase 2 を実装。`CaptureView` の `PhotosPicker`
+      を複数選択（`selection: [PhotosPickerItem]`）へ変更し、選択した各画像を順に `loadTransferable`
+      → `PhotoStorage.save` → `Photo(.pending)` で insert、全件保存後に一括 `saveOrLog` →
+      `onCaptured()` → `dismiss()`。OCR/翻訳は `LessonsView` 所有の `translateAllPending` が
+      pending 全件を順次バックグラウンド処理する（Phase 1 の基盤を再利用）。カメラは従来どおり 1 枚ずつ。
+      plan: docs/plans/archive/photo-fast-multi-import.md
+
+- [x] 2026-07-05 処理中のアニメーション演出（レッスン画面・コンテンツ詳細画面）
+      Phase 1 の非同期化で `.processing` が「今まさに処理中」を意味する状態になったのに合わせ、
+      進捗を視覚化するアニメーションを追加。共通部品 `ProcessingIndicator.swift` を新設し、
+      `pulse()`（呼吸する明滅）と `ShimmerSkeletonLine`（横に光沢が流れるスケルトン）を提供。
+      レッスン画面の `PhotoRow` は pending=clock＋明滅 / processing=インラインスピナー＋明滅テキストに、
+      コンテンツ詳細（`PhotoDetailView`）は pending/processing をシマーのスケルトン段落＋明滅ラベルへ
+      作り替え（従来の「中断メッセージ」を撤去、強制終了で固まった場合の控えめな retry は残置）。
+      状態変化に `.animation(value: processingStatus)` を添えて pending→processing→completed を滑らかに。
+      plan: docs/plans/archive/photo-processing-animation.md
+
 - [x] 2026-07-05 写真の扱いを検討する（調査・設計）
       写真（`Photo`）を3観点で整理: (1)レッスンのコンテンツとして / (2)レッスンのメモとして /
       (3)レッスンに紐付かない写真の可能性。現状は `Photo.lesson` が非オプショナル＝レッスン必須で、

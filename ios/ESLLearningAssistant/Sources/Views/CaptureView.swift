@@ -4,16 +4,14 @@ import SwiftData
 
 struct CaptureView: View {
     let lesson: Lesson
-    var onCaptured: (Photo) -> Void
+    /// 写真を pending 登録し終えた通知。OCR/翻訳は呼び出し元がバックグラウンドで進める
+    var onCaptured: () -> Void
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
 
-    @State private var photosPickerItem: PhotosPickerItem?
+    @State private var photosPickerItems: [PhotosPickerItem] = []
     @State private var isShowingCamera = false
-    @State private var isProcessing = false
-
-    private let ocrTranslationService: OCRTranslationService = RemoteOCRTranslationService()
 
     var body: some View {
         NavigationStack {
@@ -36,14 +34,10 @@ struct CaptureView: View {
                     .buttonStyle(.borderedProminent)
                 }
 
-                PhotosPicker(selection: $photosPickerItem, matching: .images) {
-                    Label("Choose Photo", systemImage: "photo.on.rectangle")
+                PhotosPicker(selection: $photosPickerItems, matching: .images) {
+                    Label("Choose Photos", systemImage: "photo.on.rectangle")
                 }
                 .buttonStyle(.bordered)
-
-                if isProcessing {
-                    ProgressView("Processing OCR & translation…")
-                }
             }
             .padding()
             .navigationTitle("Capture")
@@ -53,10 +47,9 @@ struct CaptureView: View {
                     Button("Close") { dismiss() }
                 }
             }
-            .disabled(isProcessing)
-            .onChange(of: photosPickerItem) { _, newValue in
-                guard let newValue else { return }
-                Task { await handlePickedItem(newValue) }
+            .onChange(of: photosPickerItems) { _, newValue in
+                guard !newValue.isEmpty else { return }
+                Task { await handlePickedItems(newValue) }
             }
             .fullScreenCover(isPresented: $isShowingCamera) {
                 CameraPicker { image in
@@ -69,22 +62,31 @@ struct CaptureView: View {
         }
     }
 
-    private func handlePickedItem(_ item: PhotosPickerItem) async {
-        guard let data = try? await item.loadTransferable(type: Data.self),
-              let image = UIImage(data: data) else { return }
-        await handleCapturedImage(image)
+    /// ライブラリから選んだ複数枚を順に読み込み、pending 登録する
+    private func handlePickedItems(_ items: [PhotosPickerItem]) async {
+        var didInsert = false
+        for item in items {
+            guard let data = try? await item.loadTransferable(type: Data.self),
+                  let image = UIImage(data: data),
+                  let fileName = PhotoStorage.save(image) else { continue }
+            // pending 登録だけ行い、OCR/翻訳は呼び出し元でバックグラウンド実行する
+            let photo = Photo(lesson: lesson, imageFileName: fileName)
+            modelContext.insert(photo)
+            didInsert = true
+        }
+        guard didInsert else { return }
+        modelContext.saveOrLog()
+        onCaptured()
+        dismiss()
     }
 
     private func handleCapturedImage(_ image: UIImage) async {
         guard let fileName = PhotoStorage.save(image) else { return }
-        isProcessing = true
+        // pending 登録だけ行い、OCR/翻訳は呼び出し元でバックグラウンド実行する
         let photo = Photo(lesson: lesson, imageFileName: fileName)
         modelContext.insert(photo)
         modelContext.saveOrLog()
-        await ocrTranslationService.process(photo)
-        modelContext.saveOrLog()
-        isProcessing = false
-        onCaptured(photo)
+        onCaptured()
         dismiss()
     }
 }

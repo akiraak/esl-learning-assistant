@@ -23,16 +23,10 @@ struct PhotoDetailView: View {
                 }
 
                 switch photo.processingStatus {
-                case .pending:
-                    HStack {
-                        ProgressView()
-                        TappableEnglishText(text: "Starting OCR & translation…", color: .secondary)
-                            .foregroundStyle(.secondary)
-                    }
-                case .processing:
-                    VStack(alignment: .leading, spacing: 8) {
-                        TappableEnglishText(text: "OCR & translation did not finish (it may have been interrupted)", color: .secondary)
-                            .foregroundStyle(.secondary)
+                case .pending, .processing:
+                    VStack(alignment: .leading, spacing: 16) {
+                        PhotoProcessingView()
+                        // 稀にアプリ強制終了で processing のまま固まった場合の回復手段（控えめに）
                         retryButton
                     }
                 case .failed:
@@ -70,6 +64,7 @@ struct PhotoDetailView: View {
                 }
             }
             .padding()
+            .animation(.snappy(duration: 0.25), value: photo.processingStatus)
         }
         // OCR英文の単語タップ→登録/詳細遷移。出現元の写真とレッスンを紐付け、AI生成にOCR文脈を渡す
         .wordTapRegistration(sourcePhoto: photo, lesson: photo.lesson)
