@@ -1,5 +1,12 @@
 # DONE
 
+- [x] 2026-07-05 コンテンツ一覧の項目名を OCR の最初のタイトルにする
+      Content セクションの一覧行（`PhotoRow`）の主表示を撮影日から OCR タイトルへ変更。
+      `Photo.contentTitle` を追加し、OCR 本文（Markdown）の最初の見出し（#…）を、無ければ
+      最初の非空行を、先頭 `#`・箇条書きマーカー・強調記法を除去して返す（本文なしは空文字）。
+      行は 1 行目にタイトル（取れなければ "Untitled"）、2 行目に撮影日＋ステータスを併記。
+      plan: docs/plans/archive/content-row-title-from-ocr.md
+
 - [x] 2026-07-05 レッスンのコンテンツ（写真）を削除可能に
       Content セクションの写真を 2 経路で削除可能にした。(1) レッスン画面の写真行を左スワイプ →
       「Delete」、(2) `PhotoDetailView` 最下部の「Delete Photo」ボタン（削除後 dismiss）。

@@ -468,12 +468,24 @@ private struct PhotoRow: View {
         HStack(spacing: 12) {
             thumbnail
             VStack(alignment: .leading, spacing: 2) {
-                Text(photo.capturedAt, style: .date)
-                statusLabel
+                Text(displayTitle)
+                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(photo.capturedAt, style: .date)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    statusLabel
+                }
             }
             Spacer()
         }
         .animation(.snappy(duration: 0.25), value: photo.processingStatus)
+    }
+
+    /// OCR先頭の見出しを項目名にする。取れない場合は "Untitled"。
+    private var displayTitle: String {
+        let title = photo.contentTitle
+        return title.isEmpty ? "Untitled" : title
     }
 
     @ViewBuilder
