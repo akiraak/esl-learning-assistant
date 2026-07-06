@@ -1,5 +1,13 @@
 # DONE
 
+- [x] 2026-07-05 レッスンのコンテンツ（写真）を削除可能に
+      Content セクションの写真を 2 経路で削除可能にした。(1) レッスン画面の写真行を左スワイプ →
+      「Delete」、(2) `PhotoDetailView` 最下部の「Delete Photo」ボタン（削除後 dismiss）。
+      共通処理を `ModelContext.deletePhoto(_:)` 拡張に集約: 画像ファイル削除（`PhotoStorage.delete`）＋
+      `modelContext.delete(photo)` ＋ `saveOrLog`。`WordOccurrence.sourcePhoto` は inverse 未宣言のため、
+      削除前に該当出現の `sourcePhoto` を nil 化してダングリング参照を回避（単語のレッスン紐付けは維持）。
+      plan: docs/plans/archive/lesson-content-delete.md
+
 - [x] 2026-07-05 レッスンへの写真コンテンツ追加を素早く複数枚
       Phase 1（OCR/翻訳の非同期化・即 dismiss）に続き Phase 2 を実装。`CaptureView` の `PhotosPicker`
       を複数選択（`selection: [PhotosPickerItem]`）へ変更し、選択した各画像を順に `loadTransferable`

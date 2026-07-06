@@ -17,6 +17,8 @@ struct LessonsView: View {
     /// この画面のスタックで詳細を開く単語。戻ればこのレッスン画面に戻る
     @State private var selectedWord: Word?
     @State private var selectedPhoto: Photo?
+    /// 削除確認ダイアログの対象写真（確認後に実削除する）
+    @State private var photoPendingDeletion: Photo?
     @State private var isBulkTranslating = false
     @State private var bulkTranslateDone = 0
     @State private var bulkTranslateTotal = 0
@@ -91,6 +93,22 @@ struct LessonsView: View {
                 Button("OK", role: .cancel) { audioImportError = nil }
             } message: {
                 Text(audioImportError ?? "")
+            }
+            .confirmationDialog(
+                "Delete this photo?",
+                isPresented: photoDeletionConfirmationBinding,
+                titleVisibility: .visible,
+                presenting: photoPendingDeletion
+            ) { photo in
+                Button("Delete", role: .destructive) {
+                    modelContext.deletePhoto(photo)
+                    photoPendingDeletion = nil
+                }
+                Button("Cancel", role: .cancel) {
+                    photoPendingDeletion = nil
+                }
+            } message: { _ in
+                Text("This will remove the photo and its OCR & translation. This cannot be undone.")
             }
         }
         .onDisappear { audioPlayback.stop() }
@@ -190,6 +208,13 @@ struct LessonsView: View {
                         PhotoRow(photo: photo)
                     }
                     .buttonStyle(.plain)
+                    .swipeActions(edge: .trailing) {
+                        Button(role: .destructive) {
+                            photoPendingDeletion = photo
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    }
                 }
             }
         } header: {
@@ -304,6 +329,10 @@ struct LessonsView: View {
 
     private var audioImportErrorBinding: Binding<Bool> {
         Binding(get: { audioImportError != nil }, set: { if !$0 { audioImportError = nil } })
+    }
+
+    private var photoDeletionConfirmationBinding: Binding<Bool> {
+        Binding(get: { photoPendingDeletion != nil }, set: { if !$0 { photoPendingDeletion = nil } })
     }
 
     private func handleAudioFileImport(_ result: Result<[URL], Error>) {

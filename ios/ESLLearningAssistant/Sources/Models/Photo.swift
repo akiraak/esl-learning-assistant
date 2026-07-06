@@ -42,3 +42,17 @@ final class Photo {
         self.translationLanguage = translationLanguage
     }
 }
+
+extension ModelContext {
+    /// 写真を削除する。画像ファイル・SwiftData の Photo を消し、
+    /// この写真を出典に持つ単語出現（WordOccurrence）の sourcePhoto は
+    /// ダングリング参照を避けるため nil 化する（出現自体は残す）。
+    func deletePhoto(_ photo: Photo) {
+        for occurrence in photo.lesson.wordOccurrences where occurrence.sourcePhoto?.id == photo.id {
+            occurrence.sourcePhoto = nil
+        }
+        PhotoStorage.delete(fileName: photo.imageFileName)
+        delete(photo)
+        saveOrLog()
+    }
+}

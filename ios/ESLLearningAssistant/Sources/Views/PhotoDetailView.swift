@@ -4,7 +4,11 @@ import SwiftUI
 struct PhotoDetailView: View {
     let photo: Photo
 
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.dismiss) private var dismiss
+
     @State private var isRetrying = false
+    @State private var isConfirmingDelete = false
     @StateObject private var speechService = SpeechService()
     @StateObject private var geminiSpeechService = GeminiSpeechService()
     @StateObject private var ttsPlayback = TTSPlaybackService()
@@ -62,6 +66,9 @@ struct PhotoDetailView: View {
                     Divider()
                     retranslateButton
                 }
+
+                Divider()
+                deleteButton
             }
             .padding()
             .animation(.snappy(duration: 0.25), value: photo.processingStatus)
@@ -159,6 +166,30 @@ struct PhotoDetailView: View {
         }
         .buttonStyle(.bordered)
         .disabled(isRetrying)
+    }
+
+    private var deleteButton: some View {
+        Button(role: .destructive) {
+            isConfirmingDelete = true
+        } label: {
+            Label("Delete Photo", systemImage: "trash")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.bordered)
+        .tint(.red)
+        .confirmationDialog(
+            "Delete this photo?",
+            isPresented: $isConfirmingDelete,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                modelContext.deletePhoto(photo)
+                dismiss()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This will remove the photo and its OCR & translation. This cannot be undone.")
+        }
     }
 
     private func retry() async {
