@@ -19,7 +19,7 @@ final class WordReviewStatePersistenceTests: XCTestCase {
             context.insert(word)
             try context.save()
 
-            // クイズ解答と同じ流れで更新（正解1回: mastery 25% / correctCount 1）
+            // クイズ解答と同じ流れで更新（正解1回: mastery 20% / correctCount 1）
             word.reviewState = ReviewScheduler.answered(word.reviewState, isCorrect: true)
             try context.save()
         }
@@ -31,7 +31,7 @@ final class WordReviewStatePersistenceTests: XCTestCase {
             )
             XCTAssertEqual(word.reviewState.reviewCount, 1)
             XCTAssertEqual(word.reviewState.correctCount, 1)
-            XCTAssertEqual(word.reviewState.masteryPercent, 25)
+            XCTAssertEqual(word.reviewState.masteryPercent, 20)
             XCTAssertEqual(word.reviewState.stepIndex, 0)
             XCTAssertEqual(word.reviewState.lapseCount, 0)
             XCTAssertNotNil(word.reviewState.lastReviewedAt)
@@ -56,7 +56,7 @@ final class WordReviewStatePersistenceTests: XCTestCase {
             try secondContext.fetch(FetchDescriptor<Word>()).first { $0.text == "banana" }
         )
         XCTAssertEqual(fetched.reviewState.correctCount, 1)
-        XCTAssertEqual(fetched.reviewState.masteryPercent, 25)
+        XCTAssertEqual(fetched.reviewState.masteryPercent, 20)
     }
 
     private func makeContext(url: URL) throws -> ModelContext {

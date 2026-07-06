@@ -4,7 +4,7 @@ import SwiftData
 /// 復習クイズのセッション画面。1問ずつ出題 → 回答 → 正誤フィードバック → 次へ。
 /// 習熟度方式（docs/plans/archive/review-mastery-progress.md）: 対象は due 単語の先頭5語・最大10問。
 /// 未クリア単語のキューをラウンドロビンで回して同じ単語が連続しないようにし、
-/// 解答のたびに reviewState を更新する（正解+25% / 不正解−25%、100%でクリア）。
+/// 解答のたびに reviewState を更新する（正解+20% / 不正解−20%、100%でクリア）。
 /// 全対象が100%に達したら10問未満でも終了する。
 ///
 /// 問題はサーバ保存のもののみを使う（docs/plans/archive/quiz-questions-server-storage.md）。
@@ -757,7 +757,7 @@ struct ReviewSessionView: View {
         // 正解=気持ちいい音／不正解=それとない音＋ハプティック
         soundEffects.playAnswerFeedback(isCorrect: isCorrect)
 
-        // 解答のたびに反映する（正解+25% / 不正解−25%、100%でクリア）
+        // 解答のたびに反映する（正解+20% / 不正解−20%、100%でクリア）
         let newState = ReviewScheduler.answered(item.word.reviewState, isCorrect: isCorrect)
         item.word.reviewState = newState
         modelContext.saveOrLog()

@@ -172,7 +172,7 @@ struct WordReviewState: Codable {
         get { lapseCountStorage ?? 0 }
         set { lapseCountStorage = newValue }
     }
-    /// 現在の周回の習熟度（0〜100%）。正解+25 / 不正解−25 で増減し、
+    /// 現在の周回の習熟度（0〜100%）。正解+20 / 不正解−20 で増減し、
     /// 100% でクリア（dueDate 前進）と同時に 0 へ戻る（ReviewScheduler.answered）
     var masteryPercent: Int {
         get { masteryPercentStorage ?? 0 }

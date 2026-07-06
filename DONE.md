@@ -1,5 +1,13 @@
 # DONE
 
+- [x] 2026-07-06 単語出題の頻度・習熟度増減幅を変更
+      `ReviewScheduler` の復習間隔を `[3,7,14,30,90]`→`[1,2,3,7,14,30,90]` 日（最終ステップは90日維持）に、
+      1問正解あたりの習熟度増減幅を 25%→20%（クリアまで4連続正解→5連続正解）に変更。
+      ロジックは配列長・増減幅に非依存のため定数変更のみ。旧 stepIndex は clampedStep で丸められ
+      マイグレーション不要。関連 doc コメントと ReviewSchedulerTests / WordReviewStatePersistenceTests を更新。
+      検証: 該当ユニットテスト10件 TEST SUCCEEDED。
+      plan: docs/plans/archive/word-review-frequency-tuning.md
+
 - [x] 2026-07-05 単語出題の音声読み上げ解答後に英文を表示する
       復習クイズ（`ReviewSessionView`）の音声出題（`audioText` を持つ VC/VT/VTC/VTT 系）で、
       解答後（`feedback != nil`）に読み上げられた英文を Play Audio ボタン直下に表示する

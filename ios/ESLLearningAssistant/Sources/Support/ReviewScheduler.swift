@@ -5,17 +5,17 @@ import Foundation
 /// SM-2 / FSRS への将来差し替えを想定し、モデルから分離した純関数として実装する。
 enum ReviewScheduler {
     /// 復習ステップの間隔（日）。最終ステップ到達後は90日間隔を維持する。
-    static let stepIntervalsInDays = [3, 7, 14, 30, 90]
+    static let stepIntervalsInDays = [1, 2, 3, 7, 14, 30, 90]
 
     /// 1問の解答での習熟度の増減幅（%）
-    static let masteryDeltaPercent = 25
+    static let masteryDeltaPercent = 20
     /// この習熟度に到達するとクリア（次回復習日へ前進）
     static let masteryClearPercent = 100
 
     /// 1回の解答結果を反映した新しい復習状態を返す（習熟度方式）。
-    /// - 正解: 習熟度 +25%（上限100）。100% でクリアとなり、現在ステップの間隔で次回日を
+    /// - 正解: 習熟度 +20%（上限100）。100% でクリアとなり、現在ステップの間隔で次回日を
     ///   設定してステップを1つ進め（最終ステップでは維持）、習熟度を次周回用に 0 へ戻す
-    /// - 不正解: 習熟度 −25%（下限0）、ステップを0に戻す。dueDate は変えない
+    /// - 不正解: 習熟度 −20%（下限0）、ステップを0に戻す。dueDate は変えない
     ///   （クリアするまで出題対象に残り続ける）
     static func answered(
         _ state: WordReviewState,

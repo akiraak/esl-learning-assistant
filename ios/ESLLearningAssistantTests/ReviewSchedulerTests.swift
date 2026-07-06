@@ -30,24 +30,24 @@ final class ReviewSchedulerTests: XCTestCase {
         let now = date(2026, 7, 1)
         var state = WordReviewState(dueDate: now)
         // 100% 未満の正解は習熟度だけ進み、dueDate・ステップは変わらない
-        for expected in [25, 50, 75] {
+        for expected in [20, 40, 60, 80] {
             state = ReviewScheduler.answered(state, isCorrect: true, at: now, calendar: calendar)
             XCTAssertEqual(state.masteryPercent, expected)
             XCTAssertEqual(state.stepIndex, 0)
             XCTAssertEqual(daysUntilDue(state, from: now), 0)
             XCTAssertEqual(state.lastReviewedAt, now)
         }
-        XCTAssertEqual(state.reviewCount, 3)
-        XCTAssertEqual(state.correctCount, 3)
+        XCTAssertEqual(state.reviewCount, 4)
+        XCTAssertEqual(state.correctCount, 4)
         XCTAssertEqual(state.lapseCount, 0)
     }
 
     func testReachingFullMasteryClearsAndSchedulesNextStep() {
         let now = date(2026, 7, 1)
-        let state = WordReviewState(dueDate: now, masteryPercent: 75)
+        let state = WordReviewState(dueDate: now, masteryPercent: 80)
         let next = ReviewScheduler.answered(state, isCorrect: true, at: now, calendar: calendar)
-        // クリア: step 0 の間隔（3日）で次回日を設定し、ステップ前進・習熟度は次周回用に0へ
-        XCTAssertEqual(daysUntilDue(next, from: now), 3)
+        // クリア: step 0 の間隔（1日）で次回日を設定し、ステップ前進・習熟度は次周回用に0へ
+        XCTAssertEqual(daysUntilDue(next, from: now), 1)
         XCTAssertEqual(next.stepIndex, 1)
         XCTAssertEqual(next.masteryPercent, 0)
     }
@@ -55,12 +55,12 @@ final class ReviewSchedulerTests: XCTestCase {
     func testClearAdvancesThroughAllSteps() {
         var state = WordReviewState(dueDate: date(2026, 7, 1))
         var now = date(2026, 7, 1)
-        // 各周回を4連続正解でクリアすると 3日→7日→14日→30日→90日 と進み、最終ステップは90日を維持
+        // 各周回を5連続正解でクリアすると 1日→2日→3日→7日→14日→30日→90日 と進み、最終ステップは90日を維持
         let expected: [(interval: Int, stepIndex: Int)] = [
-            (3, 1), (7, 2), (14, 3), (30, 4), (90, 4), (90, 4),
+            (1, 1), (2, 2), (3, 3), (7, 4), (14, 5), (30, 6), (90, 6), (90, 6),
         ]
         for (index, expectation) in expected.enumerated() {
-            for _ in 0..<4 {
+            for _ in 0..<5 {
                 state = ReviewScheduler.answered(state, isCorrect: true, at: now, calendar: calendar)
             }
             XCTAssertEqual(daysUntilDue(state, from: now), expectation.interval, "\(index)周目の間隔")
@@ -68,8 +68,8 @@ final class ReviewSchedulerTests: XCTestCase {
             XCTAssertEqual(state.masteryPercent, 0)
             now = state.dueDate
         }
-        XCTAssertEqual(state.reviewCount, 24)
-        XCTAssertEqual(state.correctCount, 24)
+        XCTAssertEqual(state.reviewCount, 40)
+        XCTAssertEqual(state.correctCount, 40)
     }
 
     func testIncorrectAnswerReducesMasteryAndResetsStepKeepingDueDate() {
@@ -78,7 +78,7 @@ final class ReviewSchedulerTests: XCTestCase {
             dueDate: now, reviewCount: 4, stepIndex: 3, correctCount: 4, masteryPercent: 50
         )
         let next = ReviewScheduler.answered(state, isCorrect: false, at: now, calendar: calendar)
-        XCTAssertEqual(next.masteryPercent, 25)
+        XCTAssertEqual(next.masteryPercent, 30)
         XCTAssertEqual(next.stepIndex, 0)
         // dueDate は変えない（クリアするまで出題対象に残る）
         XCTAssertEqual(next.dueDate, state.dueDate)
@@ -95,22 +95,22 @@ final class ReviewSchedulerTests: XCTestCase {
             ReviewScheduler.answered(zero, isCorrect: false, at: now, calendar: calendar).masteryPercent,
             0
         )
-        // 25刻み以外の保存値（将来の増減幅変更など）でも100を超えず、クリアとして処理される
+        // 20刻み以外の保存値（将来の増減幅変更など）でも100を超えず、クリアとして処理される
         let almost = WordReviewState(dueDate: now, masteryPercent: 90)
         let cleared = ReviewScheduler.answered(almost, isCorrect: true, at: now, calendar: calendar)
         XCTAssertEqual(cleared.masteryPercent, 0)
-        XCTAssertEqual(daysUntilDue(cleared, from: now), 3)
+        XCTAssertEqual(daysUntilDue(cleared, from: now), 1)
     }
 
     func testLateNightClearCountsFromLocalDay() {
         // 23:30の解答でも当日0時起点で日数を数える（深夜またぎで間隔がぶれない）
         let now = date(2026, 7, 1, hour: 23, minute: 30)
-        let state = WordReviewState(dueDate: now, masteryPercent: 75)
+        let state = WordReviewState(dueDate: now, masteryPercent: 80)
         let next = ReviewScheduler.answered(state, isCorrect: true, at: now, calendar: calendar)
-        XCTAssertEqual(daysUntilDue(next, from: now), 3)
+        XCTAssertEqual(daysUntilDue(next, from: now), 1)
         XCTAssertEqual(
             next.dueDate,
-            calendar.startOfDay(for: date(2026, 7, 4))
+            calendar.startOfDay(for: date(2026, 7, 2))
         )
     }
 
@@ -134,7 +134,7 @@ final class ReviewSchedulerTests: XCTestCase {
     func testOutOfRangeStepIndexIsClamped() {
         // 将来ステップ数を減らした場合などの保存済み範囲外値も落ちずに最終ステップ扱いになる
         let now = date(2026, 7, 1)
-        let state = WordReviewState(dueDate: now, stepIndex: 99, masteryPercent: 75)
+        let state = WordReviewState(dueDate: now, stepIndex: 99, masteryPercent: 80)
         let next = ReviewScheduler.answered(state, isCorrect: true, at: now, calendar: calendar)
         XCTAssertEqual(daysUntilDue(next, from: now), 90)
         XCTAssertEqual(next.stepIndex, ReviewScheduler.stepIntervalsInDays.count - 1)
