@@ -13,6 +13,10 @@ final class Lesson {
     @Relationship(deleteRule: .cascade, inverse: \Photo.lesson)
     var photos: [Photo] = []
 
+    // YouTube リンクはレッスン固有コンテンツ。写真と同じく to-one/cascade（レッスン削除で一緒に消す）
+    @Relationship(deleteRule: .cascade, inverse: \YouTubeLink.lesson)
+    var youtubeLinks: [YouTubeLink] = []
+
     @Relationship(deleteRule: .cascade, inverse: \WordOccurrence.lesson)
     var wordOccurrences: [WordOccurrence] = []
 
