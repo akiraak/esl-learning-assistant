@@ -27,19 +27,24 @@ Class 1 ── * Lesson
 Lesson 1 ── * Photo
 Lesson 1 ── * Question ── * (sourcePhoto: Photo?)
 Question 1 ── * QuizResult
+Lesson * ── * AudioClip   (多対多・nullify。レッスン非依存のライブラリ音声も許容)
 
 Lesson * ── * Word   (中間エンティティ WordOccurrence 経由)
 WordOccurrence ── 1 Lesson
 WordOccurrence ── 1 Word
 WordOccurrence ── * (sourcePhoto: Photo?)
+WordOccurrence ── * (sourceAudio: AudioClip?)
 ```
 
 - `Lesson` は `Class` に必須で属する（仕様書4章: クラス／レッスンの2段階管理単位）
 - `Photo` / `Question` は `Lesson` に必須で属する（仕様書4章: レッスン単位の管理）
+- `AudioClip` は `Lesson` に**従属しない**。0個以上のレッスンへ紐付けられ（多対多・削除時は nullify）、
+  どのレッスンにも属さないライブラリ音声としても存続する（[§4.5](#45-audioclip取り込み音声とその文字起こし翻訳)）
 - `Word` は `Lesson` に従属しない独立エンティティ。`Lesson` との関連は `WordOccurrence`
   （「どのレッスンでこの単語に出会ったか」の出現記録）を介した多対多とする
-- `Question.sourcePhoto` / `WordOccurrence.sourcePhoto` は任意の参照（手動登録や、
-  複数写真にまたがる場合等を許容するため）
+- `Question.sourcePhoto` / `WordOccurrence.sourcePhoto` / `WordOccurrence.sourceAudio` は任意の参照
+  （手動登録や、複数写真にまたがる場合等を許容するため）。`sourcePhoto` は写真OCR由来、
+  `sourceAudio` は音声文字起こし由来のタップ登録元を表す
 
 ### データ構造ツリー
 
@@ -62,7 +67,9 @@ Class
     │   ├─ id
     │   ├─ word: Word                         (参照、所有はしない)
     │   ├─ sourcePhoto?: Photo                (任意の参照、所有はしない)
+    │   ├─ sourceAudio?: AudioClip            (任意の参照、所有はしない)
     │   └─ occurredAt
+    ├─ audioClips: [AudioClip]                (* Lesson - * AudioClip、nullify、所有はしない。詳細は §4.5)
     └─ questions: [Question]                 (1 Lesson - * Question)
         ├─ id
         ├─ sourcePhoto?: Photo               (任意の参照、所有はしない)
@@ -140,6 +147,7 @@ Composition                                   (Lessonに従属しない独立エ
 | photos | [Photo] | 関連写真（to-many, cascade delete） |
 | wordOccurrences | [WordOccurrence] | この授業で出会った単語の出現記録（to-many, cascade delete） |
 | questions | [Question] | 関連問題（to-many, cascade delete） |
+| audioClips | [AudioClip] | 紐付けた取り込み音声（to-many, **nullify**）。レッスン削除でクリップ本体は残す（[§4.5](#45-audioclip取り込み音声とその文字起こし翻訳)） |
 
 - 自動の日付区切りは行わない。`createdAt` は記録のみで区切り条件には使わない
 - レッスン削除時は配下の `Photo` / `WordOccurrence` / `Question` / `QuizResult` をカスケード削除する
@@ -171,6 +179,53 @@ Composition                                   (Lessonに従属しない独立エ
 | failed | 失敗（再試行可能） |
 
 - 撮影自体はオフラインでも可能なため `pending` を初期状態として持つ（仕様書3.1章・5.1章）
+
+## 4.5 AudioClip（取り込み音声とその文字起こし・翻訳）
+
+iOSの「ファイル」（Dropbox・iCloud・端末内）から取り込んだ音声クリップと、その英文文字起こし・
+日本語翻訳結果。`Photo` の音声版で、写真OCRと同じ4層構成（状態＋結果を持つモデル → Remote サービス →
+状態遷移 → 詳細Viewで分岐表示）を踏襲する。音声本体（バイナリ）は `Documents/Audio/` にファイル保存し、
+モデルはメタデータのみ持つ（DBに Data blob を持たせない）。
+策定経緯: [docs/plans/audio-transcription-translation.md](../plans/audio-transcription-translation.md)。
+
+- **レッスンに従属しない**独立エンティティ。0個以上のレッスンへ紐付けられ（多対多）、どのレッスンにも
+  属さないライブラリ音声としても存続する。レッスン削除時は紐付けが nullify されるだけでクリップは残る
+- 文字起こし・翻訳は取り込み時の自動処理ではなく、**詳細画面の手動ボタン**で1クリップずつ実行する
+  （音声は長くコストも高いため）。v1 は短いクリップ（Gemini インライン上限 ≈14MB）のみ対象
+
+| フィールド | 型 | 説明 |
+|---|---|---|
+| id | UUID | 主キー |
+| title | String | 表示名（既定は取り込みファイル名から拡張子を除いたもの。編集可） |
+| audioFileName | String | `Documents/Audio/` 配下の実ファイル名（`UUID.ext`） |
+| sourcePath | String? | 取り込み元の参照用パス（予備。ファイル取り込みでは nil） |
+| byteSize | Int | 音声ファイルのバイト数 |
+| importedAt | Date | 取り込み日時 |
+| lessons | [Lesson] | 紐付くレッスン（0個以上、多対多、nullify） |
+| processingStatus | AudioProcessingStatus | 文字起こし・翻訳の処理状態（下記 enum。既定 `pending`） |
+| processingErrorMessage | String? | 失敗時のユーザー向けメッセージ（未対応形式・サイズ超過・401案内等） |
+| transcriptText | String? | Gemini による英文逐語文字起こし（Markdown。未処理時は nil） |
+| translatedText | String? | transcript の全訳（Markdown。既存 `translateText` で生成。未処理時は nil） |
+| translationLanguage | String? | 訳の言語コード（処理時点のユーザー設定母語を記録） |
+
+### AudioProcessingStatus（enum）
+
+`PhotoProcessingStatus` と同型（`String, Codable`）。
+
+| 値 | 説明 |
+|---|---|
+| pending | 取り込み済み・未処理（初期状態） |
+| processing | 文字起こし＋翻訳API呼び出し中 |
+| completed | 文字起こし・翻訳完了 |
+| failed | 失敗（再試行可能） |
+
+- 文字起こしは **Gemini**（音声入力対応）で英文へ、翻訳は既存 `translateText`（Claude）で英→日を行う
+  2段構成。バックエンド `POST /api/transcribe-translate` が両者を実行して返す
+- 完了時、詳細画面は transcript 英文を単語タップ登録可能（`TappableMarkdown`）に表示する。
+  タップ登録は出現記録に `sourceAudio` として当該クリップを記録し（[§6](#6-wordoccurrence出現記録)）、
+  写真OCRの `sourcePhoto` と同様に AI 単語情報生成へ transcript を文脈として渡す
+- 追加フィールドはすべて optional か default 付きで、既存ストアの軽量マイグレーションを維持する
+  （`processingStatus` は default 付き non-optional、結果系は optional）
 
 ## 5. Word（単語帳）
 
@@ -229,19 +284,25 @@ Composition                                   (Lessonに従属しない独立エ
 ## 6. WordOccurrence（出現記録）
 
 `Word` と `Lesson` の多対多関連を表す中間エンティティ。「どのレッスンの教科書で
-この単語に出会い、どの写真のOCR結果からタップ登録したか」を1件ずつ記録する。
+この単語に出会い、どの写真のOCR結果／音声の文字起こしからタップ登録したか」を1件ずつ記録する。
 
 | フィールド | 型 | 説明 |
 |---|---|---|
 | id | UUID | 主キー |
 | word | Word | 対象単語（to-one, 必須。所有はしない参照） |
 | lesson | Lesson | 出会ったレッスン（to-one, 必須） |
-| sourcePhoto | Photo? | OCR結果のタップ登録の場合の参照元（手動登録時は nil） |
+| sourcePhoto | Photo? | 写真OCR結果のタップ登録の場合の参照元（手動・音声由来では nil） |
+| sourceAudio | AudioClip? | 音声文字起こしのタップ登録の場合の参照元（手動・写真由来では nil）。`sourcePhoto` の音声版 |
 | occurredAt | Date | このレッスンでの登録・紐づけ日時 |
 
-- 同一 `Word` が同一 `Lesson` で複数回タップ登録された場合も、出現履歴として複数件許容する
+- `sourcePhoto` / `sourceAudio` はいずれも任意の参照で、AI 単語情報生成に本文（OCR結果／transcript）を
+  文脈として渡すために保持する。手動登録では両方 nil（文脈なし生成）
+- 同一 `Word` が同一 `Lesson` で複数回タップ登録された場合も、出現履歴として複数件許容する。
+  重複ガードは `lesson + sourcePhoto + sourceAudio` の一致で判定する
 - `Lesson` 削除時にカスケード削除される（`Word` 側からの削除ではない限り `Word` 自体は残る）
 - `Word` 削除時（ユーザーが単語帳から明示的に削除した場合）もカスケード削除される
+- `sourcePhoto` / `sourceAudio` は逆リレーションを張らない任意参照のため、写真・音声クリップ削除時は
+  `ModelContext.deletePhoto(_:)` / `deleteAudioClip(_:)` が参照を nil 化する（出現自体は残す）
 
 ## 7. Question（問題）
 

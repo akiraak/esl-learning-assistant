@@ -129,9 +129,8 @@ struct AudioView: View {
 
     private func delete(_ clip: AudioClip) {
         if isPlaying(clip) { playback.stop() }
-        AudioStorage.delete(fileName: clip.audioFileName)
-        modelContext.delete(clip)
-        modelContext.saveOrLog()
+        // 音声ファイル削除・clip 削除・sourceAudio の nullify・保存をまとめて行う
+        modelContext.deleteAudioClip(clip)
     }
 }
 

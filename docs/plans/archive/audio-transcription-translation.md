@@ -170,14 +170,21 @@ backend 呼び出し → ③ pending/manual を状態遷移 → ④ 詳細 View 
 - [x] `tsc` ビルド確認＋ローカル起動でシード行を用いた実地確認（一覧表示・音声 200/`audio/wav` 配信・
       削除で 302＋ファイル削除＋以降 404、存在しない id の音声 404）を確認
 
-### Phase 6: 検証・仕上げ
-- [ ] backend: 実 Gemini で英語音声 → 英文文字起こし＋日本語訳、料金記録、管理画面表示を確認
-- [ ] iOS: `AudioDetailView` の状態遷移（未実行→処理中→完了/失敗→retry）を確認。
-      可能なら service をスタブ化した UITest / ユニットテストを追加
-- [ ] specs 更新（`docs/plans/archive/app-spec.md` の Audio 節、`data-model.md` に `AudioClip` の
-      transcript フィールド追加）
-- [ ] 単語タップ登録が transcript 英文でも機能することを確認（`TappableMarkdown` の紐付け先は
-      `WordOccurrence` の source をどうするか＝AudioClip 由来。sourcePhoto 相当が無い点だけ要確認）
+### Phase 6: 検証・仕上げ ✅ 完了（2026-07-06）
+- [x] backend: 実 Gemini 疎通は **Phase 1 の curl 検証を信頼**（ユーザー確認済み・2026-07-06。
+      英文文字起こし＋日本語訳・コスト記録・400/401/413 は Phase 1 で確認済みのため再課金の実行はしない）
+- [x] iOS: `AudioDetailView` の状態遷移を service レベルで検証する決定的ユニットテストを追加
+      （`TranscriptionTranslationServiceTests`: 未対応拡張子／拡張子なし／対応拡張子＋ファイル欠落で
+      pending→processing→failed をネットワーク無しで確認）。SwiftData in-memory の全12テスト PASS
+- [x] specs 更新: `docs/specs/data-model.md` に **§4.5 `AudioClip`**（transcript フィールド群＋
+      `AudioProcessingStatus`）を新設し、エンティティ関連図／Lesson 表／構造ツリー／`WordOccurrence`（§6）へ
+      `sourceAudio` を反映。`docs/specs/app-spec.md` に **§3.5 音声（Audio 取り込み・文字起こし・翻訳）** を追加
+- [x] 単語タップ登録が transcript 英文で機能することを確認し、**`sourceAudio` を実装**（ユーザー決定・2026-07-06）:
+      `WordOccurrence.sourceAudio: AudioClip?`（optional 追加＝軽量マイグレ安全）を新設し、
+      `WordRegistrar.register`/`link`（重複ガードに合流）・`WordRegistrationModifier`/`.wordTapRegistration`・
+      `AudioDetailView`（`sourceAudio: clip` を渡す）・`WordAIInfoGenerator`（transcript を AI 文脈に流用）を更新。
+      クリップ削除は `ModelContext.deleteAudioClip(_:)` を新設し `sourcePhoto` と同様に参照を nil 化。
+      `xcodebuild test`（iPhone 17 Simulator）で app＋test 両ターゲット BUILD SUCCEEDED＋全テスト PASS
 
 ## 将来拡張（v1 では対象外）
 - 長尺録音対応（Gemini File API アップロード＋チャンク分割・非同期処理）

@@ -1,6 +1,24 @@
 import Foundation
 import SwiftData
 
+extension ModelContext {
+    /// 音声クリップを削除する。音声ファイル・SwiftData の AudioClip を消し、
+    /// このクリップを出典に持つ単語出現（`WordOccurrence`）の `sourceAudio` は
+    /// ダングリング参照を避けるため nil 化する（出現自体は残す）。`ModelContext.deletePhoto` の音声版。
+    /// クリップは複数レッスンに紐付く／紐付け解除後に出現だけ残る場合があるため、
+    /// レッスンを辿らず全 `WordOccurrence` から id 一致を拾って nullify する。
+    func deleteAudioClip(_ clip: AudioClip) {
+        let clipID = clip.id
+        let occurrences = (try? fetch(FetchDescriptor<WordOccurrence>())) ?? []
+        for occurrence in occurrences where occurrence.sourceAudio?.id == clipID {
+            occurrence.sourceAudio = nil
+        }
+        AudioStorage.delete(fileName: clip.audioFileName)
+        delete(clip)
+        saveOrLog()
+    }
+}
+
 /// 音声クリップの文字起こし・翻訳の処理状態。写真OCRの `PhotoProcessingStatus` と同型。
 enum AudioProcessingStatus: String, Codable {
     case pending

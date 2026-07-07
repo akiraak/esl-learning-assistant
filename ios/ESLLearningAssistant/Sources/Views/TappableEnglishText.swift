@@ -115,6 +115,8 @@ struct WordRegistrationModifier: ViewModifier {
     var currentWord: Word?
     /// 出現元の写真（OCR文脈をAI生成へ渡すため）。PhotoDetailView から渡す。
     var sourcePhoto: Photo?
+    /// 出現元の音声クリップ（transcript 文脈をAI生成へ渡すため）。AudioDetailView から渡す。
+    var sourceAudio: AudioClip?
     /// 紐付けるレッスン。指定時は出現記録を作る。
     var lesson: Lesson?
 
@@ -193,7 +195,8 @@ struct WordRegistrationModifier: ViewModifier {
             in: modelContext,
             existingWords: allWords,
             lesson: lesson,
-            sourcePhoto: sourcePhoto
+            sourcePhoto: sourcePhoto,
+            sourceAudio: sourceAudio
         ) else { return }
         feedback = result.isNew
             ? "Added “\(result.word.text)”"
@@ -206,11 +209,13 @@ extension View {
     func wordTapRegistration(
         currentWord: Word? = nil,
         sourcePhoto: Photo? = nil,
+        sourceAudio: AudioClip? = nil,
         lesson: Lesson? = nil
     ) -> some View {
         modifier(WordRegistrationModifier(
             currentWord: currentWord,
             sourcePhoto: sourcePhoto,
+            sourceAudio: sourceAudio,
             lesson: lesson
         ))
     }

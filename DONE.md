@@ -1,5 +1,24 @@
 # DONE
 
+- [x] 2026-07-06 Audio の英文文字起こしと日本語翻訳（全 Phase 完了）
+      取り込み音声（`AudioClip`）に英文逐語文字起こし（Gemini 音声入力）＋日本語全訳（既存 Claude
+      `translateText` 再利用）を付け、写真OCR詳細と同じ体験（英文は単語タップ登録、訳は Markdown 表示）を提供。
+      実行は詳細画面の手動ボタン、v1 は短いクリップ（≈14MB）のみ対象。
+      Phase 1–5: バックエンド `POST /api/transcribe-translate`＋料金記録＋管理画面ログ、iOS モデル拡張
+      （optional/default で軽量マイグレ安全）・`RemoteTranscriptionTranslationService`・`AudioDetailView`
+      の状態分岐UI。
+      Phase 6（検証・仕上げ）: ①実Gemini疎通は Phase 1 の curl 検証を信頼（ユーザー決定・再課金なし）。
+      ②`AudioDetailView` 状態遷移を service レベルで検証する決定的ユニットテスト
+      `TranscriptionTranslationServiceTests` を追加（未対応拡張子／拡張子なし／対応拡張子＋ファイル欠落で
+      pending→processing→failed をネットワーク無しで確認）。③specs 更新: `data-model.md` に §4.5 `AudioClip`
+      ＋`AudioProcessingStatus` を新設し関連図/Lesson/`WordOccurrence` へ反映、`app-spec.md` に §3.5 音声を追加。
+      ④単語タップ登録が transcript 英文で機能することを確認のうえ **`sourceAudio` を実装**（ユーザー決定）:
+      `WordOccurrence.sourceAudio: AudioClip?`（optional 追加）を新設し `WordRegistrar`/`.wordTapRegistration`/
+      `AudioDetailView`/`WordAIInfoGenerator`（transcript を AI 文脈へ流用）を更新、
+      クリップ削除は新設 `ModelContext.deleteAudioClip(_:)` が `sourcePhoto` と同様に参照を nil 化。
+      検証: `xcodebuild test`（iPhone 17 Simulator）app＋test 両ターゲット BUILD SUCCEEDED・全12テスト PASS。
+      plan: docs/plans/archive/audio-transcription-translation.md
+
 - [x] 2026-07-06 レッスンの YouTube 再生で「エラー153 動画プレイヤーの設定エラー」を修正
       原因は 2025 年後半の YouTube 仕様変更。埋め込みプレイヤーはホスト環境を HTTP `Referer`
       で名乗ることが必須になり、`Referer` が空／不正だと 153 を返す。従来実装は

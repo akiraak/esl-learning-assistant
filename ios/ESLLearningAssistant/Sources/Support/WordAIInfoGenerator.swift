@@ -26,11 +26,11 @@ final class WordAIInfoGenerator {
 
         let targetLanguage = UserDefaults.standard.string(forKey: AppSettingsKeys.targetLanguageCode)
             ?? AppSettingsKeys.defaultTargetLanguageCode
-        // 単語が登場した教科書本文（OCR結果）を文脈として渡す。
-        // 手動登録のみの単語は sourcePhoto が無く nil になる（文脈なし生成）。
+        // 単語が登場した教科書本文（写真OCR結果、または音声の文字起こし）を文脈として渡す。
+        // 手動登録のみの単語は sourcePhoto/sourceAudio が無く nil になる（文脈なし生成）。
         let context = word.occurrences
             .sorted { $0.occurredAt > $1.occurredAt }
-            .compactMap { $0.sourcePhoto?.ocrText }
+            .compactMap { $0.sourcePhoto?.ocrText ?? $0.sourceAudio?.transcriptText }
             .first { !$0.isEmpty }
 
         do {

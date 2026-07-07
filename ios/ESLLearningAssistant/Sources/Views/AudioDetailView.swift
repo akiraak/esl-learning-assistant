@@ -80,8 +80,9 @@ struct AudioDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .animation(.snappy(duration: 0.25), value: clip.processingStatus)
         // 文字起こし英文の単語タップ→登録/詳細遷移。紐付くレッスンがあれば出現記録も残す。
-        // （音声由来を示す sourceAudio 相当は未実装のため sourcePhoto は渡さない = Phase 6 の課題）
-        .wordTapRegistration(lesson: primaryLesson)
+        // sourceAudio にこのクリップを渡し、写真OCRの sourcePhoto と同様に AI 単語情報生成へ
+        // transcript を文脈として渡せるようにする。
+        .wordTapRegistration(sourceAudio: clip, lesson: primaryLesson)
         // 再生中だけ画面下部にプレイヤーを差し込む（再生UIはこの詳細画面に集約）
         .safeAreaInset(edge: .bottom) {
             if playback.isActive {
@@ -193,9 +194,8 @@ struct AudioDetailView: View {
 
     private func delete() {
         if isActiveClip { playback.stop() }
-        AudioStorage.delete(fileName: clip.audioFileName)
-        modelContext.delete(clip)
-        modelContext.saveOrLog()
+        // 音声ファイル削除・clip 削除・sourceAudio の nullify・保存をまとめて行う
+        modelContext.deleteAudioClip(clip)
         dismiss()
     }
 }

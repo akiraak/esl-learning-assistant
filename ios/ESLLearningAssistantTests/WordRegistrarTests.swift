@@ -9,7 +9,7 @@ struct WordRegistrarTests {
     private func makeContext() throws -> ModelContext {
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
         let container = try ModelContainer(
-            for: Class.self, Lesson.self, Photo.self, Word.self, WordOccurrence.self,
+            for: Class.self, Lesson.self, Photo.self, Word.self, WordOccurrence.self, AudioClip.self,
             configurations: config
         )
         return ModelContext(container)
@@ -124,6 +124,85 @@ struct WordRegistrarTests {
 
         let word = try #require(try allWords(context).first)
         #expect(word.occurrences.count == 1)
+    }
+
+    @Test func linksOccurrenceToLessonWithSourceAudio() throws {
+        let context = try makeContext()
+        let schoolClass = Class(name: "English")
+        let lesson = Lesson(schoolClass: schoolClass, title: "Unit 1")
+        let clip = AudioClip(title: "Dialogue", audioFileName: "clip.wav")
+        context.insert(schoolClass)
+        context.insert(lesson)
+        context.insert(clip)
+
+        let result = WordRegistrar.register(
+            text: "apple",
+            in: context,
+            existingWords: try allWords(context),
+            lesson: lesson,
+            sourceAudio: clip,
+            generateAIInfo: { _ in }
+        )
+
+        let word = try #require(result).word
+        #expect(word.occurrences.count == 1)
+        #expect(word.occurrences.first?.lesson.id == lesson.id)
+        #expect(word.occurrences.first?.sourceAudio?.id == clip.id)
+        #expect(word.occurrences.first?.sourcePhoto == nil)
+        #expect(lesson.wordOccurrences.contains { $0.word.id == word.id })
+    }
+
+    @Test func doesNotDuplicateOccurrenceForSameWordAndAudio() throws {
+        let context = try makeContext()
+        let schoolClass = Class(name: "English")
+        let lesson = Lesson(schoolClass: schoolClass, title: "Unit 1")
+        let clip = AudioClip(title: "Dialogue", audioFileName: "clip.wav")
+        context.insert(schoolClass)
+        context.insert(lesson)
+        context.insert(clip)
+
+        for _ in 0..<2 {
+            _ = WordRegistrar.register(
+                text: "apple",
+                in: context,
+                existingWords: try allWords(context),
+                lesson: lesson,
+                sourceAudio: clip,
+                generateAIInfo: { _ in }
+            )
+        }
+
+        let word = try #require(try allWords(context).first)
+        #expect(word.occurrences.count == 1)
+    }
+
+    /// 音声クリップ削除時に、その音声を出典に持つ出現の `sourceAudio` が nil 化され
+    /// （ダングリング参照を避ける）、出現自体は残ることを検証する。
+    @Test func deletingAudioClipNullifiesSourceAudioButKeepsOccurrence() throws {
+        let context = try makeContext()
+        let schoolClass = Class(name: "English")
+        let lesson = Lesson(schoolClass: schoolClass, title: "Unit 1")
+        let clip = AudioClip(title: "Dialogue", audioFileName: "clip.wav")
+        context.insert(schoolClass)
+        context.insert(lesson)
+        context.insert(clip)
+
+        let word = try #require(WordRegistrar.register(
+            text: "apple",
+            in: context,
+            existingWords: try allWords(context),
+            lesson: lesson,
+            sourceAudio: clip,
+            generateAIInfo: { _ in }
+        )).word
+        #expect(word.occurrences.first?.sourceAudio?.id == clip.id)
+
+        context.deleteAudioClip(clip)
+
+        let occurrences = try context.fetch(FetchDescriptor<WordOccurrence>())
+        #expect(occurrences.count == 1)
+        #expect(occurrences.first?.sourceAudio == nil)
+        #expect(try context.fetch(FetchDescriptor<AudioClip>()).isEmpty)
     }
 
     @Test func returnsNilForEmptyText() throws {
