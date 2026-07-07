@@ -50,7 +50,12 @@ import { generateIllustration, ILLUSTRATION_MODEL } from "./illustration";
 import { DEFAULT_IMAGE_PRICING, DEFAULT_PRICING, DEFAULT_TTS_PRICING, estimateCostUsd, getCurrentPricing } from "./pricing";
 import { fetchAndApplyPricing, fetchAndApplyTtsPricing } from "./pricingSync";
 import { logger } from "./logger";
-import { pregenerateQuizAudio, QUIZ_TTS_MODEL } from "./ttsStore";
+import {
+  pregenerateQuizAudio,
+  QUIZ_TTS_MODEL,
+  regenerateWordReadingAudio,
+  getWordReadingAudioRow,
+} from "./ttsStore";
 
 export const adminRouter = Router();
 
@@ -771,6 +776,12 @@ adminRouter.get("/words/:id", (req, res) => {
     return;
   }
 
+  const readingAudio = getWordReadingAudioRow(row.word);
+  const readingAudioCell = readingAudio
+    ? `<audio controls preload="none" src="/admin/tts/${readingAudio.id}/audio" style="width:220px;height:32px;vertical-align:middle;"></audio>` +
+      ` <span class="faint">(${escapeHtml(readingAudio.voice)} / ${escapeHtml(readingAudio.model)})</span>`
+    : "<span class=\"faint\">(未生成 — アプリで発音を再生すると作成されます)</span>";
+
   const body = `
     <p><a href="/admin/words">← 一覧に戻る</a></p>
     <h1>単語 #${row.id}: ${escapeHtml(row.word)}</h1>
@@ -780,6 +791,7 @@ adminRouter.get("/words/:id", (req, res) => {
       <tr><th>ユーザー訳語</th><td>${row.user_translation ? escapeHtml(row.user_translation) : "(なし)"}</td></tr>
       <tr><th>モデル</th><td>${escapeHtml(row.model)}</td></tr>
       <tr><th>生成回数</th><td>${row.generation_count}</td></tr>
+      <tr><th>読み上げ音声</th><td>${readingAudioCell}</td></tr>
       <tr><th>クイズ問題</th><td>${quizStatusCell(row.word, row.target_language)}</td></tr>
       <tr><th>作成日時</th><td>${escapeHtml(formatSeattleTime(row.created_at))}</td></tr>
       <tr><th>更新日時</th><td>${escapeHtml(formatSeattleTime(row.updated_at))}</td></tr>
@@ -789,6 +801,10 @@ adminRouter.get("/words/:id", (req, res) => {
       <form method="post" action="/admin/words/${row.id}/regenerate"
             onsubmit="return confirm('AI情報を再生成します。現在の内容は上書きされます。よろしいですか？')">
         <button type="submit" class="btn btn-primary">再生成する</button>
+      </form>
+      <form method="post" action="/admin/words/${row.id}/regenerate-audio"
+            onsubmit="return confirm('この単語の読み上げ音声を作り直します（ボイスは再抽選）。よろしいですか？')">
+        <button type="submit" class="btn">読み上げ音声を再生成</button>
       </form>
       <form method="post" action="/admin/words/${row.id}/delete"
             onsubmit="return confirm('この単語の保存データを削除します。よろしいですか？（アプリから再リクエストされれば再生成されます）')">
@@ -893,6 +909,39 @@ adminRouter.post("/words/:id/regenerate", async (req, res) => {
     res.status(500).type("html").send(
       renderPage(
         "再生成に失敗しました",
+        "",
+        `<p>再生成に失敗しました: ${escapeHtml(errorMessage)}</p><p><a href="/admin/words/${id}">← 詳細に戻る</a></p>`
+      )
+    );
+  }
+});
+
+// 単語の「単体読み上げ」音声（text == 単語）だけを作り直す。定義・例文の音声には触れない。
+// 恒久キャッシュ（tts_audio）に固定された不明瞭な合成を作り直す運用ツール。
+adminRouter.post("/words/:id/regenerate-audio", async (req, res) => {
+  const id = Number(req.params.id);
+  const row = getStoredWordById(id);
+  if (!row) {
+    res.status(404).type("html").send(
+      renderPage("単語が見つかりません", "", '<p>指定された単語は存在しません。</p><p><a href="/admin/words">← 一覧に戻る</a></p>')
+    );
+    return;
+  }
+
+  const startedAt = Date.now();
+  logger.info(`admin: regenerate word reading audio #${id} "${row.word}"`);
+  try {
+    const models = await regenerateWordReadingAudio(row.word);
+    logger.info(
+      `admin: regenerated word reading audio #${id} "${row.word}" models=${models.join(",")} latencyMs=${Date.now() - startedAt}`
+    );
+    res.redirect(`/admin/words/${id}`);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`admin: regenerate word reading audio failed #${id} "${row.word}" error=${errorMessage}`);
+    res.status(500).type("html").send(
+      renderPage(
+        "読み上げ音声の再生成に失敗しました",
         "",
         `<p>再生成に失敗しました: ${escapeHtml(errorMessage)}</p><p><a href="/admin/words/${id}">← 詳細に戻る</a></p>`
       )

@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 import { config } from "./config";
-import { getTtsAudioByHash, upsertTtsAudio } from "./db";
+import { getTtsAudioByHash, upsertTtsAudio, deleteTtsAudio, type TtsAudioRow } from "./db";
 import { synthesizeSpeech, VOICE_PRESETS, MODEL_PRESETS, type VoiceKey, type ModelKey } from "./tts";
 import { estimateCostUsd } from "./pricing";
 import { logger } from "./logger";
@@ -18,9 +18,14 @@ export interface TtsAudioResult {
 /// 同一 (model, text) は保存済みWAVを返す（Gemini再呼び出しなし）。
 /// キャラは初回生成時にランダム選択され、キャッシュにより同一テキストでは固定される。
 /// ファイルが欠損していた場合は再合成して自己修復する（その際キャラは選び直し）。
+/// キャッシュキー。text（=読み上げ内容）とモデルのみでキーを作る（スタイル前置き文は含めない）。
+function ttsCacheHash(text: string, model: ModelKey): string {
+  return crypto.createHash("sha256").update(`${model}|${text}`).digest("hex");
+}
+
 export async function getOrSynthesizeTtsAudio(text: string, model: ModelKey): Promise<TtsAudioResult> {
   const startedAt = Date.now();
-  const textHash = crypto.createHash("sha256").update(`${model}|${text}`).digest("hex");
+  const textHash = ttsCacheHash(text, model);
   const cached = getTtsAudioByHash(textHash);
   if (cached) {
     const cachedPath = path.join(config.ttsDir, cached.filename);
@@ -53,6 +58,49 @@ export async function getOrSynthesizeTtsAudio(text: string, model: ModelKey): Pr
     );
     throw error;
   }
+}
+
+/// 単語の「単体読み上げ」に使うモデル候補（新しい順に走査）。
+/// flash はクイズ・既定の発音ボタン、pro は高音質設定のユーザー分。
+const WORD_READING_MODELS: ModelKey[] = ["flash", "pro"];
+
+/// 単語の単体読み上げ音声（text == 単語）のキャッシュ行を返す（試聴用）。存在するモデルを優先順で探す。
+export function getWordReadingAudioRow(word: string): TtsAudioRow | undefined {
+  for (const model of WORD_READING_MODELS) {
+    const row = getTtsAudioByHash(ttsCacheHash(word, model));
+    if (row) return row;
+  }
+  return undefined;
+}
+
+/// 指定 (text, model) のキャッシュ（DB行 + WAVファイル）を破棄してから再合成する。
+/// 単発の不明瞭合成が恒久キャッシュに固定された場合の作り直し用（ボイスは再抽選される）。
+export async function regenerateTtsAudio(text: string, model: ModelKey): Promise<TtsAudioResult> {
+  const existing = getTtsAudioByHash(ttsCacheHash(text, model));
+  if (existing) {
+    const existingPath = path.join(config.ttsDir, existing.filename);
+    try {
+      if (fs.existsSync(existingPath)) fs.unlinkSync(existingPath);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn(`tts: regenerate could not unlink ${existing.filename}: ${message}`);
+    }
+    deleteTtsAudio(existing.id);
+    logger.info(`tts: regenerate purged cache id=${existing.id} model=${model} textLength=${text.length}`);
+  }
+  // キャッシュを消したので getOrSynthesizeTtsAudio は必ず新規合成する
+  return getOrSynthesizeTtsAudio(text, model);
+}
+
+/// 単語の単体読み上げ（text == 単語）を作り直す。キャッシュに存在するモデルを再生成し、
+/// どのモデルも未キャッシュなら flash を1件だけ生成する。再生成したモデル一覧を返す。
+export async function regenerateWordReadingAudio(word: string): Promise<ModelKey[]> {
+  const present = WORD_READING_MODELS.filter((model) => getTtsAudioByHash(ttsCacheHash(word, model)));
+  const targets = present.length > 0 ? present : (["flash"] as ModelKey[]);
+  for (const model of targets) {
+    await regenerateTtsAudio(word, model);
+  }
+  return targets;
 }
 
 /// クイズ音声のモデルは flash 固定（iOS の AppSettingsKeys.quizTTSModel と一致させること）。
