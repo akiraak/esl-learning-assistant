@@ -4,7 +4,7 @@
   - [ ] 入力単語の自動正規化（原形化・綴り訂正） [plan](docs/plans/word-input-normalization.md)
     - 「間違った単語を登録したあときの処理」「過去形や複数形を入れた場合の処理」を統合
     - [x] Phase 0: backend 正規化エンドポイント（/api/word-normalize）
-    - [ ] Phase 1: iOS 正規化サービス・モデル
+    - [x] Phase 1: iOS 正規化サービス・モデル
     - [ ] Phase 2: Add Word フォーム統合（確認UI・逃げ道・原形dedup）
     - [ ] Phase 3: 英文タップ登録統合
     - [ ] Phase 4（任意）: 既登録の誤り修正（リネーム波及のため要精査）
