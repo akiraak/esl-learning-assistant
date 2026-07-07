@@ -7,12 +7,14 @@ import {
   countQuizQuestions,
   deleteQuizQuestions,
   deleteStoredWord,
+  deleteTranscriptionLog,
   deleteTtsAudio,
   deleteWordIllustration,
   getPricingState,
   getRequestLog,
   getStoredWord,
   getStoredWordById,
+  getTranscriptionLog,
   getTtsAudioByHash,
   getTtsAudioById,
   getWordIllustrationById,
@@ -24,6 +26,7 @@ import {
   listQuizQuestionSummaries,
   listRecentRequestLogs,
   listRecentSystemLogs,
+  listRecentTranscriptionLogs,
   listRecentWordInfoLogs,
   listRecentWritingFeedbackLogs,
   listStoredWords,
@@ -33,6 +36,7 @@ import {
   replaceQuizQuestions,
   RequestLogRow,
   StoredWordRow,
+  TranscriptionLogRow,
   upsertStoredWord,
   upsertWordIllustration,
   WordInfoLogRow,
@@ -171,10 +175,11 @@ function renderMarkdown(value: string | null): string {
   return marked.parse(escaped, { async: false, breaks: true }) as string;
 }
 
-type NavSection = "ocr" | "word-info" | "writing-feedback" | "words" | "quiz-questions" | "tts" | "illustrations" | "pricing" | "logs";
+type NavSection = "ocr" | "transcriptions" | "word-info" | "writing-feedback" | "words" | "quiz-questions" | "tts" | "illustrations" | "pricing" | "logs";
 
 const NAV_ITEMS: Array<[NavSection, string, string]> = [
   ["ocr", "/admin", "OCR・翻訳ログ"],
+  ["transcriptions", "/admin/transcriptions", "音声文字起こしログ"],
   ["word-info", "/admin/word-info", "単語情報ログ"],
   ["writing-feedback", "/admin/writing-feedback", "作文添削ログ"],
   ["words", "/admin/words", "単語一覧"],
@@ -1295,6 +1300,116 @@ adminRouter.post("/tts/:id/delete", (req, res) => {
   deleteTtsAudio(id);
   logger.info(`admin: deleted tts audio #${id} (${row.voice}/${row.model}, ${row.byte_size} bytes)`);
   res.redirect("/admin/tts");
+});
+
+// ---- 音声文字起こし・翻訳ログ（/api/transcribe-translate。docs/plans/audio-transcription-translation.md Phase 5）----
+
+// 一覧に長文をそのまま流し込むと行が崩れるため、英文・訳ともに短くプレビューする（全文は title で確認）。
+function transcriptPreview(text: string | null): string {
+  if (!text) return '<span class="faint">(なし)</span>';
+  const preview = text.length > 120 ? `${text.slice(0, 120)}…` : text;
+  return `<span title="${escapeHtml(text)}">${escapeHtml(preview)}</span>`;
+}
+
+adminRouter.get("/transcriptions", (_req, res) => {
+  const logs = listRecentTranscriptionLogs(100);
+
+  const totalCostUsd = logs.reduce((sum, log) => sum + log.cost_usd, 0);
+  const errorCount = logs.filter((log) => log.status !== "success").length;
+  const avgLatencySec = logs.length ? logs.reduce((sum, log) => sum + log.latency_ms, 0) / logs.length / 1000 : 0;
+
+  const tableRows = logs
+    .map((log) => {
+      const player = log.audio_filename
+        ? `<audio controls preload="none" src="/admin/transcriptions/${log.id}/audio" style="width:220px;height:32px;"></audio>`
+        : `<span class="faint">(なし)</span>`;
+      return `
+        <tr class="log-row">
+          <td class="mono dim">#${log.id}</td>
+          <td class="mono dim">${escapeHtml(formatSeattleTime(log.created_at))}</td>
+          <td>
+            ${player}
+            <div class="faint" style="margin-top:4px;">${escapeHtml(log.media_type)} / ${(log.byte_size / 1024).toFixed(0)} KB</div>
+          </td>
+          <td style="max-width:280px;">${transcriptPreview(log.english_text)}</td>
+          <td style="max-width:280px;">${transcriptPreview(log.translated_text)}</td>
+          <td>
+            文字起こし: <strong>${escapeHtml(log.transcription_model)}</strong> <span class="dim">(in:${log.transcription_input_tokens} / out:${log.transcription_output_tokens})</span><br>
+            翻訳: ${log.translate_model ? `${escapeHtml(log.translate_model)} <span class="dim">(in:${log.translate_input_tokens} / out:${log.translate_output_tokens})</span>` : "(なし)"}
+          </td>
+          <td class="mono">
+            <strong>$${log.cost_usd.toFixed(5)}</strong><br>
+            <span class="faint">文字起こし $${log.transcription_cost_usd.toFixed(5)} / 翻訳 $${log.translate_cost_usd.toFixed(5)}</span>
+          </td>
+          <td>${statusLabel(log)}${log.error_message ? `<div class="err-note">${escapeHtml(log.error_message)}</div>` : ""}</td>
+          <td class="mono dim">${log.latency_ms}ms</td>
+          <td>
+            <form method="post" action="/admin/transcriptions/${log.id}/delete"
+                  onsubmit="return confirm('この文字起こしログと保存音声を削除します。よろしいですか？')">
+              <button type="submit" class="btn btn-danger">削除</button>
+            </form>
+          </td>
+        </tr>
+      `;
+    })
+    .join("\n");
+
+  res.type("html").send(
+    renderPage(
+      "ESL Assistant - 音声文字起こしログ",
+      "",
+      `
+        <h1>音声文字起こし・翻訳ログ</h1>
+        <p class="page-sub">直近${logs.length}件の文字起こし（Gemini）＋英→日翻訳（Claude）リクエスト</p>
+        <div class="stats">
+          <div class="stat"><div class="lbl">直近件数</div><div class="val">${logs.length}<small>件</small></div></div>
+          <div class="stat"><div class="lbl">コスト合計</div><div class="val">$${totalCostUsd.toFixed(4)}</div></div>
+          <div class="stat${errorCount > 0 ? " alert" : ""}"><div class="lbl">エラー</div><div class="val">${errorCount}<small>件</small></div></div>
+          <div class="stat"><div class="lbl">平均処理時間</div><div class="val">${avgLatencySec.toFixed(1)}<small>s</small></div></div>
+        </div>
+        <div class="card">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th><th>日時</th><th>音声</th><th>英文</th><th>訳</th>
+                <th>モデル / トークン</th><th>コスト</th><th>状態</th><th>処理時間</th><th></th>
+              </tr>
+            </thead>
+            <tbody>${tableRows}</tbody>
+          </table>
+        </div>
+      `,
+      "transcriptions"
+    )
+  );
+});
+
+adminRouter.get("/transcriptions/:id/audio", (req, res) => {
+  const id = Number(req.params.id);
+  const row = getTranscriptionLog(id);
+  if (!row || !row.audio_filename) {
+    res.status(404).end();
+    return;
+  }
+  res.sendFile(path.join(config.audioDir, row.audio_filename));
+});
+
+adminRouter.post("/transcriptions/:id/delete", (req, res) => {
+  const id = Number(req.params.id);
+  const row = getTranscriptionLog(id);
+  if (!row) {
+    res.status(404).type("html").send(
+      renderPage("文字起こしログが見つかりません", "", '<p>指定された文字起こしログは存在しません。</p><p><a href="/admin/transcriptions">← 一覧に戻る</a></p>')
+    );
+    return;
+  }
+  // 行を消してもファイルが残るとディスクを食い続けるため、ファイル→行の順に削除する
+  if (row.audio_filename) {
+    fs.rmSync(path.join(config.audioDir, row.audio_filename), { force: true });
+  }
+  deleteTranscriptionLog(id);
+  logger.info(`admin: deleted transcription log #${id} (${row.media_type}, ${row.byte_size} bytes)`);
+  res.redirect("/admin/transcriptions");
 });
 
 // ---- 復習クイズ問題（docs/plans/archive/quiz-questions-server-storage.md）----

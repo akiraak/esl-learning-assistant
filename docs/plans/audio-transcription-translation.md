@@ -158,10 +158,17 @@ backend 呼び出し → ③ pending/manual を状態遷移 → ④ 詳細 View 
       （完了=`text.bubble` / 処理中=`ProgressView(.mini)` / 失敗=`exclamationmark.triangle.fill` / 未実行=なし）
 - [x] `xcodebuild`（iPhone 17 Simulator, Debug）で BUILD SUCCEEDED を確認
 
-### Phase 5: バックエンド管理画面
-- [ ] `admin.ts` の `NavSection`/`NAV_ITEMS` に "transcriptions" を追加し、一覧ページ
-      （日時/音声試聴/英文/訳/トークン/コスト/削除）を TTS 一覧（`admin.ts:908`）に倣って実装
-- [ ] 音声配信ルート（`/admin/transcriptions/:id/audio`）を TTS の配信ルートに倣って追加
+### Phase 5: バックエンド管理画面 ✅ 完了（2026-07-06）
+- [x] `admin.ts` の `NavSection`/`NAV_ITEMS` に "transcriptions"（"音声文字起こしログ"、OCR の直下）を追加し、
+      一覧ページ（日時/音声試聴/英文・訳プレビュー/モデル・トークン/コスト内訳/状態/処理時間/削除）を
+      OCR ログ（`adminRouter.get("/")`）と TTS 一覧に倣って実装。件数/コスト合計/エラー/平均処理時間の
+      stat カードも設置。英文・訳は 120 字プレビュー＋`title` に全文
+- [x] 音声配信ルート（`/admin/transcriptions/:id/audio`、`config.audioDir` から `sendFile`。
+      行なし/`audio_filename` なしは 404）を TTS の配信ルートに倣って追加。
+      削除ルート（`/admin/transcriptions/:id/delete`、ファイル→行の順で削除）も追加し、
+      `db.ts` に `deleteTranscriptionLog(id)` を新設
+- [x] `tsc` ビルド確認＋ローカル起動でシード行を用いた実地確認（一覧表示・音声 200/`audio/wav` 配信・
+      削除で 302＋ファイル削除＋以降 404、存在しない id の音声 404）を確認
 
 ### Phase 6: 検証・仕上げ
 - [ ] backend: 実 Gemini で英語音声 → 英文文字起こし＋日本語訳、料金記録、管理画面表示を確認

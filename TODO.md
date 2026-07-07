@@ -5,7 +5,7 @@
   - [x] Phase 2: iOS — `AudioClip` にステータス＋transcript/訳フィールドを追加（optional/default でマイグレーション安全）
   - [x] Phase 3: iOS — `TranscriptionTranslationService` + Remote 実装（写真OCRサービスの音声版）
   - [x] Phase 4: iOS — `AudioDetailView` に手動「文字起こし」ボタンと状態分岐UIを追加
-  - [ ] Phase 5: バックエンド管理画面に文字起こしログ（一覧・音声試聴・コスト）を追加
+  - [x] Phase 5: バックエンド管理画面に文字起こしログ（一覧・音声試聴・コスト・削除）を追加
   - [ ] Phase 6: 検証（実Gemini疎通・状態遷移・specs 更新）
 
 - [ ] lazy のAI生成読み上げがおかしい。生成プロンプトを検証

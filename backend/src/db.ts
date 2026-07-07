@@ -574,6 +574,10 @@ export function getTranscriptionLog(id: number): TranscriptionLogRow | undefined
     .get(id) as TranscriptionLogRow | undefined;
 }
 
+export function deleteTranscriptionLog(id: number): void {
+  db.prepare("DELETE FROM transcription_requests WHERE id = ?").run(id);
+}
+
 export interface StoredWordRow {
   id: number;
   word: string;
