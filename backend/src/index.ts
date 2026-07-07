@@ -34,7 +34,7 @@ import { estimateCostUsd } from "./pricing";
 import { startPricingSync } from "./pricingSync";
 import { logger } from "./logger";
 import { MODEL_PRESETS, type ModelKey } from "./tts";
-import { getOrSynthesizeTtsAudio, pregenerateQuizAudio } from "./ttsStore";
+import { getOrSynthesizeTtsAudio, pregenerateQuizAudio, regenerateTtsAudio } from "./ttsStore";
 import { buildIllustrationPrompt, generateIllustration, ILLUSTRATION_MODEL } from "./illustration";
 
 process.on("uncaughtException", (error) => {
@@ -734,7 +734,7 @@ app.post("/api/quiz-questions/query", (req, res) => {
 const TTS_TEXT_MAX_LENGTH = 20000;
 
 app.post("/api/tts", async (req, res) => {
-  const { text, model } = req.body ?? {};
+  const { text, model, regenerate } = req.body ?? {};
 
   if (typeof text !== "string" || !text.trim()) {
     logger.warn("tts: rejected (text is required)");
@@ -752,9 +752,14 @@ app.post("/api/tts", async (req, res) => {
     return;
   }
 
-  // キャッシュ検索→合成→保存の実体は ttsStore.ts（ログもそちらで出力する）
+  // キャッシュ検索→合成→保存の実体は ttsStore.ts（ログもそちらで出力する）。
+  // regenerate=true のときはサーバキャッシュを破棄してから合成し直す（クライアントの「作り直す」用。
+  // ボイスも再抽選される）。単なる再取得ではなく本当に音声を作り直したい場合に使う。
   try {
-    const { wav } = await getOrSynthesizeTtsAudio(text, model as ModelKey);
+    const { wav } =
+      regenerate === true
+        ? await regenerateTtsAudio(text, model as ModelKey)
+        : await getOrSynthesizeTtsAudio(text, model as ModelKey);
     res.set("Content-Type", "audio/wav");
     res.send(wav);
   } catch (error) {

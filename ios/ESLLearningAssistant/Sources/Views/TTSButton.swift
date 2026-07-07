@@ -24,6 +24,8 @@ struct TTSButton: View {
     private struct RequestBody: Encodable {
         let text: String
         let model: String
+        /// true でサーバ側キャッシュを破棄して合成し直す（「作り直す」用）。通常は省略。
+        var regenerate: Bool? = nil
     }
 
     var body: some View {
@@ -67,8 +69,9 @@ struct TTSButton: View {
         }
     }
 
-    /// サーバで合成（保存済みならサーバキャッシュ返却）した音声を端末ローカルに保存する
-    private func generate() {
+    /// サーバで合成（保存済みならサーバキャッシュ返却）した音声を端末ローカルに保存する。
+    /// regenerate=true のときはサーバに再合成させる（「作り直す」用）。
+    private func generate(regenerate: Bool = false) {
         guard !isGenerating else { return }
         isGenerating = true
         // @State への書き込みを MainActor 上で行う（外すとメインスレッド外更新になり再描画されないことがある）
@@ -77,7 +80,7 @@ struct TTSButton: View {
             do {
                 let data = try await BackendAPI.post(
                     path: "api/tts",
-                    body: RequestBody(text: text, model: serverModel)
+                    body: RequestBody(text: text, model: serverModel, regenerate: regenerate ? true : nil)
                 )
                 try TTSAudioStore.save(data: data, text: text, model: serverModel)
             } catch {
@@ -91,14 +94,15 @@ struct TTSButton: View {
         }
     }
 
-    /// この単語のローカル音声を削除してサーバから取り直す（強制再取得）。
-    /// 再生中なら止めてから削除し、generate() で /api/tts を叩き直して保存する。
+    /// この単語の音声を作り直す。再生中なら止め、端末ローカルを削除したうえで、
+    /// サーバにも再合成させて（regenerate=true）取り直し保存する。
+    /// 単なる再取得だとサーバキャッシュの古い音声が返るため、必ずサーバ再合成を伴わせる。
     private func regenerate(current: URL) {
         guard !isGenerating else { return }
         if playback.currentURL == current {
             playback.stop()
         }
         TTSAudioStore.remove(text: text, model: serverModel)
-        generate()
+        generate(regenerate: true)
     }
 }

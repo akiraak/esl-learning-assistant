@@ -113,12 +113,19 @@
   古い音声を再生し続ける**。単語削除も無効（キャッシュは text ハッシュ管理で Word と独立）。
   `removeAll()` は定義のみで呼び出し箇所ゼロ（アプリ内にキャッシュ削除導線なし）。
 
-### 対応（実装済み）: 発音ボタン長押しで強制再取得
-- `TTSAudioStore.remove(text:model:)` を追加（単一ファイル削除）。
-- `TTSButton` に `.contextMenu`（長押し）「AI音声を作り直す」を追加 →
-  再生中なら停止→ローカル削除→`generate()` で `/api/tts` から取り直して保存。
-- 運用フロー: 管理画面で該当単語の音声を再生成 → 端末で発音ボタンを長押し「作り直す」→ 新音声を取得。
-- 検証: iOS シミュレータ向け `xcodebuild` で **BUILD SUCCEEDED**（Swift 6）。
+### 対応（実装済み）: 発音ボタン長押しで「作り直す」（サーバ再合成込み・1ステップ）
+- 当初 v1 は「ローカル削除 → `/api/tts` 再取得」だけにしたが、**サーバキャッシュが古いままだと
+  同じ音声が返り変わらない**不具合（ユーザー報告「変わらない」）。→ サーバ再合成を伴わせる方式に修正。
+- `POST /api/tts` に `regenerate?: boolean` を追加。true でサーバは `regenerateTtsAudio()` により
+  **キャッシュ破棄→再合成**（ボイス再抽選）して返す。通常リクエストは従来どおりキャッシュ利用。
+- iOS: `TTSAudioStore.remove(text:model:)` ＋ `TTSButton` の長押し `.contextMenu`「AI音声を作り直す」→
+  再生中なら停止→ローカル削除→`generate(regenerate: true)` で `/api/tts` にサーバ再合成させて保存。
+- これで**端末単独で1ステップ**に音声を作り直せる（管理画面操作は不要。管理画面ボタンも別途併存）。
+- 検証:
+  - backend: ローカルサーバで `POST /api/tts {regenerate:true}` → ログ `regenerate purged`→`success`、
+    DB 行 id 更新・bytes 変化。`regenerate` 無しは `cache hit`。tsc クリーン。
+  - iOS: シミュレータ向け `xcodebuild` **BUILD SUCCEEDED**（Swift 6）。
+  - 再生側は `AVAudioPlayer(contentsOf:)` で毎回ディスクから読むため、ファイル更新で確実に反映（バッファ再利用なし）。
 - 限界: クイズ音声のローカルキャッシュ更新はこの導線では対象外（必要なら別途 全削除ボタン等を検討）。
 
 ## テスト方針
