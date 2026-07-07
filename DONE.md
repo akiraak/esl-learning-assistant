@@ -1,5 +1,13 @@
 # DONE
 
+- [x] 2026-07-05 単語出題の音声問題で、回答後にだけ表示すべき読み上げ英文が最初から表示されるバグを修正
+      音声形式クイズの読み上げ英文（audioText / スクリプト）は、コミット 27accfd で `feedback != nil`
+      （回答済み）ガード付きの `audioScript` として表示するよう実装済み。回答前に常時表示されるのは
+      「Play Audio」再生ボタンのみで英文本体は出ない。常時表示される `displayText` への漏れも無いことを
+      バックエンドの出題定義（quizQuestions.ts）で確認済み（vc1〜vc7/vt1/vt2 は displayText=null、
+      vtc1/vtt1 は該当語を伏せた穴埋め文で完全文は audioText 側）。今回は完了確認のみ。
+      [plan](docs/plans/archive/quiz-audio-show-script-after-answer.md)
+
 - [x] 2026-07-06 クイズ音声の audioText に設問文が混入するプロンプト堅牢性バグ（vc3等）を修正
       音声形式の audioText に「What word is this?」等の設問が混入し TTS に設問が読み上げられる不具合
       （実データで vc3 "experience" が再現）。設問は instruction が担うべきで audioText は読み上げ本文のみとする。
