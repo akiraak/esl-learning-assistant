@@ -299,7 +299,8 @@ const AI_FORMAT_SPECS: FormatSpec[] = [
     correctMustBeWord: true,
     isAvailable: hasDefinition,
     promptSpec: (word) =>
-      `vc3: audioText に "${word}" の英語定義（読み上げ用に1〜2文で簡潔に）。` +
+      `vc3: audioText は "${word}" の英語定義のみ（読み上げ用に1〜2文で簡潔に）。` +
+      `定義文だけを書き、問いかけや設問（例:「What word is this?」「Which word is it?」）は audioText に付けない。` +
       `instruction は「Listen to the definition. Which word does it describe?」。options は単語4つで正解は "${word}"。`,
   },
   {
@@ -499,6 +500,7 @@ function buildPrompt(word: string, info: WordInfo, specs: FormatSpec[]): string 
     `- 各形式につき、ちょうど ${VARIANTS_PER_FORMAT} バリエーション（variantIndex: 0〜${VARIANTS_PER_FORMAT - 1}）を作る`,
     `- バリエーション同士は文・誤答・言い回しを変える（指示で「同一でよい」とした形式を除く）`,
     `- 4択（answerType: "choices"）は options ちょうど4つ・正解は1つだけ・重複なし。誤答は もっともらしいが明確に誤り のもの`,
+    `- audioText は TTS で読み上げる「本文」そのものだけにする。設問・問いかけ・指示（例:「What word is this?」「Which word is it?」）や instruction と重複する文言を audioText に含めない`,
     `- 難易度は CEFR ${info.cefrLevel ?? "不明"} の学習者向けに調整する`,
     `- 語彙・文はアメリカ英語`,
     ``,
