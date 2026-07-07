@@ -1,5 +1,19 @@
 # DONE
 
+- [x] 2026-07-06 "lazy" のAI生成読み上げがおかしい件を調査し、音声を作り直す導線を追加
+      調査結果: 生成プロンプト（単語情報・クイズ・TTS）自体に "lazy" 固有の不具合は無く、
+      内容・音声とも再現テストでほぼ正常（bare "lazy" は 8回中1回だけ "Lacy" と不明瞭化する程度）。
+      根本原因は TTS の恒久キャッシュ（`tts_audio`, `sha256("model|text")`）が無効化されず、
+      初回のたまたま不明瞭な合成が固定されて配信され続けること。プロンプト修正では直らない。
+      対応: ①管理画面 `/admin/words/:id` に「読み上げ音声を再生成」ボタン＋現在音声の試聴を追加
+      （`regenerateWordReadingAudio`：単語音声のキャッシュを破棄→即再合成、ボイス再抽選。定義・例文は不変）。
+      ②iOS 発音ボタンの長押しメニュー「AI音声を作り直す」を追加。当初はローカル削除→再取得のみで
+      サーバキャッシュが古いと「変わらない」不具合があったため、`POST /api/tts` に `regenerate` フラグを足し、
+      端末単独の1ステップでサーバ再合成＋ローカル更新できるよう修正（`TTSAudioStore.remove` 追加）。
+      副次発見（別TODOで対応）: `vc3` の audioText に設問文が混入する生成プロンプトの堅牢性バグ。
+      検証: backend はローカルサーバで再生成→新規合成・キャッシュ挙動を実機ログ確認、tsc クリーン。
+      iOS は `xcodebuild` で BUILD SUCCEEDED。
+      plan: docs/plans/archive/lazy-tts-reading-investigation.md
 - [x] 2026-07-06 Audioタブでアプリが落ちるバグを修正（非オプショナル enum のマイグレーション地雷）
       既存音声データがある環境で Audio タブを開くとクラッシュしていた。原因は Phase 2 で追加した
       `AudioClip.processingStatus: AudioProcessingStatus = .pending`（非オプショナル enum）。SwiftData の
