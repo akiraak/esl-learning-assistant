@@ -122,11 +122,15 @@ backend 呼び出し → ③ pending/manual を状態遷移 → ④ 詳細 View 
 - [x] `tsc` ビルド確認、`curl` で実 Gemini に英語音声（/api/tts 生成の WAV）を投げて
       英文逐語文字起こし＋日本語訳・コスト記録・各種バリデーション（400/401/413）を確認
 
-### Phase 2: iOS — モデル拡張
-- [ ] `AudioClip.swift` に `AudioProcessingStatus`（`String, Codable`: pending/processing/completed/failed）と
+### Phase 2: iOS — モデル拡張 ✅ 完了（2026-07-06）
+- [x] `AudioClip.swift` に `AudioProcessingStatus`（`String, Codable`: pending/processing/completed/failed）と
       `processingStatus`（`= .pending`）/ `processingErrorMessage: String?` / `transcriptText: String?` /
-      `translatedText: String?` / `translationLanguage: String?` を追加（optional/default でマイグレーション安全）
-- [ ] ビルド確認（schema 登録は変更不要）＋ 既存ストアの起動確認（旧データが開けること）
+      `translatedText: String?` / `translationLanguage: String?` を追加（optional/default でマイグレーション安全）。
+      `processingStatus` は `Word.aiInfoStatus` と同型の `var … = AudioProcessingStatus.pending`（プロパティ既定値付き non-optional）
+- [x] ビルド確認（`xcodebuild` BUILD SUCCEEDED、schema 登録は変更不要）＋ 既存ストアの起動確認。
+      旧スキーマの実ストア（Lesson データ有り）を新ビルドで開き、ライトウェイトマイグレーションで
+      5カラム（`ZPROCESSINGSTATUS`/`ZPROCESSINGERRORMESSAGE`/`ZTRANSCRIPTTEXT`/`ZTRANSLATEDTEXT`/`ZTRANSLATIONLANGUAGE`）が
+      追加され、既存 Lesson が保持されたまま起動する（`StoreLoadErrorView` に落ちない）ことをシミュレータで確認
 
 ### Phase 3: iOS — サービス層
 - [ ] `TranscriptionTranslationService`（protocol, `@MainActor func process(_ clip: AudioClip) async`）
