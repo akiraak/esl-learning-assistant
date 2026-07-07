@@ -6,17 +6,20 @@ import express from "express";
 import { config } from "./config";
 import {
   countQuizQuestions,
+  getStoredNormalization,
   getStoredWord,
   getWordIllustrationByHash,
   insertRequestLog,
   insertTranscriptionLog,
   insertWordInfoLog,
+  insertWordNormalizeLog,
   insertWritingFeedbackLog,
   listIllustratedWords,
   listQuizQuestions,
   listStoredWordTexts,
   normalizeWordKey,
   replaceQuizQuestions,
+  upsertStoredNormalization,
   upsertStoredWord,
   upsertWordIllustration,
 } from "./db";
@@ -28,6 +31,7 @@ import {
   SUPPORTED_AUDIO_MIME_EXTENSIONS,
 } from "./transcribe";
 import { generateWordInfo, type WordInfo } from "./wordInfo";
+import { normalizeWord } from "./wordNormalize";
 import { generateWritingFeedback, type WritingFeedbackRound } from "./writingFeedback";
 import { generateQuizQuestions } from "./quizQuestions";
 import { estimateCostUsd } from "./pricing";
@@ -454,6 +458,130 @@ app.post("/api/word-info", async (req, res) => {
     });
 
     logger.error(`word-info: failed word="${trimmedWord}" latencyMs=${latencyMs} error=${errorMessage}`);
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// 入力語を辞書見出し語（lemma）へ正規化する（原形化・綴り訂正）。登録・派生生成の前段で呼び、
+// 誤った語での連鎖生成を防ぐ。結果は (input, targetLanguage) 単位でキャッシュする。
+// docs/plans/word-input-normalization.md 参照。
+app.post("/api/word-normalize", async (req, res) => {
+  const { word, targetLanguage, regenerate } = req.body ?? {};
+
+  if (typeof word !== "string" || !word.trim()) {
+    logger.warn("word-normalize: rejected (word is required)");
+    res.status(400).json({ error: "word is required" });
+    return;
+  }
+  if (word.length > WORD_MAX_LENGTH) {
+    logger.warn(`word-normalize: rejected (word too long: ${word.length})`);
+    res.status(400).json({ error: `word must be ${WORD_MAX_LENGTH} characters or fewer` });
+    return;
+  }
+  if (typeof targetLanguage !== "string" || !targetLanguage) {
+    logger.warn("word-normalize: rejected (targetLanguage is required)");
+    res.status(400).json({ error: "targetLanguage is required" });
+    return;
+  }
+  if (regenerate !== undefined && typeof regenerate !== "boolean") {
+    logger.warn("word-normalize: rejected (regenerate must be a boolean)");
+    res.status(400).json({ error: "regenerate must be a boolean" });
+    return;
+  }
+
+  const trimmedWord = word.trim();
+  const startedAt = Date.now();
+
+  // 保存済みなら Claude API を呼ばずに返す（regenerate 指定時は作りなおす）
+  if (!regenerate) {
+    const stored = getStoredNormalization(trimmedWord, targetLanguage);
+    if (stored) {
+      const latencyMs = Date.now() - startedAt;
+      insertWordNormalizeLog({
+        input: trimmedWord,
+        targetLanguage,
+        lemma: stored.lemma,
+        resultStatus: stored.status,
+        reason: stored.reason,
+        model: stored.model,
+        inputTokens: 0,
+        outputTokens: 0,
+        costUsd: 0,
+        status: "success",
+        errorMessage: null,
+        latencyMs,
+        cacheHit: true,
+      });
+      logger.info(`word-normalize: cache hit word="${trimmedWord}" status=${stored.status} latencyMs=${latencyMs}`);
+      res.json({
+        input: trimmedWord,
+        lemma: stored.lemma,
+        status: stored.status,
+        reason: stored.reason ?? "",
+        cached: true,
+      });
+      return;
+    }
+  }
+
+  logger.info(
+    `word-normalize: start word="${trimmedWord}" targetLanguage=${targetLanguage} ` +
+      `regenerate=${regenerate === true} model=${config.wordNormalizeModel}`
+  );
+  try {
+    const result = await normalizeWord(trimmedWord, targetLanguage);
+    const latencyMs = Date.now() - startedAt;
+    const costUsd = estimateCostUsd(result.model, result.inputTokens, result.outputTokens);
+    const { status, lemma, reason } = result.normalization;
+
+    upsertStoredNormalization({
+      input: trimmedWord,
+      targetLanguage,
+      lemma,
+      status,
+      reason: reason || null,
+      model: result.model,
+    });
+
+    insertWordNormalizeLog({
+      input: trimmedWord,
+      targetLanguage,
+      lemma,
+      resultStatus: status,
+      reason: reason || null,
+      model: result.model,
+      inputTokens: result.inputTokens,
+      outputTokens: result.outputTokens,
+      costUsd,
+      status: "success",
+      errorMessage: null,
+      latencyMs,
+      cacheHit: false,
+    });
+
+    logger.info(`word-normalize: success word="${trimmedWord}" status=${status} lemma="${lemma}" latencyMs=${latencyMs}`);
+    res.json({ input: trimmedWord, lemma, status, reason, cached: false });
+  } catch (error) {
+    const latencyMs = Date.now() - startedAt;
+    const errorMessage = error instanceof Error ? error.message : String(error);
+
+    insertWordNormalizeLog({
+      input: trimmedWord,
+      targetLanguage,
+      lemma: null,
+      resultStatus: null,
+      reason: null,
+      model: config.wordNormalizeModel,
+      inputTokens: 0,
+      outputTokens: 0,
+      costUsd: 0,
+      status: "error",
+      errorMessage,
+      latencyMs,
+      cacheHit: false,
+    });
+
+    logger.error(`word-normalize: failed word="${trimmedWord}" latencyMs=${latencyMs} error=${errorMessage}`);
     res.status(500).json({ error: errorMessage });
   }
 });

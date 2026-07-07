@@ -20,6 +20,7 @@ import {
   getUsageCostReport,
   getWordIllustrationById,
   getWordInfoLog,
+  getWordNormalizeLog,
   getWritingFeedbackLog,
   insertWordInfoLog,
   listIllustratedWords,
@@ -29,6 +30,7 @@ import {
   listRecentSystemLogs,
   listRecentTranscriptionLogs,
   listRecentWordInfoLogs,
+  listRecentWordNormalizeLogs,
   listRecentWritingFeedbackLogs,
   listStoredWords,
   listStoredWordTexts,
@@ -43,6 +45,7 @@ import {
   USAGE_APPROX_FEATURES,
   type UsageFeature,
   WordInfoLogRow,
+  WordNormalizeLogRow,
   WritingFeedbackLogRow,
 } from "./db";
 import { config } from "./config";
@@ -183,12 +186,13 @@ function renderMarkdown(value: string | null): string {
   return marked.parse(escaped, { async: false, breaks: true }) as string;
 }
 
-type NavSection = "ocr" | "transcriptions" | "word-info" | "writing-feedback" | "words" | "quiz-questions" | "tts" | "illustrations" | "usage" | "pricing" | "logs";
+type NavSection = "ocr" | "transcriptions" | "word-info" | "word-normalize" | "writing-feedback" | "words" | "quiz-questions" | "tts" | "illustrations" | "usage" | "pricing" | "logs";
 
 const NAV_ITEMS: Array<[NavSection, string, string]> = [
   ["ocr", "/admin", "OCR・翻訳ログ"],
   ["transcriptions", "/admin/transcriptions", "音声文字起こしログ"],
   ["word-info", "/admin/word-info", "単語情報ログ"],
+  ["word-normalize", "/admin/word-normalize", "単語正規化ログ"],
   ["writing-feedback", "/admin/writing-feedback", "作文添削ログ"],
   ["words", "/admin/words", "単語一覧"],
   ["quiz-questions", "/admin/quiz-questions", "単語クイズ"],
@@ -563,6 +567,136 @@ adminRouter.get("/word-info/:id", (req, res) => {
   `;
 
   res.type("html").send(renderPage(`単語情報ログ #${log.id} - ESL Assistant`, "", body, "word-info"));
+});
+
+// 正規化結果ステータス（canonical/inflected/...）の日本語ラベル。
+const NORMALIZE_STATUS_LABELS: Record<string, string> = {
+  canonical: "見出し語",
+  inflected: "語形変化",
+  misspelled: "綴り訂正",
+  proper_noun: "固有名詞",
+  phrase: "連語",
+  unknown: "判定不能",
+};
+
+function normalizeStatusBadge(status: string | null): string {
+  if (!status) return `<span class="faint">-</span>`;
+  const label = NORMALIZE_STATUS_LABELS[status] ?? status;
+  // 訂正が入る2種（inflected/misspelled）を強調、その他は控えめに表示する
+  const corrected = status === "inflected" || status === "misspelled";
+  return `<span class="pill ${corrected ? "status-error" : "status-success"}">${escapeHtml(label)}</span>`;
+}
+
+adminRouter.get("/word-normalize", (_req, res) => {
+  const logs = listRecentWordNormalizeLogs(100);
+
+  const totalCostUsd = logs.reduce((sum, log) => sum + log.cost_usd, 0);
+  const cacheHits = logs.filter((log) => log.cache_hit).length;
+  const correctedCount = logs.filter(
+    (log) => log.result_status === "inflected" || log.result_status === "misspelled"
+  ).length;
+  const errorCount = logs.filter((log) => log.status !== "success").length;
+
+  const rows = logs
+    .map(
+      (log) => `
+        <tr class="log-row">
+          <td class="mono dim">#${log.id}</td>
+          <td class="mono dim">${escapeHtml(formatSeattleTime(log.created_at))}</td>
+          <td><strong>${escapeHtml(log.input)}</strong></td>
+          <td>${normalizeStatusBadge(log.result_status)}</td>
+          <td>${
+            log.lemma && log.lemma !== log.input
+              ? `<strong class="ok-text">${escapeHtml(log.lemma)}</strong>`
+              : `<span class="dim">${log.lemma ? escapeHtml(log.lemma) : "-"}</span>`
+          }${log.reason ? `<br><span class="dim">${escapeHtml(log.reason)}</span>` : ""}</td>
+          <td>${escapeHtml(log.target_language)}</td>
+          <td>${log.cache_hit ? '<span class="ok-text">キャッシュ返却</span><br>' : ""}<strong>${escapeHtml(log.model)}</strong> <span class="dim">(in:${log.input_tokens} / out:${log.output_tokens})</span></td>
+          <td class="mono">$${log.cost_usd.toFixed(5)}</td>
+          <td>${statusLabel(log)}${log.error_message ? `<div class="err-note">${escapeHtml(log.error_message)}</div>` : ""}</td>
+          <td class="mono dim">${log.latency_ms}ms</td>
+          <td><a href="/admin/word-normalize/${log.id}">詳細 →</a></td>
+        </tr>
+      `
+    )
+    .join("\n");
+
+  res.type("html").send(
+    renderPage(
+      "ESL Assistant - 単語正規化ログ",
+      "",
+      `
+        <h1>単語正規化ログ</h1>
+        <p class="page-sub">直近${logs.length}件の入力語正規化（原形化・綴り訂正）リクエスト</p>
+        <div class="stats">
+          <div class="stat"><div class="lbl">直近件数</div><div class="val">${logs.length}<small>件</small></div></div>
+          <div class="stat"><div class="lbl">コスト合計</div><div class="val">$${totalCostUsd.toFixed(2)}</div></div>
+          <div class="stat"><div class="lbl">訂正あり</div><div class="val">${correctedCount}<small>件</small></div></div>
+          <div class="stat"><div class="lbl">キャッシュ返却</div><div class="val">${cacheHits}<small>件</small></div></div>
+          <div class="stat${errorCount > 0 ? " alert" : ""}"><div class="lbl">エラー</div><div class="val">${errorCount}<small>件</small></div></div>
+        </div>
+        <div class="card">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th><th>日時</th><th>入力</th><th>判定</th><th>lemma / 理由</th><th>母語</th>
+                <th>モデル / トークン</th><th>コスト</th><th>状態</th><th>処理時間</th><th></th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      `,
+      "word-normalize"
+    )
+  );
+});
+
+adminRouter.get("/word-normalize/:id", (req, res) => {
+  const id = Number(req.params.id);
+  const log = getWordNormalizeLog(id);
+  if (!log) {
+    res
+      .status(404)
+      .type("html")
+      .send(
+        renderPage(
+          "ログが見つかりません",
+          "",
+          '<p>指定されたログは存在しません。</p><p><a href="/admin/word-normalize">← 一覧に戻る</a></p>'
+        )
+      );
+    return;
+  }
+
+  const prev = getWordNormalizeLog(id + 1); // 新しいログ
+  const next = getWordNormalizeLog(id - 1); // 古いログ
+
+  const body = `
+    <p><a href="/admin/word-normalize">← 一覧に戻る</a></p>
+    <h1>単語正規化ログ #${log.id}: ${escapeHtml(log.input)}</h1>
+    <table class="meta-table">
+      <tr><th>日時</th><td>${escapeHtml(formatSeattleTime(log.created_at))}</td></tr>
+      <tr><th>入力</th><td>${escapeHtml(log.input)}</td></tr>
+      <tr><th>判定</th><td>${normalizeStatusBadge(log.result_status)}</td></tr>
+      <tr><th>lemma（登録語）</th><td>${log.lemma ? escapeHtml(log.lemma) : "(なし)"}</td></tr>
+      <tr><th>理由</th><td>${log.reason ? escapeHtml(log.reason) : "(なし)"}</td></tr>
+      <tr><th>母語</th><td>${escapeHtml(log.target_language)}</td></tr>
+      <tr><th>キャッシュ</th><td>${log.cache_hit ? '<span style="color:#2a7">保存済みを返却（生成なし）</span>' : "新規生成"}</td></tr>
+      <tr><th>モデル</th><td>${escapeHtml(log.model)}（in: ${log.input_tokens} / out: ${log.output_tokens}）</td></tr>
+      <tr><th>コスト</th><td>$${log.cost_usd.toFixed(5)}</td></tr>
+      <tr><th>状態</th><td>${statusLabel(log)}${log.error_message ? `<br>${escapeHtml(log.error_message)}` : ""}</td></tr>
+      <tr><th>処理時間</th><td>${log.latency_ms}ms</td></tr>
+    </table>
+
+    <p class="nav-links">
+      ${prev ? `<a href="/admin/word-normalize/${prev.id}">← 新しいログ (#${prev.id})</a>` : "<span>(これが最新)</span>"}
+      &nbsp;|&nbsp;
+      ${next ? `<a href="/admin/word-normalize/${next.id}">古いログ (#${next.id}) →</a>` : "<span>(これが最古)</span>"}
+    </p>
+  `;
+
+  res.type("html").send(renderPage(`単語正規化ログ #${log.id} - ESL Assistant`, "", body, "word-normalize"));
 });
 
 adminRouter.get("/writing-feedback", (_req, res) => {
@@ -1170,6 +1304,7 @@ function modelUsage(model: string): string {
   if (model === config.ocrModel) usages.push("OCR");
   if (model === config.translateModel) usages.push("翻訳");
   if (model === config.wordInfoModel) usages.push("単語情報");
+  if (model === config.wordNormalizeModel) usages.push("単語正規化");
   if (model === config.writingFeedbackModel) usages.push("作文添削");
   if (model === "gemini-2.5-flash-preview-tts") usages.push("TTS (flash)");
   if (model === "gemini-2.5-pro-preview-tts") usages.push("TTS (pro)");
@@ -1204,6 +1339,7 @@ const USAGE_FEATURE_META: Record<UsageFeature, { label: string; href: string }> 
   ocr: { label: "OCR・翻訳", href: "/admin" },
   transcription: { label: "音声文字起こし・翻訳", href: "/admin/transcriptions" },
   "word-info": { label: "単語情報", href: "/admin/word-info" },
+  "word-normalize": { label: "単語正規化", href: "/admin/word-normalize" },
   "writing-feedback": { label: "作文添削", href: "/admin/writing-feedback" },
   tts: { label: "TTS音声", href: "/admin/tts" },
   illustrations: { label: "単語イラスト", href: "/admin/illustrations" },

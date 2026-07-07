@@ -84,6 +84,28 @@ if (!wordInfoColumns.has("cache_hit")) {
   db.exec("ALTER TABLE word_info_requests ADD COLUMN cache_hit INTEGER NOT NULL DEFAULT 0");
 }
 
+// 入力語の正規化（/api/word-normalize）のログ。word_info_requests を踏襲したコスト集計用の通信履歴。
+// result_status は正規化結果（canonical/inflected/...）で、status（success/error）とは別物。
+db.exec(`
+  CREATE TABLE IF NOT EXISTS word_normalize_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    input TEXT NOT NULL,
+    target_language TEXT NOT NULL,
+    lemma TEXT,
+    result_status TEXT,
+    reason TEXT,
+    model TEXT NOT NULL,
+    input_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    cost_usd REAL NOT NULL DEFAULT 0,
+    status TEXT NOT NULL,
+    error_message TEXT,
+    latency_ms INTEGER NOT NULL DEFAULT 0,
+    cache_hit INTEGER NOT NULL DEFAULT 0
+  )
+`);
+
 // 作文添削（/api/writing-feedback）のログ。作文本文は毎回異なりキャッシュが効かないため
 // サーバ側は保存せずログ用途のみ（結果本体の永続化は iOS 側 Composition.feedback）。
 db.exec(`
@@ -218,6 +240,24 @@ db.exec(`
     updated_at TEXT NOT NULL,
     generation_count INTEGER NOT NULL DEFAULT 1,
     UNIQUE(word, target_language)
+  )
+`);
+
+// 入力語の正規化結果キャッシュ（word_normalize_requests は通信ログとして温存し役割を分ける）。
+// キャッシュキーは (trim + 小文字化した input, target_language)。同一入力の再登録で AI を呼ばない。
+db.exec(`
+  CREATE TABLE IF NOT EXISTS word_normalizations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    input TEXT NOT NULL,
+    target_language TEXT NOT NULL,
+    lemma TEXT NOT NULL,
+    status TEXT NOT NULL,
+    reason TEXT,
+    model TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    generation_count INTEGER NOT NULL DEFAULT 1,
+    UNIQUE(input, target_language)
   )
 `);
 
@@ -407,6 +447,83 @@ export function getWordInfoLog(id: number): WordInfoLogRow | undefined {
   return db
     .prepare("SELECT * FROM word_info_requests WHERE id = ?")
     .get(id) as WordInfoLogRow | undefined;
+}
+
+export interface WordNormalizeLogInput {
+  input: string;
+  targetLanguage: string;
+  lemma: string | null;
+  resultStatus: string | null;
+  reason: string | null;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+  status: "success" | "error";
+  errorMessage: string | null;
+  latencyMs: number;
+  cacheHit: boolean;
+}
+
+const insertWordNormalizeStmt = db.prepare(`
+  INSERT INTO word_normalize_requests (
+    created_at, input, target_language, lemma, result_status, reason,
+    model, input_tokens, output_tokens,
+    cost_usd, status, error_message, latency_ms, cache_hit
+  ) VALUES (
+    @createdAt, @input, @targetLanguage, @lemma, @resultStatus, @reason,
+    @model, @inputTokens, @outputTokens,
+    @costUsd, @status, @errorMessage, @latencyMs, @cacheHit
+  )
+`);
+
+export function insertWordNormalizeLog(input: WordNormalizeLogInput): void {
+  insertWordNormalizeStmt.run({
+    createdAt: new Date().toISOString(),
+    input: input.input,
+    targetLanguage: input.targetLanguage,
+    lemma: input.lemma,
+    resultStatus: input.resultStatus,
+    reason: input.reason,
+    model: input.model,
+    inputTokens: input.inputTokens,
+    outputTokens: input.outputTokens,
+    costUsd: input.costUsd,
+    status: input.status,
+    errorMessage: input.errorMessage,
+    latencyMs: input.latencyMs,
+    cacheHit: input.cacheHit ? 1 : 0,
+  });
+}
+
+export interface WordNormalizeLogRow {
+  id: number;
+  created_at: string;
+  input: string;
+  target_language: string;
+  lemma: string | null;
+  result_status: string | null;
+  reason: string | null;
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number;
+  status: string;
+  error_message: string | null;
+  latency_ms: number;
+  cache_hit: number;
+}
+
+export function listRecentWordNormalizeLogs(limit: number): WordNormalizeLogRow[] {
+  return db
+    .prepare("SELECT * FROM word_normalize_requests ORDER BY id DESC LIMIT ?")
+    .all(limit) as WordNormalizeLogRow[];
+}
+
+export function getWordNormalizeLog(id: number): WordNormalizeLogRow | undefined {
+  return db
+    .prepare("SELECT * FROM word_normalize_requests WHERE id = ?")
+    .get(id) as WordNormalizeLogRow | undefined;
 }
 
 export interface WritingFeedbackLogInput {
@@ -653,6 +770,68 @@ export function upsertStoredWord(input: StoredWordInput): void {
 
 export function deleteStoredWord(id: number): void {
   db.prepare("DELETE FROM words WHERE id = ?").run(id);
+}
+
+export interface StoredNormalizationRow {
+  id: number;
+  input: string;
+  target_language: string;
+  lemma: string;
+  status: string;
+  reason: string | null;
+  model: string;
+  created_at: string;
+  updated_at: string;
+  generation_count: number;
+}
+
+/// 正規化キャッシュを引く。キーは normalizeWordKey(input)（trim + 小文字化）と target_language。
+export function getStoredNormalization(
+  input: string,
+  targetLanguage: string
+): StoredNormalizationRow | undefined {
+  return db
+    .prepare("SELECT * FROM word_normalizations WHERE input = ? AND target_language = ?")
+    .get(normalizeWordKey(input), targetLanguage) as StoredNormalizationRow | undefined;
+}
+
+export interface StoredNormalizationInput {
+  input: string;
+  targetLanguage: string;
+  lemma: string;
+  status: string;
+  reason: string | null;
+  model: string;
+}
+
+const upsertStoredNormalizationStmt = db.prepare(`
+  INSERT INTO word_normalizations (
+    input, target_language, lemma, status, reason, model,
+    created_at, updated_at, generation_count
+  ) VALUES (
+    @input, @targetLanguage, @lemma, @status, @reason, @model,
+    @now, @now, 1
+  )
+  ON CONFLICT(input, target_language) DO UPDATE SET
+    lemma = excluded.lemma,
+    status = excluded.status,
+    reason = excluded.reason,
+    model = excluded.model,
+    updated_at = excluded.updated_at,
+    generation_count = generation_count + 1
+`);
+
+/// 正規化結果を保存する。同一キーが既にあれば内容を更新して generation_count を加算する（後勝ち）。
+export function upsertStoredNormalization(input: StoredNormalizationInput): void {
+  upsertStoredNormalizationStmt.run({
+    input: normalizeWordKey(input.input),
+    targetLanguage: input.targetLanguage,
+    lemma: input.lemma,
+    status: input.status,
+    reason: input.reason,
+    model: input.model,
+    now: new Date().toISOString(),
+  });
 }
 
 export interface TtsAudioRow {
@@ -985,6 +1164,7 @@ export type UsageFeature =
   | "ocr"
   | "transcription"
   | "word-info"
+  | "word-normalize"
   | "writing-feedback"
   | "tts"
   | "illustrations"
@@ -1174,6 +1354,13 @@ function collectUsageEvents(): UsageEvent[] {
     .all() as { created_at: string; model: string; input_tokens: number; output_tokens: number; cost_usd: number }[];
   for (const r of wordInfos) {
     push("word-info", r.model, r.created_at, r.cost_usd, r.input_tokens, r.output_tokens);
+  }
+
+  const wordNormalizes = db
+    .prepare(`SELECT created_at, model, input_tokens, output_tokens, cost_usd FROM word_normalize_requests`)
+    .all() as { created_at: string; model: string; input_tokens: number; output_tokens: number; cost_usd: number }[];
+  for (const r of wordNormalizes) {
+    push("word-normalize", r.model, r.created_at, r.cost_usd, r.input_tokens, r.output_tokens);
   }
 
   const feedbacks = db
