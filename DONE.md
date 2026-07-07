@@ -1,5 +1,13 @@
 # DONE
 
+- [x] 2026-07-06 クイズ音声の audioText に設問文が混入するプロンプト堅牢性バグ（vc3等）を修正
+      音声形式の audioText に「What word is this?」等の設問が混入し TTS に設問が読み上げられる不具合
+      （実データで vc3 "experience" が再現）。設問は instruction が担うべきで audioText は読み上げ本文のみとする。
+      `buildPrompt` の共通ルールに「audioText に設問・問いかけ・instruction と重複する文言を含めない」を追加
+      （全音声形式に適用）、vc3 promptSpec を「定義文のみ・問いかけを付けない」と明確化。
+      検証: "experience"/"achievement" を各3回再生成し vc3 audioText の設問混入 0/18。効果は新規生成のみで、
+      既存の生成済み問題は管理画面のクイズ再生成で作り直す。 [plan](docs/plans/archive/vc3-audiotext-question-leak.md)
+
 - [x] 2026-07-06 AI利用料金を一覧できる画面を管理画面に作成（`/admin/usage`「利用料金」）
       cost_usd を持つ7テーブルを共通イベント形に正規化し、キャリア（OpenAI/Gemini/Claude/その他）別・
       機能別・モデル別・日次（直近30日）と、総額/当月/当日サマリを1スキャンで集計して表示する読み取り専用ページ。
