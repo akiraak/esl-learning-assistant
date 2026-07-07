@@ -16,7 +16,18 @@ final class Word {
     // AI生成情報（docs/plans/word-ai-info-generation.md）。
     // すべてoptional/デフォルトありにして既存データの軽量マイグレーションを維持する。
     var aiInfo: WordAIInfo?
-    var aiInfoStatus: WordAIInfoStatus = WordAIInfoStatus.none
+    /// AI生成情報の状態。
+    /// 実ストレージは optional（NULL 許容カラム）にして既存行の軽量マイグレーションを壊さない。
+    /// 非オプショナル enum は default を書いても既存行へ埋め戻されず NULL のまま残り、materialize 時に
+    /// 「NULL → 非オプショナル enum」キャストでクラッシュする（[[swiftdata-codable-migration-pitfall]]）。
+    /// `originalName` で旧カラム `aiInfoStatus` の値を引き継ぎ（既存の .completed 等を保全）、
+    /// 公開 API は computed で NULL を既定値 `.none` として返す（`WordReviewState.stepIndexStorage` 方式）。
+    @Attribute(originalName: "aiInfoStatus")
+    private var aiInfoStatusStorage: WordAIInfoStatus?
+    var aiInfoStatus: WordAIInfoStatus {
+        get { aiInfoStatusStorage ?? .none }
+        set { aiInfoStatusStorage = newValue }
+    }
     /// AI生成が失敗したときのユーザー向けメッセージ（401時のAPI Secret案内など）
     var aiInfoErrorMessage: String?
     var aiInfoGeneratedAt: Date?

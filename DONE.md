@@ -1,5 +1,19 @@
 # DONE
 
+- [x] 2026-07-06 Audioタブでアプリが落ちるバグを修正（非オプショナル enum のマイグレーション地雷）
+      既存音声データがある環境で Audio タブを開くとクラッシュしていた。原因は Phase 2 で追加した
+      `AudioClip.processingStatus: AudioProcessingStatus = .pending`（非オプショナル enum）。SwiftData の
+      軽量マイグレーションは既存行へ Swift 既定値を埋め戻さないため旧行の `ZPROCESSINGSTATUS` が NULL のまま残り、
+      Audio タブ描画で `clip.processingStatus` を読む瞬間に
+      `Could not cast 'Swift.Optional<Any>' to 'AudioProcessingStatus'` でトラップしていた
+      （メモリ地雷 swiftdata-codable-migration-pitfall の @Model 直下 enum 版）。
+      対応: ①`AudioClip.processingStatus` を nullable ストレージ + computed 既定値（NULL→`.pending`）に変更。
+      ②同型の後付け地雷 `Word.aiInfoStatus`（Word 追加後に追加）も `@Attribute(originalName:)` で既存値を
+      保全しつつ nullable 化（NULL→`.none`）。③`Photo.processingStatus`/`Word.reviewState` は元スキーマ由来で
+      NULL が発生しないため据え置き。公開 API は非オプショナルのまま維持し呼び出し側は無改修。
+      検証: シミュレータ実ストアに旧スキーマ行（NULL / completed）を注入して再現・修正確認。Audio/Words タブとも
+      クラッシュ無し、`Word` の completed は保全されることを実ストアで確認。
+      plan: docs/plans/archive/fix-audioclip-processingstatus-migration-crash.md
 - [x] 2026-07-06 Audio の英文文字起こしと日本語翻訳（全 Phase 完了）
       取り込み音声（`AudioClip`）に英文逐語文字起こし（Gemini 音声入力）＋日本語全訳（既存 Claude
       `translateText` 再利用）を付け、写真OCR詳細と同じ体験（英文は単語タップ登録、訳は Markdown 表示）を提供。

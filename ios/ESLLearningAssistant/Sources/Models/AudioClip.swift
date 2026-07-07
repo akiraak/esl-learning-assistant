@@ -45,9 +45,17 @@ final class AudioClip {
     /// 紐付くレッスン（0個以上）。レッスン削除時は nullify されクリップ自体は残る。
     var lessons: [Lesson] = []
 
-    /// 文字起こし・翻訳の処理状態。default 付き non-optional（`Word.aiInfoStatus` 前例と同型）で
-    /// 既存ストアの軽量マイグレーションを維持する。
-    var processingStatus: AudioProcessingStatus = AudioProcessingStatus.pending
+    /// 文字起こし・翻訳の処理状態。
+    /// 実ストレージは optional（NULL 許容カラム）にして既存行の軽量マイグレーションを壊さない。
+    /// SwiftData は既存行へ Swift の既定値を埋め戻さないため、非オプショナル enum で追加すると
+    /// 旧行の値が NULL のまま残り、materialize 時に「NULL → 非オプショナル enum」のキャストで
+    /// クラッシュする（[[swiftdata-codable-migration-pitfall]]）。公開 API は computed で NULL を
+    /// 既定値 `.pending` として返す（`WordReviewState.stepIndexStorage` 方式）。
+    private var processingStatusStorage: AudioProcessingStatus?
+    var processingStatus: AudioProcessingStatus {
+        get { processingStatusStorage ?? .pending }
+        set { processingStatusStorage = newValue }
+    }
     /// 文字起こし・翻訳が失敗したときのユーザー向けメッセージ（401時のAPI Secret案内など）。
     /// 以下はいずれも optional 追加のみなので既存データの軽量マイグレーションを維持する。
     var processingErrorMessage: String?
