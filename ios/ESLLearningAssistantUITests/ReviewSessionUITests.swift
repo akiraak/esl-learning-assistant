@@ -11,7 +11,7 @@ final class ReviewSessionUITests: XCTestCase {
     func testReviewShowsLoadFailureWhenServerUnreachable() throws {
         let app = XCUIApplication()
         // 到達不能なURLを UserDefaults の引数ドメインへ注入して確実に取得失敗させる
-        app.launchArguments += ["-backendBaseURL", "http://127.0.0.1:1"]
+        app.launchArguments += ["-backendBaseURL", "http://127.0.0.1:1", "-uiTestStubWordNormalize", "canonical"]
         app.launch()
 
         clearAllData(app)
@@ -53,6 +53,7 @@ final class ReviewSessionUITests: XCTestCase {
         app.launchArguments += [
             "-backendBaseURL", baseURL,
             "-apiSecret", apiSecret,
+            "-uiTestStubWordNormalize", "canonical",
         ]
         app.launch()
 
@@ -136,7 +137,7 @@ final class ReviewSessionUITests: XCTestCase {
     /// （Phase 4: docs/plans/archive/word-memorization-quiz.md §3.5）
     func testWordDetailShowsReviewStatus() throws {
         let app = XCUIApplication()
-        app.launchArguments += ["-backendBaseURL", "http://127.0.0.1:1"]
+        app.launchArguments += ["-backendBaseURL", "http://127.0.0.1:1", "-uiTestStubWordNormalize", "canonical"]
         app.launch()
 
         clearAllData(app)

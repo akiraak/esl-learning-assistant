@@ -9,6 +9,8 @@ final class WordAddDuplicateUITests: XCTestCase {
 
     func testDuplicateWordIsRejectedInAddForm() throws {
         let app = XCUIApplication()
+        // 正規化は素通し（canonical）に固定し、Add 時にネットワークへ出ないようにする
+        app.launchArguments += ["-uiTestStubWordNormalize", "canonical"]
         app.launch()
 
         // 前回実行のデータが残っていると初期状態から始められないため、先に全クリアする
