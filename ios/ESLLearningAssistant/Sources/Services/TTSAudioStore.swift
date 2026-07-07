@@ -32,6 +32,12 @@ enum TTSAudioStore {
         return url
     }
 
+    /// 指定テキスト×モデルのローカル音声だけを削除する。
+    /// 管理画面でサーバ音声を作り直した後、端末の古いキャッシュを取り直させる（強制再取得）用。
+    static func remove(text: String, model: String) {
+        try? FileManager.default.removeItem(at: fileURL(text: text, model: model))
+    }
+
     /// 保存済み音声を全削除する（Settingsのデバッグメニュー等からの利用を想定）
     static func removeAll() {
         try? FileManager.default.removeItem(at: directory)

@@ -46,6 +46,15 @@ struct TTSButton: View {
             }
             .buttonStyle(.borderless)
             .accessibilityLabel(isActive ? "Stop" : "Play AI Audio")
+            // 長押し: 端末の古いローカル音声を捨ててサーバから取り直す。
+            // 管理画面で音声を作り直した後、この端末のキャッシュを更新するために使う。
+            .contextMenu {
+                Button {
+                    regenerate(current: localURL)
+                } label: {
+                    Label("AI音声を作り直す", systemImage: "arrow.clockwise")
+                }
+            }
         } else {
             Button {
                 generate()
@@ -80,5 +89,16 @@ struct TTSButton: View {
                 }
             }
         }
+    }
+
+    /// この単語のローカル音声を削除してサーバから取り直す（強制再取得）。
+    /// 再生中なら止めてから削除し、generate() で /api/tts を叩き直して保存する。
+    private func regenerate(current: URL) {
+        guard !isGenerating else { return }
+        if playback.currentURL == current {
+            playback.stop()
+        }
+        TTSAudioStore.remove(text: text, model: serverModel)
+        generate()
     }
 }
