@@ -132,12 +132,15 @@ backend 呼び出し → ③ pending/manual を状態遷移 → ④ 詳細 View 
       5カラム（`ZPROCESSINGSTATUS`/`ZPROCESSINGERRORMESSAGE`/`ZTRANSCRIPTTEXT`/`ZTRANSLATEDTEXT`/`ZTRANSLATIONLANGUAGE`）が
       追加され、既存 Lesson が保持されたまま起動する（`StoreLoadErrorView` に落ちない）ことをシミュレータで確認
 
-### Phase 3: iOS — サービス層
-- [ ] `TranscriptionTranslationService`（protocol, `@MainActor func process(_ clip: AudioClip) async`）
-- [ ] `RemoteTranscriptionTranslationService`（`RemoteOCRTranslationService` の音声版）:
-      `.processing` へ → `AudioStorage` で音声ロード → 拡張子→mimeType 変換 →
-      `BackendAPI.post("api/transcribe-translate", body, timeout: 180)` → デコード →
-      結果を `clip` に保存 → `.completed` / 失敗は `.failed` ＋ メッセージ
+### Phase 3: iOS — サービス層 ✅ 完了（2026-07-06）
+- [x] `TranscriptionTranslationService`（protocol, `@MainActor func process(_ clip: AudioClip) async`）
+- [x] `RemoteTranscriptionTranslationService`（`RemoteOCRTranslationService` の音声版）:
+      `.processing` へ → 拡張子→mimeType 変換（未対応=m4a等は送信前に `.failed`）→
+      `AudioStorage.url` から `Data(contentsOf:)` で音声ロード → 14MB 超は送信前に「短いクリップに分割」で `.failed` →
+      `BackendAPI.post("api/transcribe-translate", { audioBase64, mediaType, targetLanguage }, timeout: 180)` → デコード
+      （`{ englishText, translatedText, translationLanguage }`）→ `transcriptText`/`translatedText`/`translationLanguage` に保存 →
+      `.completed` / 失敗は `.failed` ＋ `error.localizedDescription`。mimeType 表・14MB 上限は backend と一致
+- [x] `xcodebuild`（iPhone 17 Simulator）で BUILD SUCCEEDED を確認。XcodeGen glob のため pbxproj 手編集は不要
 
 ### Phase 4: iOS — 詳細画面UI
 - [ ] `AudioDetailView` に **Transcript セクション** を追加し `processingStatus` で分岐:
