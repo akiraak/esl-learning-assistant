@@ -1,6 +1,8 @@
 import fs from "fs";
 import Database from "better-sqlite3";
 import { config } from "./config";
+import { providerForModel, type Provider } from "./pricing";
+import { MODEL_PRESETS, type ModelKey } from "./tts";
 
 fs.mkdirSync(config.imagesDir, { recursive: true });
 fs.mkdirSync(config.ttsDir, { recursive: true });
@@ -965,4 +967,382 @@ export function savePricingState(pricesJson: string): void {
     INSERT INTO pricing_state (id, updated_at, prices_json) VALUES (1, @updatedAt, @pricesJson)
     ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at, prices_json = excluded.prices_json
   `).run({ updatedAt: new Date().toISOString(), pricesJson });
+}
+
+// ===== 利用料金（コスト）集計: 全機能横断 =====
+// cost_usd を持つ7テーブルを「コスト付きイベント」の共通形に正規化し、キャリア別/機能別/
+// モデル別/日次/期間サマリを一度のスキャンでまとめて返す。個人利用規模なので全行取得→JS集計
+// で足りる（tts等が肥大化したら期間フィルタ付きSQLへ寄せる）。スキーマ変更・書き込みは無し。
+//
+// 集計上の注意（画面にも注記する）:
+// - 追記ログ4種（requests / word_info / writing_feedback / transcription）は呼び出しごとの
+//   真の履歴なので累計コストとして正確。
+// - 保存キャッシュ3種（tts_audio / word_illustrations / quiz_questions）は「現在保持している
+//   成果物の最終生成コスト」であり、再生成・削除の履歴は残らない＝総額はこれら機能について
+//   下限の近似になる。
+
+export type UsageFeature =
+  | "ocr"
+  | "transcription"
+  | "word-info"
+  | "writing-feedback"
+  | "tts"
+  | "illustrations"
+  | "quiz";
+
+// キャッシュ保存テーブル由来で総額が下限の近似になる機能（画面で注記する）
+export const USAGE_APPROX_FEATURES: ReadonlySet<UsageFeature> = new Set<UsageFeature>([
+  "tts",
+  "illustrations",
+  "quiz",
+]);
+
+interface UsageEvent {
+  feature: UsageFeature;
+  model: string;
+  provider: Provider;
+  createdAt: string; // UTC ISO
+  costUsd: number;
+  inputTokens: number;
+  outputTokens: number;
+}
+
+// DBのタイムスタンプはUTCのISO文字列。「今日/今月」判定と日次バケツは admin の表示と同じ
+// America/Los_Angeles で行う（tz境界のズレを防ぐため SQL ではなく JS 側で算出する）。
+const USAGE_SEATTLE_TZ = "America/Los_Angeles";
+const usageSeattleDateFmt = new Intl.DateTimeFormat("sv-SE", {
+  timeZone: USAGE_SEATTLE_TZ,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+/// UTC ISO → シアトル暦日の "YYYY-MM-DD"（ロケール差を避けるため formatToParts で組み立てる）
+function seattleDateKey(isoUtc: string): string {
+  const date = new Date(isoUtc);
+  if (Number.isNaN(date.getTime())) return "";
+  const parts = usageSeattleDateFmt.formatToParts(date);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  return `${get("year")}-${get("month")}-${get("day")}`;
+}
+
+/// 直近 n 日分のシアトル暦日キー（古い順）。暦日を UTC 正午起点で丸日加算して DST でズレないようにする。
+function lastNSeattleDates(n: number, todayKey: string): string[] {
+  const [y, m, d] = todayKey.split("-").map(Number);
+  const base = Date.UTC(y, m - 1, d);
+  const out: string[] = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const dt = new Date(base - i * 86_400_000);
+    const key = `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(
+      dt.getUTCDate()
+    ).padStart(2, "0")}`;
+    out.push(key);
+  }
+  return out;
+}
+
+/// 7テーブルを共通イベント形に正規化して取り出す。OCR・翻訳と文字起こしは ocr/translate を
+/// 2イベントに分解し、統合呼び出し（同一モデル・翻訳側0トークン＝翻訳コストは ocr 側に計上済み）は
+/// 重複計上しないよう1イベント扱いにする（admin の isCombinedCall と同じ判定）。
+function collectUsageEvents(): UsageEvent[] {
+  const events: UsageEvent[] = [];
+  const push = (
+    feature: UsageFeature,
+    model: string,
+    createdAt: string,
+    costUsd: number,
+    inputTokens: number,
+    outputTokens: number
+  ): void => {
+    events.push({
+      feature,
+      model,
+      provider: providerForModel(model),
+      createdAt,
+      costUsd,
+      inputTokens,
+      outputTokens,
+    });
+  };
+
+  const requests = db
+    .prepare(
+      `SELECT created_at, ocr_model, ocr_input_tokens, ocr_output_tokens, ocr_cost_usd,
+        translate_model, translate_input_tokens, translate_output_tokens, translate_cost_usd, cost_usd
+       FROM requests`
+    )
+    .all() as {
+    created_at: string;
+    ocr_model: string;
+    ocr_input_tokens: number;
+    ocr_output_tokens: number;
+    ocr_cost_usd: number;
+    translate_model: string | null;
+    translate_input_tokens: number;
+    translate_output_tokens: number;
+    translate_cost_usd: number;
+    cost_usd: number;
+  }[];
+  for (const r of requests) {
+    // per-part コスト列（ocr_cost_usd / translate_cost_usd）導入前の旧行は両方0で cost_usd のみ正しい。
+    // 分解できないので OCR呼び出し（ocr_model）に全額・全トークンを寄せる（総額を落とさないため）。
+    if (r.ocr_cost_usd === 0 && r.translate_cost_usd === 0) {
+      push(
+        "ocr",
+        r.ocr_model,
+        r.created_at,
+        r.cost_usd,
+        r.ocr_input_tokens + r.translate_input_tokens,
+        r.ocr_output_tokens + r.translate_output_tokens
+      );
+      continue;
+    }
+    push("ocr", r.ocr_model, r.created_at, r.ocr_cost_usd, r.ocr_input_tokens, r.ocr_output_tokens);
+    const combined =
+      r.translate_model === r.ocr_model &&
+      r.translate_input_tokens === 0 &&
+      r.translate_output_tokens === 0;
+    if (r.translate_model && !combined) {
+      push(
+        "ocr",
+        r.translate_model,
+        r.created_at,
+        r.translate_cost_usd,
+        r.translate_input_tokens,
+        r.translate_output_tokens
+      );
+    }
+  }
+
+  const transcriptions = db
+    .prepare(
+      `SELECT created_at, transcription_model, transcription_input_tokens, transcription_output_tokens,
+        transcription_cost_usd, translate_model, translate_input_tokens, translate_output_tokens, translate_cost_usd, cost_usd
+       FROM transcription_requests`
+    )
+    .all() as {
+    created_at: string;
+    transcription_model: string;
+    transcription_input_tokens: number;
+    transcription_output_tokens: number;
+    transcription_cost_usd: number;
+    translate_model: string | null;
+    translate_input_tokens: number;
+    translate_output_tokens: number;
+    translate_cost_usd: number;
+    cost_usd: number;
+  }[];
+  for (const r of transcriptions) {
+    // requests と同じく per-part コストが未記録の行は cost_usd を文字起こし側に寄せる（保険）。
+    if (r.transcription_cost_usd === 0 && r.translate_cost_usd === 0) {
+      push(
+        "transcription",
+        r.transcription_model,
+        r.created_at,
+        r.cost_usd,
+        r.transcription_input_tokens + r.translate_input_tokens,
+        r.transcription_output_tokens + r.translate_output_tokens
+      );
+      continue;
+    }
+    push(
+      "transcription",
+      r.transcription_model,
+      r.created_at,
+      r.transcription_cost_usd,
+      r.transcription_input_tokens,
+      r.transcription_output_tokens
+    );
+    const combined =
+      r.translate_model === r.transcription_model &&
+      r.translate_input_tokens === 0 &&
+      r.translate_output_tokens === 0;
+    if (r.translate_model && !combined) {
+      push(
+        "transcription",
+        r.translate_model,
+        r.created_at,
+        r.translate_cost_usd,
+        r.translate_input_tokens,
+        r.translate_output_tokens
+      );
+    }
+  }
+
+  const wordInfos = db
+    .prepare(`SELECT created_at, model, input_tokens, output_tokens, cost_usd FROM word_info_requests`)
+    .all() as { created_at: string; model: string; input_tokens: number; output_tokens: number; cost_usd: number }[];
+  for (const r of wordInfos) {
+    push("word-info", r.model, r.created_at, r.cost_usd, r.input_tokens, r.output_tokens);
+  }
+
+  const feedbacks = db
+    .prepare(`SELECT created_at, model, input_tokens, output_tokens, cost_usd FROM writing_feedback_requests`)
+    .all() as { created_at: string; model: string; input_tokens: number; output_tokens: number; cost_usd: number }[];
+  for (const r of feedbacks) {
+    push("writing-feedback", r.model, r.created_at, r.cost_usd, r.input_tokens, r.output_tokens);
+  }
+
+  // tts_audio.model は tier キー（"flash" / "pro"）で保存されるため、キャリア判定・モデル表示は
+  // 正規のモデルID（gemini-2.5-*-tts）に読み替える（cost 見積りも生成時に MODEL_PRESETS で正規化済み）。
+  const tts = db
+    .prepare(`SELECT created_at, model, input_tokens, output_tokens, cost_usd FROM tts_audio`)
+    .all() as { created_at: string; model: string; input_tokens: number; output_tokens: number; cost_usd: number }[];
+  for (const r of tts) {
+    const canonicalModel = MODEL_PRESETS[r.model as ModelKey] ?? r.model;
+    push("tts", canonicalModel, r.created_at, r.cost_usd, r.input_tokens, r.output_tokens);
+  }
+
+  const illustrations = db
+    .prepare(`SELECT created_at, model, input_tokens, output_tokens, cost_usd FROM word_illustrations`)
+    .all() as { created_at: string; model: string; input_tokens: number; output_tokens: number; cost_usd: number }[];
+  for (const r of illustrations) {
+    push("illustrations", r.model, r.created_at, r.cost_usd, r.input_tokens, r.output_tokens);
+  }
+
+  // model="rule" はイラスト系のルール生成（AI不使用でコスト0）→ provider "other" に寄る
+  const quizzes = db
+    .prepare(`SELECT created_at, model, input_tokens, output_tokens, cost_usd FROM quiz_questions`)
+    .all() as { created_at: string; model: string; input_tokens: number; output_tokens: number; cost_usd: number }[];
+  for (const r of quizzes) {
+    push("quiz", r.model, r.created_at, r.cost_usd, r.input_tokens, r.output_tokens);
+  }
+
+  return events;
+}
+
+export interface UsageCostSummary {
+  totalCostUsd: number;
+  monthCostUsd: number;
+  todayCostUsd: number;
+  totalEvents: number;
+}
+
+export interface ProviderCostRow {
+  provider: Provider;
+  costUsd: number;
+  count: number;
+  share: number; // コスト構成比 0..1
+}
+
+export interface FeatureCostRow {
+  feature: UsageFeature;
+  providers: Provider[]; // その機能に含まれるキャリア（コスト降順）
+  count: number;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+  share: number;
+  latestCreatedAt: string | null;
+}
+
+export interface ModelCostRow {
+  model: string;
+  provider: Provider;
+  costUsd: number;
+  count: number;
+  share: number;
+}
+
+export interface DailyCostRow {
+  date: string; // シアトル暦日 "YYYY-MM-DD"
+  costUsd: number;
+}
+
+export interface UsageCostReport {
+  summary: UsageCostSummary;
+  byProvider: ProviderCostRow[];
+  byFeature: FeatureCostRow[];
+  byModel: ModelCostRow[];
+  daily: DailyCostRow[];
+  dailyMaxCostUsd: number;
+  dailyDays: number;
+}
+
+/// 利用料金ページ用の全集計。全イベントを1スキャンでキャリア別/機能別/モデル別/日次/サマリに畳む。
+export function getUsageCostReport(dailyDays = 30): UsageCostReport {
+  const events = collectUsageEvents();
+  const todayKey = seattleDateKey(new Date().toISOString());
+  const monthKey = todayKey.slice(0, 7);
+
+  let total = 0;
+  let month = 0;
+  let today = 0;
+
+  const providerMap = new Map<Provider, { cost: number; count: number }>();
+  const featureMap = new Map<
+    UsageFeature,
+    { cost: number; count: number; input: number; output: number; providerCost: Map<Provider, number>; latest: string | null }
+  >();
+  const modelMap = new Map<string, { provider: Provider; cost: number; count: number }>();
+  const dailyMap = new Map<string, number>();
+
+  for (const e of events) {
+    total += e.costUsd;
+    const dayKey = seattleDateKey(e.createdAt);
+    if (dayKey.slice(0, 7) === monthKey) month += e.costUsd;
+    if (dayKey === todayKey) today += e.costUsd;
+
+    const p = providerMap.get(e.provider) ?? { cost: 0, count: 0 };
+    p.cost += e.costUsd;
+    p.count += 1;
+    providerMap.set(e.provider, p);
+
+    const f =
+      featureMap.get(e.feature) ??
+      { cost: 0, count: 0, input: 0, output: 0, providerCost: new Map<Provider, number>(), latest: null };
+    f.cost += e.costUsd;
+    f.count += 1;
+    f.input += e.inputTokens;
+    f.output += e.outputTokens;
+    f.providerCost.set(e.provider, (f.providerCost.get(e.provider) ?? 0) + e.costUsd);
+    if (!f.latest || e.createdAt > f.latest) f.latest = e.createdAt;
+    featureMap.set(e.feature, f);
+
+    const m = modelMap.get(e.model) ?? { provider: e.provider, cost: 0, count: 0 };
+    m.cost += e.costUsd;
+    m.count += 1;
+    modelMap.set(e.model, m);
+
+    dailyMap.set(dayKey, (dailyMap.get(dayKey) ?? 0) + e.costUsd);
+  }
+
+  const shareOf = (cost: number) => (total > 0 ? cost / total : 0);
+
+  const byProvider: ProviderCostRow[] = [...providerMap.entries()]
+    .map(([provider, v]) => ({ provider, costUsd: v.cost, count: v.count, share: shareOf(v.cost) }))
+    .sort((a, b) => b.costUsd - a.costUsd);
+
+  const byFeature: FeatureCostRow[] = [...featureMap.entries()]
+    .map(([feature, v]) => ({
+      feature,
+      providers: [...v.providerCost.entries()].sort((a, b) => b[1] - a[1]).map(([provider]) => provider),
+      count: v.count,
+      inputTokens: v.input,
+      outputTokens: v.output,
+      costUsd: v.cost,
+      share: shareOf(v.cost),
+      latestCreatedAt: v.latest,
+    }))
+    .sort((a, b) => b.costUsd - a.costUsd);
+
+  const byModel: ModelCostRow[] = [...modelMap.entries()]
+    .map(([model, v]) => ({ model, provider: v.provider, costUsd: v.cost, count: v.count, share: shareOf(v.cost) }))
+    .sort((a, b) => b.costUsd - a.costUsd);
+
+  const daily: DailyCostRow[] = lastNSeattleDates(dailyDays, todayKey).map((date) => ({
+    date,
+    costUsd: dailyMap.get(date) ?? 0,
+  }));
+  const dailyMaxCostUsd = daily.reduce((mx, d) => Math.max(mx, d.costUsd), 0);
+
+  return {
+    summary: { totalCostUsd: total, monthCostUsd: month, todayCostUsd: today, totalEvents: events.length },
+    byProvider,
+    byFeature,
+    byModel,
+    daily,
+    dailyMaxCostUsd,
+    dailyDays,
+  };
 }

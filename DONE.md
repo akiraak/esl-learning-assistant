@@ -1,5 +1,16 @@
 # DONE
 
+- [x] 2026-07-06 AI利用料金を一覧できる画面を管理画面に作成（`/admin/usage`「利用料金」）
+      cost_usd を持つ7テーブルを共通イベント形に正規化し、キャリア（OpenAI/Gemini/Claude/その他）別・
+      機能別・モデル別・日次（直近30日）と、総額/当月/当日サマリを1スキャンで集計して表示する読み取り専用ページ。
+      - Phase 1a: `pricing.ts` に `providerForModel`（単価テーブル所属→ID接頭辞フォールバック）と `providerLabel` を追加。
+      - Phase 1b: `db.ts` に `getUsageCostReport()` ＋正規化ヘルパを追加（スキーマ変更なし・tz日付バケツは America/Los_Angeles）。
+        OCR/文字起こしは ocr/translate を2イベントに分解し統合呼び出しは重複計上を回避。
+      - Phase 2: `admin.ts` に `/admin/usage` ルート＋ナビ「利用料金」を追加。既存「AI料金」は誤認防止で「AI料金（単価）」に改称。
+      - 実データで検証: 機能別コスト＝各テーブルの SUM(cost_usd)、総額＝全テーブル合算に一致（浮動小数誤差のみ）。
+      - 実装中に判明した2点を修正: ①TTS の `model` は tier キー（"flash"/"pro"）保存のため正規モデルIDに読み替えて
+        Gemini 判定・表示。②per-part コスト列導入前の旧 requests 行（cost_usd のみ有効）は全額を OCR 側に寄せて総額を落とさない。
+
 - [x] 2026-07-06 "lazy" のAI生成読み上げがおかしい件を調査し、音声を作り直す導線を追加
       調査結果: 生成プロンプト（単語情報・クイズ・TTS）自体に "lazy" 固有の不具合は無く、
       内容・音声とも再現テストでほぼ正常（bare "lazy" は 8回中1回だけ "Lacy" と不明瞭化する程度）。

@@ -52,6 +52,36 @@ let currentPricing: PricingTable = {
   ...structuredClone(DEFAULT_IMAGE_PRICING),
 };
 
+// AIキャリア（プロバイダ）。コスト集計をキャリア別に俯瞰するための区分。
+export type Provider = "openai" | "gemini" | "claude" | "other";
+
+/// モデルIDからキャリアを判定する（キャリア知識の単一ソース。db.ts / admin.ts から共用）。
+/// まず単価テーブルの所属で確定し、未知モデルはIDの接頭辞でフォールバックする。
+/// それでも不明なら "other"（将来モデル追加時も落ちないように）。
+export function providerForModel(model: string): Provider {
+  if (DEFAULT_PRICING[model]) return "claude";
+  if (DEFAULT_TTS_PRICING[model] || DEFAULT_TRANSCRIPTION_PRICING[model]) return "gemini";
+  if (DEFAULT_IMAGE_PRICING[model]) return "openai";
+  if (model.startsWith("claude-")) return "claude";
+  if (model.startsWith("gemini-")) return "gemini";
+  if (model.startsWith("gpt-") || model.startsWith("dall-e-")) return "openai";
+  return "other";
+}
+
+/// キャリアの表示名（画面表示用）。"other" はクイズのルール生成（AI不使用）等を含む。
+export function providerLabel(provider: Provider): string {
+  switch (provider) {
+    case "openai":
+      return "OpenAI";
+    case "gemini":
+      return "Gemini";
+    case "claude":
+      return "Claude";
+    default:
+      return "その他";
+  }
+}
+
 export function estimateCostUsd(model: string, inputTokens: number, outputTokens: number): number {
   const pricing = currentPricing[model];
   if (!pricing) return 0;

@@ -17,6 +17,7 @@ import {
   getTranscriptionLog,
   getTtsAudioByHash,
   getTtsAudioById,
+  getUsageCostReport,
   getWordIllustrationById,
   getWordInfoLog,
   getWritingFeedbackLog,
@@ -39,6 +40,8 @@ import {
   TranscriptionLogRow,
   upsertStoredWord,
   upsertWordIllustration,
+  USAGE_APPROX_FEATURES,
+  type UsageFeature,
   WordInfoLogRow,
   WritingFeedbackLogRow,
 } from "./db";
@@ -47,7 +50,7 @@ import { generateWordInfo, type WordInfo } from "./wordInfo";
 import { type WritingFeedback } from "./writingFeedback";
 import { generateQuizQuestions, type QuizQuestion } from "./quizQuestions";
 import { generateIllustration, ILLUSTRATION_MODEL } from "./illustration";
-import { DEFAULT_IMAGE_PRICING, DEFAULT_PRICING, DEFAULT_TTS_PRICING, estimateCostUsd, getCurrentPricing } from "./pricing";
+import { DEFAULT_IMAGE_PRICING, DEFAULT_PRICING, DEFAULT_TTS_PRICING, estimateCostUsd, getCurrentPricing, providerLabel, type Provider } from "./pricing";
 import { fetchAndApplyPricing, fetchAndApplyTtsPricing } from "./pricingSync";
 import { logger } from "./logger";
 import {
@@ -180,7 +183,7 @@ function renderMarkdown(value: string | null): string {
   return marked.parse(escaped, { async: false, breaks: true }) as string;
 }
 
-type NavSection = "ocr" | "transcriptions" | "word-info" | "writing-feedback" | "words" | "quiz-questions" | "tts" | "illustrations" | "pricing" | "logs";
+type NavSection = "ocr" | "transcriptions" | "word-info" | "writing-feedback" | "words" | "quiz-questions" | "tts" | "illustrations" | "usage" | "pricing" | "logs";
 
 const NAV_ITEMS: Array<[NavSection, string, string]> = [
   ["ocr", "/admin", "OCR・翻訳ログ"],
@@ -191,7 +194,8 @@ const NAV_ITEMS: Array<[NavSection, string, string]> = [
   ["quiz-questions", "/admin/quiz-questions", "単語クイズ"],
   ["tts", "/admin/tts", "TTS一覧"],
   ["illustrations", "/admin/illustrations", "単語イラスト"],
-  ["pricing", "/admin/pricing", "AI料金"],
+  ["usage", "/admin/usage", "利用料金"],
+  ["pricing", "/admin/pricing", "AI料金（単価）"],
   ["logs", "/admin/system-logs", "システムログ"],
 ];
 
@@ -1172,6 +1176,164 @@ function modelUsage(model: string): string {
   if (model === ILLUSTRATION_MODEL) usages.push("単語イラスト");
   return usages.join(" / ");
 }
+
+// 利用料金ページ専用のスタイル（キャリアpill・構成比バー・日次バー・注記）
+const USAGE_STYLE = `
+  .note { color: #8B98A5; font-size: 12px; margin: 0 0 18px; max-width: 980px; line-height: 1.7; }
+  .note strong { color: #D29922; font-weight: 600; }
+  .share-cell { white-space: nowrap; }
+  .sharebar { display: inline-block; width: 110px; height: 8px; background: #1F2A35; border-radius: 4px; overflow: hidden; vertical-align: middle; margin-right: 8px; }
+  .sharebar > span { display: block; height: 100%; background: #38BDF8; }
+  .sharepct { color: #8B98A5; font-size: 12px; }
+  .prov { display: inline-block; font-size: 11.5px; font-weight: 600; padding: 1px 8px; border-radius: 4px; white-space: nowrap; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  .prov + .prov { margin-left: 4px; }
+  .prov-openai { color: #3FB950; background: rgba(63,185,80,0.12); border: 1px solid rgba(63,185,80,0.35); }
+  .prov-gemini { color: #58A6FF; background: rgba(88,166,255,0.12); border: 1px solid rgba(88,166,255,0.35); }
+  .prov-claude { color: #E3935D; background: rgba(227,147,93,0.14); border: 1px solid rgba(227,147,93,0.40); }
+  .prov-other  { color: #8B98A5; background: rgba(139,152,165,0.12); border: 1px solid rgba(139,152,165,0.30); }
+  .approx-tag { color: #D29922; font-size: 11px; margin-left: 6px; cursor: help; }
+  .daychart { max-width: 980px; }
+  .daychart .bars { display: flex; align-items: flex-end; gap: 2px; height: 120px; padding: 10px 12px; background: #111820; border: 1px solid #1F2A35; border-radius: 10px; }
+  .daychart .daybar { flex: 1 1 0; display: flex; align-items: flex-end; height: 100%; min-width: 2px; }
+  .daychart .daybar > span { width: 100%; background: #38BDF8; border-radius: 2px 2px 0 0; }
+  .daychart .axis { display: flex; justify-content: space-between; font-size: 11px; color: #66737F; padding: 4px 2px 0; }
+`;
+
+// 機能キー → 表示名 + 既存ログページへのリンク
+const USAGE_FEATURE_META: Record<UsageFeature, { label: string; href: string }> = {
+  ocr: { label: "OCR・翻訳", href: "/admin" },
+  transcription: { label: "音声文字起こし・翻訳", href: "/admin/transcriptions" },
+  "word-info": { label: "単語情報", href: "/admin/word-info" },
+  "writing-feedback": { label: "作文添削", href: "/admin/writing-feedback" },
+  tts: { label: "TTS音声", href: "/admin/tts" },
+  illustrations: { label: "単語イラスト", href: "/admin/illustrations" },
+  quiz: { label: "単語クイズ", href: "/admin/quiz-questions" },
+};
+
+function providerPill(provider: Provider): string {
+  return `<span class="prov prov-${provider}">${escapeHtml(providerLabel(provider))}</span>`;
+}
+
+function shareBar(share: number): string {
+  const pct = (share * 100).toFixed(1);
+  return `<span class="sharebar"><span style="width:${pct}%"></span></span><span class="sharepct">${pct}%</span>`;
+}
+
+adminRouter.get("/usage", (_req, res) => {
+  const { summary, byProvider, byFeature, byModel, daily, dailyMaxCostUsd, dailyDays } = getUsageCostReport(30);
+
+  const emptyRow = (cols: number) => `<tr><td colspan="${cols}" class="faint">データなし</td></tr>`;
+
+  const providerRows = byProvider.length
+    ? byProvider
+        .map(
+          (r) => `
+        <tr class="log-row">
+          <td>${providerPill(r.provider)}</td>
+          <td class="mono"><strong>$${r.costUsd.toFixed(4)}</strong></td>
+          <td class="share-cell">${shareBar(r.share)}</td>
+          <td class="mono dim">${r.count}</td>
+        </tr>`
+        )
+        .join("\n")
+    : emptyRow(4);
+
+  const featureRows = byFeature.length
+    ? byFeature
+        .map((r) => {
+          const meta = USAGE_FEATURE_META[r.feature];
+          const approx = USAGE_APPROX_FEATURES.has(r.feature)
+            ? `<span class="approx-tag" title="キャッシュ保存分のみの集計。再生成・削除の履歴は残らないため総額は下限の概算">≈概算</span>`
+            : "";
+          return `
+        <tr class="log-row">
+          <td><a href="${meta.href}">${escapeHtml(meta.label)}</a>${approx}</td>
+          <td>${r.providers.map(providerPill).join("")}</td>
+          <td class="mono"><strong>$${r.costUsd.toFixed(4)}</strong></td>
+          <td class="share-cell">${shareBar(r.share)}</td>
+          <td class="mono dim">in:${r.inputTokens.toLocaleString("en-US")}<br>out:${r.outputTokens.toLocaleString("en-US")}</td>
+          <td class="mono dim">${r.count}</td>
+          <td class="mono dim">${r.latestCreatedAt ? escapeHtml(formatSeattleTime(r.latestCreatedAt)) : "—"}</td>
+        </tr>`;
+        })
+        .join("\n")
+    : emptyRow(7);
+
+  const modelRows = byModel.length
+    ? byModel
+        .map(
+          (r) => `
+        <tr class="log-row">
+          <td class="mono">${escapeHtml(r.model)}</td>
+          <td>${providerPill(r.provider)}</td>
+          <td class="mono"><strong>$${r.costUsd.toFixed(4)}</strong></td>
+          <td class="share-cell">${shareBar(r.share)}</td>
+          <td class="mono dim">${r.count}</td>
+        </tr>`
+        )
+        .join("\n")
+    : emptyRow(5);
+
+  const dayBars = daily
+    .map((d) => {
+      const h =
+        dailyMaxCostUsd > 0 && d.costUsd > 0 ? Math.max(4, Math.round((d.costUsd / dailyMaxCostUsd) * 100)) : 0;
+      const bar = h > 0 ? `<span style="height:${h}%"></span>` : "";
+      return `<div class="daybar" title="${d.date}: $${d.costUsd.toFixed(4)}">${bar}</div>`;
+    })
+    .join("");
+  const firstDay = daily.length ? daily[0].date : "";
+  const lastDay = daily.length ? daily[daily.length - 1].date : "";
+
+  res.type("html").send(
+    renderPage(
+      "利用料金 - ESL Assistant",
+      USAGE_STYLE,
+      `
+        <h1>AI利用料金</h1>
+        <p class="page-sub">全機能のAPI実利用コストをキャリア・機能・モデル・日次で集計（時刻は ${SEATTLE_TZ} 基準）。単価表は<a href="/admin/pricing">AI料金（単価）</a>を参照。</p>
+        <p class="note"><strong>注記:</strong> TTS音声・単語イラスト・単語クイズ（<span class="approx-tag">≈概算</span>）はキャッシュ保存分のみの集計で、再生成・削除の履歴が残らないため総額は<strong>下限の概算</strong>です。他の4機能（OCR・翻訳／音声文字起こし／単語情報／作文添削）は呼び出しごとの追記ログなので累計として正確です。</p>
+        <div class="stats">
+          <div class="stat"><div class="lbl">総コスト</div><div class="val">$${summary.totalCostUsd.toFixed(2)}</div></div>
+          <div class="stat"><div class="lbl">当月コスト</div><div class="val">$${summary.monthCostUsd.toFixed(2)}</div></div>
+          <div class="stat"><div class="lbl">当日コスト</div><div class="val">$${summary.todayCostUsd.toFixed(2)}</div></div>
+          <div class="stat"><div class="lbl">イベント数</div><div class="val">${summary.totalEvents.toLocaleString("en-US")}<small>件</small></div></div>
+        </div>
+
+        <h2>キャリア別</h2>
+        <div class="card">
+          <table>
+            <thead><tr><th>キャリア</th><th>コスト</th><th>構成比</th><th>件数</th></tr></thead>
+            <tbody>${providerRows}</tbody>
+          </table>
+        </div>
+
+        <h2>機能別</h2>
+        <div class="card">
+          <table>
+            <thead><tr><th>機能</th><th>キャリア</th><th>コスト</th><th>構成比</th><th>トークン</th><th>件数</th><th>直近利用</th></tr></thead>
+            <tbody>${featureRows}</tbody>
+          </table>
+        </div>
+
+        <h2>モデル別</h2>
+        <div class="card">
+          <table>
+            <thead><tr><th>モデル</th><th>キャリア</th><th>コスト</th><th>構成比</th><th>件数</th></tr></thead>
+            <tbody>${modelRows}</tbody>
+          </table>
+        </div>
+
+        <h2>日次推移（直近${dailyDays}日）</h2>
+        <div class="daychart">
+          <div class="bars">${dayBars}</div>
+          <div class="axis"><span>${firstDay}</span><span>${lastDay}</span></div>
+        </div>
+      `,
+      "usage"
+    )
+  );
+});
 
 adminRouter.get("/pricing", (_req, res) => {
   const pricing = getCurrentPricing();
