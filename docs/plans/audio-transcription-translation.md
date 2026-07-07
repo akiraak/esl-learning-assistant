@@ -142,14 +142,21 @@ backend 呼び出し → ③ pending/manual を状態遷移 → ④ 詳細 View 
       `.completed` / 失敗は `.failed` ＋ `error.localizedDescription`。mimeType 表・14MB 上限は backend と一致
 - [x] `xcodebuild`（iPhone 17 Simulator）で BUILD SUCCEEDED を確認。XcodeGen glob のため pbxproj 手編集は不要
 
-### Phase 4: iOS — 詳細画面UI
-- [ ] `AudioDetailView` に **Transcript セクション** を追加し `processingStatus` で分岐:
-      未実行=「文字起こし」ボタン / processing=`ProcessingIndicator`（明滅＋Shimmer）/
-      failed=エラー＋retry / completed=`TappableMarkdown(transcriptText)` ＋ `Markdown(translatedText)` ＋
-      再文字起こしボタン
-- [ ] `ProcessingIndicator.swift` の `PhotoProcessingView` ラベルを汎用化 or 音声用ラベルで再利用
-- [ ] （任意）`AudioClipRow` に文字起こし状態の小さなインジケータ
-- [ ] `xcodebuild` ビルド確認
+### Phase 4: iOS — 詳細画面UI ✅ 完了（2026-07-06）
+- [x] `AudioDetailView` に **Transcript セクション**（`Form` の Section）を追加し `processingStatus` で分岐:
+      `.pending`=「Transcribe」ボタン / `.processing`=`ProcessingIndicatorView`（明滅＋Shimmer）/
+      `.failed`=エラー文＋「Try Again」/ `.completed`=`TappableMarkdown(transcriptText)` ＋
+      `Markdown(translatedText).markdownHeadingHighlight()` ＋「Re-transcribe」ボタン。
+      実行は `RemoteTranscriptionTranslationService.process(clip)` → `modelContext.saveOrLog()`。
+      写真OCRと異なり**自動実行はせず手動ボタンのみ**（`.task` トリガ無し）。
+      `.wordTapRegistration(lesson: primaryLesson)` で英文の単語タップ登録を有効化
+      （`sourcePhoto` 相当＝音声由来ソースは未実装のため未指定＝Phase 6 の課題）
+- [x] `ProcessingIndicator.swift` の `PhotoProcessingView` を **`ProcessingIndicatorView(label:)`** に汎用化
+      （ラベルを引数化）。写真側呼び出しは `label: "Processing OCR & translation…"`、
+      音声側は `label: "Transcribing & translating…"`
+- [x] `AudioClipRow` に文字起こし状態のミニインジケータを追加
+      （完了=`text.bubble` / 処理中=`ProgressView(.mini)` / 失敗=`exclamationmark.triangle.fill` / 未実行=なし）
+- [x] `xcodebuild`（iPhone 17 Simulator, Debug）で BUILD SUCCEEDED を確認
 
 ### Phase 5: バックエンド管理画面
 - [ ] `admin.ts` の `NavSection`/`NAV_ITEMS` に "transcriptions" を追加し、一覧ページ

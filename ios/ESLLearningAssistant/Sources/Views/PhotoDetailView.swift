@@ -29,7 +29,7 @@ struct PhotoDetailView: View {
                 switch photo.processingStatus {
                 case .pending, .processing:
                     VStack(alignment: .leading, spacing: 16) {
-                        PhotoProcessingView()
+                        ProcessingIndicatorView(label: "Processing OCR & translation…")
                         // 稀にアプリ強制終了で processing のまま固まった場合の回復手段（控えめに）
                         retryButton
                     }

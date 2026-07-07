@@ -160,11 +160,34 @@ struct AudioClipRow: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
+            // 文字起こしの状態を控えめに示す（未実行は何も出さない）
+            transcriptStatusBadge
+
             // 詳細へ遷移できることを示す標準の開示インジケータ
             Image(systemName: "chevron.forward")
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(.tertiary)
         }
         .contentShape(Rectangle())
+    }
+
+    /// 文字起こし状態のミニインジケータ。完了=吹き出し、処理中=スピナー、失敗=警告、未実行=なし。
+    @ViewBuilder
+    private var transcriptStatusBadge: some View {
+        switch clip.processingStatus {
+        case .completed:
+            Image(systemName: "text.bubble")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        case .processing:
+            ProgressView()
+                .controlSize(.mini)
+        case .failed:
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.footnote)
+                .foregroundStyle(.orange)
+        case .pending:
+            EmptyView()
+        }
     }
 }

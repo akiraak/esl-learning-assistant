@@ -1,7 +1,7 @@
 import SwiftUI
 
-// OCR/翻訳のバックグラウンド処理中に「動いている」ことを伝えるアニメーション部品群。
-// レッスン画面（PhotoRow）とコンテンツ詳細画面（PhotoDetailView）で共有する。
+// OCR/翻訳・音声文字起こしのバックグラウンド処理中に「動いている」ことを伝えるアニメーション部品群。
+// コンテンツ詳細画面（PhotoDetailView・AudioDetailView）で共有する。
 
 /// opacity を呼吸のように上下させる pulse アニメーション修飾子。
 private struct PulseModifier: ViewModifier {
@@ -64,12 +64,16 @@ struct ShimmerSkeletonLine: View {
 }
 
 /// コンテンツ詳細画面の「処理中」表示。スピナー + 明滅ラベル + シマーのスケルトン段落。
-struct PhotoProcessingView: View {
+/// ラベルは呼び出し側で差し替える（写真=OCR&翻訳、音声=文字起こし&翻訳）。
+struct ProcessingIndicatorView: View {
+    /// 明滅する処理中ラベル。
+    var label: String = "Processing…"
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 10) {
                 ProgressView()
-                TappableEnglishText(text: "Processing OCR & translation…", color: .secondary)
+                TappableEnglishText(text: label, color: .secondary)
                     .foregroundStyle(.secondary)
                     .pulse()
             }
