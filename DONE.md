@@ -1,5 +1,17 @@
 # DONE
 
+- [x] 2026-07-07 既存単語を「Add Word」フォームで弾き、説明文を表示するようにした
+      手動の Add Word フォーム（`WordAddView`）は同綴りの既存語を入力しても `WordRegistrar` が黙って
+      再利用しシートを閉じるだけで、ユーザーが重複追加に気付けなかった。入力中に重複を検知して第1セクション
+      footer を警告ラベル（orange・`exclamationmark.triangle.fill`）に差し替え、Add ボタンを無効化する
+      （＝アプリ側ではじく）。判定はテキストと選択レッスンにリアルタイム追従。
+      - レッスン未指定で同綴り既存語 → 「your word list」重複としてはじく。
+      - レッスン指定でその単語が既にそのレッスンに出現 → 「this lesson」重複としてはじく。
+      - レッスン指定でまだ未紐付けなら新規リンクが生じる有用な操作なので許可（既存語を新レッスンに紐付け可）。
+      英文タップ登録は既に重複を扱えているため変更なし。UI テスト `WordAddDuplicateUITests`（case-insensitive 含む）
+      を追加し、`LessonWordAddUITests`（fixedLesson で新規語追加）の回帰なしを確認。
+      [plan](docs/plans/archive/word-add-duplicate-rejection.md)
+
 - [x] 2026-07-05 単語出題の音声問題で、回答後にだけ表示すべき読み上げ英文が最初から表示されるバグを修正
       音声形式クイズの読み上げ英文（audioText / スクリプト）は、コミット 27accfd で `feedback != nil`
       （回答済み）ガード付きの `audioScript` として表示するよう実装済み。回答前に常時表示されるのは

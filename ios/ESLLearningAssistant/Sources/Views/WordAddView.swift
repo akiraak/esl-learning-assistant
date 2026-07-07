@@ -29,7 +29,14 @@ struct WordAddView: View {
                         .focused($isTextFocused)
                         .accessibilityIdentifier("wordTextField")
                 } footer: {
-                    TappableEnglishText(text: "The translation, meanings, and examples will be generated automatically by AI.")
+                    if let duplicateMessage {
+                        // 既存単語はアプリ側で弾く（Add 無効化）。説明文で理由を伝える。
+                        Label(duplicateMessage, systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                            .accessibilityIdentifier("wordDuplicateWarning")
+                    } else {
+                        TappableEnglishText(text: "The translation, meanings, and examples will be generated automatically by AI.")
+                    }
                 }
 
                 Section {
@@ -66,7 +73,7 @@ struct WordAddView: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Add", action: addWord)
-                        .disabled(trimmedText.isEmpty)
+                        .disabled(trimmedText.isEmpty || duplicateMessage != nil)
                 }
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -82,16 +89,39 @@ struct WordAddView: View {
         text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// 実際に紐付けられるレッスン（固定レッスン優先、無ければ Picker 選択）。
+    private var effectiveLesson: Lesson? {
+        fixedLesson
+            ?? selectedLessonID.flatMap { id in classes.flatMap(\.lessons).first { $0.id == id } }
+    }
+
+    /// 入力語が「純粋な重複」なら弾く理由メッセージを返す（Add を無効化）。nil なら追加可能。
+    /// - レッスン未指定で同綴り既存語あり → 一覧の重複。
+    /// - レッスン指定ありでその単語が既にそのレッスンに出現 → レッスン内の重複。
+    /// - レッスン指定ありでまだ未紐付けなら「新規リンク」が生じる有用な操作なので弾かない（nil）。
+    private var duplicateMessage: String? {
+        guard !trimmedText.isEmpty else { return nil }
+        guard let existing = allWords.first(where: {
+            $0.text.compare(trimmedText, options: [.caseInsensitive]) == .orderedSame
+        }) else { return nil }
+
+        if let lesson = effectiveLesson {
+            let alreadyInLesson = existing.occurrences.contains { $0.lesson.id == lesson.id }
+            return alreadyInLesson ? "“\(existing.text)” is already in this lesson." : nil
+        }
+        return "“\(existing.text)” is already in your word list."
+    }
+
     private func addWord() {
+        // 重複時は Add ボタンが無効なので通常ここには来ないが、防御的にガードする。
+        guard duplicateMessage == nil else { return }
         // 同綴りの既存Word再利用・新規作成・レッスン紐付け・保存・AI生成トリガは WordRegistrar に集約
         // （英文タップ登録と共通。data-model.md 6章）
-        let lesson = fixedLesson
-            ?? selectedLessonID.flatMap { id in classes.flatMap(\.lessons).first { $0.id == id } }
         WordRegistrar.register(
             text: trimmedText,
             in: modelContext,
             existingWords: allWords,
-            lesson: lesson
+            lesson: effectiveLesson
         )
         dismiss()
     }
