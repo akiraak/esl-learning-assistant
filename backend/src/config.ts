@@ -22,6 +22,7 @@ export const config = {
   imagesDir: path.resolve(__dirname, "..", "data", "images"),
   ttsDir: path.resolve(__dirname, "..", "data", "tts"),
   audioDir: path.resolve(__dirname, "..", "data", "audio"),
+  documentsDir: path.resolve(__dirname, "..", "data", "documents"),
   illustrationsDir: path.resolve(__dirname, "..", "data", "illustrations"),
   dbPath: path.resolve(__dirname, "..", "data", "db.sqlite"),
 };

@@ -81,8 +81,26 @@ ESL の授業では、教科書ページの撮影（3.1 OCR）や配布音声（
 - バリデーション: `fileBase64` 必須、`mediaType` ホワイトリスト、`targetLanguage` 必須、デコード後 0 バイト拒否、**サイズ上限**（`MAX_AUDIO_BYTES` に倣い `express.json` の 25mb 上限に収まる値を設定。超過は「短い文書に分割」を促す 400）。
 - 処理: §2.2 のハイブリッド抽出 → 翻訳。スキャンPDFは `ocrAndTranslate` をページ単位で再利用。
 - ログ: 既存 `insertRequestLog` 相当を **`document_requests` テーブル**（新規 or 既存ログ基盤に相乗り）に記録。トークン数・コスト（抽出/OCR＋翻訳の内訳）・レイテンシ・status・errorMessage。管理画面表示は Phase 5。
-- 依存追加: `pdf-parse`（PDFテキスト抽出）, `pdf` → 画像化用（例 `pdfjs-dist` + canvas 等、スキャンOCR用）, `mammoth`（DOCX）。導入コストと bundle への影響を確認。
 - ファイル本体の保存: 既存 `imagesDir`/`audio` に倣い `data/documents/` に保存（管理画面での参照用。要否は Phase 5 で確定）。
+
+**依存・スキャンOCR経路の確定（Phase 2 実装時決定。当初案から変更）**
+
+当初案は `pdfjs-dist` + `canvas` でページを画像化し `ocrAndTranslate` をページ単位で再利用する構成だったが、以下の理由で **不採用**:
+
+- `canvas` はネイティブビルド（node-gyp / cairo）が必要で macOS / デプロイ環境で脆い。
+- Claude（`ocrModel = claude-sonnet-5`）は **PDF を `document` base64 ブロックでネイティブに受け付ける**（beta 不要・32MB/600ページ上限。`claude-api` skill 確認済み）。スキャンPDFは PDF 全体をそのまま Claude に渡して OCR＋翻訳を **1回の呼び出し** で行える（複数ページも内部処理）。
+
+したがって **ネイティブ依存ゼロ・純JS 2依存のみ** で §2.2 のハイブリッドを実現する:
+
+| 経路 | 手段 | AI課金 |
+| --- | --- | --- |
+| DOCX | `mammoth`（純JS）でテキスト抽出 → 既存 `translateText` | 翻訳のみ |
+| PDF（テキスト層あり） | `pdf-parse` v2（純JS）で抽出 → `translateText` | 翻訳のみ |
+| PDF（テキスト層なし＝スキャン） | Claude の `document` ブロックで OCR＋翻訳（`documentExtract.ts` の `ocrAndTranslatePdf`） | OCR＋翻訳（結合1回） |
+
+- 判定: `pdf-parse` の抽出結果から空白を除いた文字数が `MIN_TEXT_LAYER_CHARS`(=16) 未満なら「スキャン」とみなし OCR 経路へ（ドキュメント単位の二択。§2.2）。
+- `translateText` に任意 `maxTokens` を追加（既定 4096・後方互換）。文書は `DOCUMENT_MAX_TOKENS`(=16384) を渡す。長尺の切り詰めは将来対応（streaming＋分割。§9.1）。
+- `pdf-parse` は v2（`import { PDFParse } from "pdf-parse"` → `new PDFParse({data}).getText()`）。自前で型を同梱するため `@types/pdf-parse`(v1) は入れない。`getText().text` はページ区切り `-- N of M --` を混ぜるため `pages[].text` を自前連結して混入を避ける。
 
 ## 5. iOS 取り込み UI（Phase 3 詳細）
 
@@ -151,12 +169,13 @@ ESL の授業では、教科書ページの撮影（3.1 OCR）や配布音声（
 ### 実装時に詰める技術課題（着手可能・実装内で解決）
 1. 長尺・多ページ文書の分割・コスト上限方針（v1 は単一ドキュメント一括、上限超過は送信前に弾く）。
 2. `WordOccurrence.sourceDocument?` / `Lesson.documents` 追加時のマイグレーション検証（**[[swiftdata-codable-migration-pitfall]]** の storage+computed 方式を `processingStatus` に適用済み。関連追加自体の軽量マイグレーション可否を実機確認）。
-3. backend の PDF テキスト抽出・PDF 画像化（スキャンOCR用）・DOCX 抽出ライブラリの選定と依存サイズ（`pdf-parse` / `pdfjs-dist`+canvas / `mammoth` 等の候補を Phase 2 冒頭で確定）。
+3. ~~backend の PDF テキスト抽出・PDF 画像化（スキャンOCR用）・DOCX 抽出ライブラリの選定と依存サイズ~~ **→ 確定（§4「依存・スキャンOCR経路の確定」）。`pdf-parse` v2 + `mammoth`（純JS 2依存）＋スキャンは Claude の PDF `document` ブロック。`pdfjs-dist`+canvas は不採用。**
 
 ## 10. Phase 一覧（TODO 子タスク対応）
 
-- [ ] Phase 1: `Document` データモデル追加（+ ModelContainer 登録 / DebugDataCleaner / data-model.md）
-- [ ] Phase 2: backend 抽出＋翻訳エンドポイント（PDF/DOCX＋スキャンOCRフォールバック＋コストログ）
+- [x] Phase 1: `Document` データモデル追加（+ ModelContainer 登録 / DebugDataCleaner / data-model.md）
+- [x] Phase 2: backend 抽出＋翻訳エンドポイント（PDF/DOCX＋スキャンOCRフォールバック＋コストログ）
+  - `POST /api/document-extract-translate`（`documentExtract.ts` / `document_requests` テーブル / `data/documents/` 保存）を実装。DOCX・テキスト層PDF・スキャンPDF(OCR) の3経路を実機の Claude で end-to-end 確認済み。テスト（Phase 6）は未着手。
 - [ ] Phase 3: iOS 取り込み UI（AddContentTypeView 追加 / DocumentFileImporter / Storage / Remote サービス）
 - [ ] Phase 4: iOS 詳細画面 DocumentDetailView（英文タップ登録 / 訳表示 / 削除 / 一覧導線）
 - [ ] Phase 4.5: アプリ内ファイル表示（PDF=PDFView / DOCX=QuickLook の `DocumentFileViewer`）

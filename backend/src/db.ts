@@ -7,6 +7,7 @@ import { MODEL_PRESETS, type ModelKey } from "./tts";
 fs.mkdirSync(config.imagesDir, { recursive: true });
 fs.mkdirSync(config.ttsDir, { recursive: true });
 fs.mkdirSync(config.audioDir, { recursive: true });
+fs.mkdirSync(config.documentsDir, { recursive: true });
 fs.mkdirSync(config.illustrationsDir, { recursive: true });
 
 export const db = new Database(config.dbPath);
@@ -197,6 +198,36 @@ db.exec(`
     translate_input_tokens INTEGER NOT NULL DEFAULT 0,
     translate_output_tokens INTEGER NOT NULL DEFAULT 0,
     transcription_cost_usd REAL NOT NULL DEFAULT 0,
+    translate_cost_usd REAL NOT NULL DEFAULT 0,
+    cost_usd REAL NOT NULL DEFAULT 0,
+    status TEXT NOT NULL,
+    error_message TEXT,
+    latency_ms INTEGER NOT NULL DEFAULT 0
+  )
+`);
+
+// 文書抽出＋翻訳（/api/document-extract-translate）のログ。音声の transcription_requests に倣った構造で、
+// 文字起こし→抽出（テキスト層抽出 or スキャンOCR）に読み替えたもの。結果本体は iOS 側 Document に保存し、
+// ここは料金・履歴・管理画面での参照（Phase 5）のためのログ用途。extract_model はスキャンOCR時のみ入る。
+db.exec(`
+  CREATE TABLE IF NOT EXISTS document_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    document_filename TEXT,
+    media_type TEXT NOT NULL,
+    file_kind TEXT NOT NULL,
+    target_language TEXT NOT NULL,
+    byte_size INTEGER NOT NULL DEFAULT 0,
+    extraction_method TEXT,
+    extracted_text TEXT,
+    translated_text TEXT,
+    extract_model TEXT,
+    extract_input_tokens INTEGER NOT NULL DEFAULT 0,
+    extract_output_tokens INTEGER NOT NULL DEFAULT 0,
+    translate_model TEXT,
+    translate_input_tokens INTEGER NOT NULL DEFAULT 0,
+    translate_output_tokens INTEGER NOT NULL DEFAULT 0,
+    extract_cost_usd REAL NOT NULL DEFAULT 0,
     translate_cost_usd REAL NOT NULL DEFAULT 0,
     cost_usd REAL NOT NULL DEFAULT 0,
     status TEXT NOT NULL,
@@ -703,6 +734,112 @@ export function getTranscriptionLog(id: number): TranscriptionLogRow | undefined
 
 export function deleteTranscriptionLog(id: number): void {
   db.prepare("DELETE FROM transcription_requests WHERE id = ?").run(id);
+}
+
+export interface DocumentLogInput {
+  documentFilename: string | null;
+  mediaType: string;
+  fileKind: string;
+  targetLanguage: string;
+  byteSize: number;
+  extractionMethod: string | null;
+  extractedText: string | null;
+  translatedText: string | null;
+  extractModel: string | null;
+  extractInputTokens: number;
+  extractOutputTokens: number;
+  translateModel: string | null;
+  translateInputTokens: number;
+  translateOutputTokens: number;
+  extractCostUsd: number;
+  translateCostUsd: number;
+  costUsd: number;
+  status: "success" | "error";
+  errorMessage: string | null;
+  latencyMs: number;
+}
+
+const insertDocumentStmt = db.prepare(`
+  INSERT INTO document_requests (
+    created_at, document_filename, media_type, file_kind, target_language, byte_size,
+    extraction_method, extracted_text, translated_text,
+    extract_model, extract_input_tokens, extract_output_tokens,
+    translate_model, translate_input_tokens, translate_output_tokens,
+    extract_cost_usd, translate_cost_usd, cost_usd, status, error_message, latency_ms
+  ) VALUES (
+    @createdAt, @documentFilename, @mediaType, @fileKind, @targetLanguage, @byteSize,
+    @extractionMethod, @extractedText, @translatedText,
+    @extractModel, @extractInputTokens, @extractOutputTokens,
+    @translateModel, @translateInputTokens, @translateOutputTokens,
+    @extractCostUsd, @translateCostUsd, @costUsd, @status, @errorMessage, @latencyMs
+  )
+`);
+
+export function insertDocumentLog(input: DocumentLogInput): void {
+  insertDocumentStmt.run({
+    createdAt: new Date().toISOString(),
+    documentFilename: input.documentFilename,
+    mediaType: input.mediaType,
+    fileKind: input.fileKind,
+    targetLanguage: input.targetLanguage,
+    byteSize: input.byteSize,
+    extractionMethod: input.extractionMethod,
+    extractedText: input.extractedText,
+    translatedText: input.translatedText,
+    extractModel: input.extractModel,
+    extractInputTokens: input.extractInputTokens,
+    extractOutputTokens: input.extractOutputTokens,
+    translateModel: input.translateModel,
+    translateInputTokens: input.translateInputTokens,
+    translateOutputTokens: input.translateOutputTokens,
+    extractCostUsd: input.extractCostUsd,
+    translateCostUsd: input.translateCostUsd,
+    costUsd: input.costUsd,
+    status: input.status,
+    errorMessage: input.errorMessage,
+    latencyMs: input.latencyMs,
+  });
+}
+
+export interface DocumentLogRow {
+  id: number;
+  created_at: string;
+  document_filename: string | null;
+  media_type: string;
+  file_kind: string;
+  target_language: string;
+  byte_size: number;
+  extraction_method: string | null;
+  extracted_text: string | null;
+  translated_text: string | null;
+  extract_model: string | null;
+  extract_input_tokens: number;
+  extract_output_tokens: number;
+  translate_model: string | null;
+  translate_input_tokens: number;
+  translate_output_tokens: number;
+  extract_cost_usd: number;
+  translate_cost_usd: number;
+  cost_usd: number;
+  status: string;
+  error_message: string | null;
+  latency_ms: number;
+}
+
+export function listRecentDocumentLogs(limit: number): DocumentLogRow[] {
+  return db
+    .prepare("SELECT * FROM document_requests ORDER BY id DESC LIMIT ?")
+    .all(limit) as DocumentLogRow[];
+}
+
+export function getDocumentLog(id: number): DocumentLogRow | undefined {
+  return db
+    .prepare("SELECT * FROM document_requests WHERE id = ?")
+    .get(id) as DocumentLogRow | undefined;
+}
+
+export function deleteDocumentLog(id: number): void {
+  db.prepare("DELETE FROM document_requests WHERE id = ?").run(id);
 }
 
 export interface StoredWordRow {

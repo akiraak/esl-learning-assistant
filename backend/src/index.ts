@@ -9,6 +9,7 @@ import {
   getStoredNormalization,
   getStoredWord,
   getWordIllustrationByHash,
+  insertDocumentLog,
   insertRequestLog,
   insertTranscriptionLog,
   insertWordInfoLog,
@@ -30,6 +31,11 @@ import {
   isSupportedAudioMimeType,
   SUPPORTED_AUDIO_MIME_EXTENSIONS,
 } from "./transcribe";
+import {
+  extractAndTranslateDocument,
+  isSupportedDocumentMimeType,
+  SUPPORTED_DOCUMENT_MIME_EXTENSIONS,
+} from "./documentExtract";
 import { generateWordInfo, type WordInfo } from "./wordInfo";
 import { normalizeWord } from "./wordNormalize";
 import { generateWritingFeedback, type WritingFeedbackRound } from "./writingFeedback";
@@ -315,6 +321,139 @@ app.post("/api/transcribe-translate", async (req, res) => {
     });
 
     logger.error(`transcribe-translate: failed audio=${audioFilename} latencyMs=${latencyMs} error=${errorMessage}`);
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// 文書インライン送信の上限（生バイト）。base64 は約1.33倍に膨らむため 14MB でも JSON ボディは
+// ~18.7MB で express.json の 25mb 上限に収まり、この 400 ガードが 413 より先に働く。Claude の
+// PDF document 上限（32MB/リクエスト）にも収まる。超過は「短い文書に分割」を促す（長尺は将来対応。§9.1）。
+const MAX_DOCUMENT_BYTES = 14 * 1024 * 1024;
+
+// 文書（base64 PDF/DOCX）→ 抽出（テキスト層抽出 or スキャンOCR）→ 既存 translateText で英→目的言語。
+// 写真OCR（/api/ocr-translate）・音声（/api/transcribe-translate）と同型: サーバキャッシュは持たず
+// 結果は iOS 側 Document に保存、ここでは料金・履歴を document_requests に記録する（管理画面表示は Phase 5）。
+app.post("/api/document-extract-translate", async (req, res) => {
+  const { fileBase64, mediaType, targetLanguage } = req.body ?? {};
+
+  if (typeof fileBase64 !== "string" || !fileBase64) {
+    logger.warn("document-extract-translate: rejected (fileBase64 is required)");
+    res.status(400).json({ error: "fileBase64 is required" });
+    return;
+  }
+  if (!isSupportedDocumentMimeType(mediaType)) {
+    logger.warn(`document-extract-translate: rejected (unsupported mediaType: ${String(mediaType)})`);
+    res.status(400).json({
+      error: `mediaType must be one of: ${Object.keys(SUPPORTED_DOCUMENT_MIME_EXTENSIONS).join(", ")}`,
+    });
+    return;
+  }
+  if (typeof targetLanguage !== "string" || !targetLanguage) {
+    logger.warn("document-extract-translate: rejected (targetLanguage is required)");
+    res.status(400).json({ error: "targetLanguage is required" });
+    return;
+  }
+
+  const fileBuffer = Buffer.from(fileBase64, "base64");
+  if (fileBuffer.length === 0) {
+    logger.warn("document-extract-translate: rejected (fileBase64 decoded to 0 bytes)");
+    res.status(400).json({ error: "fileBase64 is not valid base64 document data" });
+    return;
+  }
+  if (fileBuffer.length > MAX_DOCUMENT_BYTES) {
+    logger.warn(`document-extract-translate: rejected (document too large: ${fileBuffer.length} bytes)`);
+    res.status(400).json({
+      error: `document too large (${(fileBuffer.length / 1024 / 1024).toFixed(1)}MB, max ${MAX_DOCUMENT_BYTES / 1024 / 1024}MB). split into shorter documents`,
+    });
+    return;
+  }
+
+  const fileKind = SUPPORTED_DOCUMENT_MIME_EXTENSIONS[mediaType];
+  const documentFilename = `${Date.now()}-${crypto.randomUUID()}.${fileKind}`;
+  fs.writeFileSync(path.join(config.documentsDir, documentFilename), fileBuffer);
+
+  const startedAt = Date.now();
+  logger.info(
+    `document-extract-translate: start document=${documentFilename} bytes=${fileBuffer.length} ` +
+      `mediaType=${mediaType} targetLanguage=${targetLanguage} ` +
+      `ocrModel=${config.ocrModel} translateModel=${config.translateModel}`
+  );
+  try {
+    const result = await extractAndTranslateDocument(fileBuffer, mediaType, targetLanguage);
+    const latencyMs = Date.now() - startedAt;
+
+    const extractCostUsd = result.extractModel
+      ? estimateCostUsd(result.extractModel, result.extractInputTokens, result.extractOutputTokens)
+      : 0;
+    const translateCostUsd = estimateCostUsd(
+      result.translateModel,
+      result.translateInputTokens,
+      result.translateOutputTokens
+    );
+
+    insertDocumentLog({
+      documentFilename,
+      mediaType,
+      fileKind,
+      targetLanguage,
+      byteSize: fileBuffer.length,
+      extractionMethod: result.extractionMethod,
+      extractedText: result.extractedText,
+      translatedText: result.translatedText,
+      extractModel: result.extractModel,
+      extractInputTokens: result.extractInputTokens,
+      extractOutputTokens: result.extractOutputTokens,
+      translateModel: result.translateModel,
+      translateInputTokens: result.translateInputTokens,
+      translateOutputTokens: result.translateOutputTokens,
+      extractCostUsd,
+      translateCostUsd,
+      costUsd: extractCostUsd + translateCostUsd,
+      status: "success",
+      errorMessage: null,
+      latencyMs,
+    });
+
+    logger.info(
+      `document-extract-translate: success document=${documentFilename} latencyMs=${latencyMs} ` +
+        `method=${result.extractionMethod} ` +
+        `tokens=extract:${result.extractInputTokens}/${result.extractOutputTokens} ` +
+        `translate:${result.translateInputTokens}/${result.translateOutputTokens} ` +
+        `cost=$${(extractCostUsd + translateCostUsd).toFixed(4)}`
+    );
+    res.json({
+      extractedText: result.extractedText,
+      translatedText: result.translatedText,
+      translationLanguage: targetLanguage,
+    });
+  } catch (error) {
+    const latencyMs = Date.now() - startedAt;
+    const errorMessage = error instanceof Error ? error.message : String(error);
+
+    insertDocumentLog({
+      documentFilename,
+      mediaType,
+      fileKind,
+      targetLanguage,
+      byteSize: fileBuffer.length,
+      extractionMethod: null,
+      extractedText: null,
+      translatedText: null,
+      extractModel: null,
+      extractInputTokens: 0,
+      extractOutputTokens: 0,
+      translateModel: null,
+      translateInputTokens: 0,
+      translateOutputTokens: 0,
+      extractCostUsd: 0,
+      translateCostUsd: 0,
+      costUsd: 0,
+      status: "error",
+      errorMessage,
+      latencyMs,
+    });
+
+    logger.error(`document-extract-translate: failed document=${documentFilename} latencyMs=${latencyMs} error=${errorMessage}`);
     res.status(500).json({ error: errorMessage });
   }
 });

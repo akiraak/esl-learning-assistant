@@ -107,8 +107,9 @@ async function ocrImage(imageBase64: string, mediaType: "image/jpeg" | "image/pn
 }
 
 /// Markdown英文を目的言語へ翻訳する（config.translateModel 使用）。写真OCRだけでなく
-/// 音声文字起こしの英→日にも使い回すため export する。戻り値の text は翻訳後テキスト。
-export async function translateText(ocrText: string, targetLanguageCode: string) {
+/// 音声文字起こしの英→日、文書抽出の英→日にも使い回すため export する。戻り値の text は翻訳後テキスト。
+/// maxTokens 既定は写真1枚/音声1本ぶんに十分な 4096。複数ページ文書など長文では呼び出し側で引き上げる。
+export async function translateText(ocrText: string, targetLanguageCode: string, maxTokens = 4096) {
   const { json, inputTokens, outputTokens } = await callStructured<{ translatedText: string }>(
     config.translateModel,
     TRANSLATE_SCHEMA,
@@ -120,7 +121,8 @@ export async function translateText(ocrText: string, targetLanguageCode: string)
           `（translatedText）。見出し・箇条書き・強調（太字/斜体）など、元のMarkdown構造を保ってください。\n\n` +
           `---\n${ocrText}`,
       },
-    ]
+    ],
+    maxTokens
   );
   return { text: json.translatedText, inputTokens, outputTokens };
 }
