@@ -1,5 +1,17 @@
 # DONE
 
+- [x] 2026-07-07 管理画面に単語正規化キャッシュ（word_normalizations）の表示・削除を追加
+      旧プロンプト由来の誤ったキャッシュ（例 `writed`→`wrote`）を admin から確認・削除できる
+      ようにした。既存 `/admin/word-normalize` は通信ログ（word_normalize_requests）の閲覧で
+      あり、キャッシュ表そのものは操作できなかったため、`/admin/words`（words キャッシュ表の
+      一覧＋行削除）と同型で新設。db.ts に `listStoredNormalizations`/`getStoredNormalizationById`/
+      `deleteStoredNormalization(id)`/`deleteAllStoredNormalizations()` を追加（既存関数は不変）。
+      admin.ts に GET `/admin/word-normalizations`（全行を更新日時降順・判定バッジ・lemma・理由・
+      生成回数・件数統計）、POST `.../:id/delete`（行削除→一覧へ redirect）、POST `.../delete-all`
+      （全削除、confirm 付き）を追加し、ナビに「単語正規化キャッシュ」を追加（ログとは別項目）。
+      ローカルで検証: 一覧表示、単一削除（8→7）、全削除（→0・空状態表示）、削除後に再正規化すると
+      新プロンプトで再生成され再キャッシュ（自己修復）を確認。tsc 通過。
+
 - [x] 2026-07-07 綴り間違いの変化形を原形へ正規化する（`writed`→`write`）
       `writed` を登録しようとすると変化形 `wrote` を勧めてくる不具合を修正。原因は
       `backend/src/wordNormalize.ts` のプロンプト／スキーマが inflected（変化形→原形）と

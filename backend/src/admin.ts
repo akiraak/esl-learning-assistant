@@ -5,13 +5,16 @@ import { marked } from "marked";
 import fs from "fs";
 import {
   countQuizQuestions,
+  deleteAllStoredNormalizations,
   deleteQuizQuestions,
+  deleteStoredNormalization,
   deleteStoredWord,
   deleteTranscriptionLog,
   deleteTtsAudio,
   deleteWordIllustration,
   getPricingState,
   getRequestLog,
+  getStoredNormalizationById,
   getStoredWord,
   getStoredWordById,
   getTranscriptionLog,
@@ -32,6 +35,7 @@ import {
   listRecentWordInfoLogs,
   listRecentWordNormalizeLogs,
   listRecentWritingFeedbackLogs,
+  listStoredNormalizations,
   listStoredWords,
   listStoredWordTexts,
   listTtsAudio,
@@ -186,13 +190,14 @@ function renderMarkdown(value: string | null): string {
   return marked.parse(escaped, { async: false, breaks: true }) as string;
 }
 
-type NavSection = "ocr" | "transcriptions" | "word-info" | "word-normalize" | "writing-feedback" | "words" | "quiz-questions" | "tts" | "illustrations" | "usage" | "pricing" | "logs";
+type NavSection = "ocr" | "transcriptions" | "word-info" | "word-normalize" | "word-normalizations" | "writing-feedback" | "words" | "quiz-questions" | "tts" | "illustrations" | "usage" | "pricing" | "logs";
 
 const NAV_ITEMS: Array<[NavSection, string, string]> = [
   ["ocr", "/admin", "OCR・翻訳ログ"],
   ["transcriptions", "/admin/transcriptions", "音声文字起こしログ"],
   ["word-info", "/admin/word-info", "単語情報ログ"],
   ["word-normalize", "/admin/word-normalize", "単語正規化ログ"],
+  ["word-normalizations", "/admin/word-normalizations", "単語正規化キャッシュ"],
   ["writing-feedback", "/admin/writing-feedback", "作文添削ログ"],
   ["words", "/admin/words", "単語一覧"],
   ["quiz-questions", "/admin/quiz-questions", "単語クイズ"],
@@ -697,6 +702,106 @@ adminRouter.get("/word-normalize/:id", (req, res) => {
   `;
 
   res.type("html").send(renderPage(`単語正規化ログ #${log.id} - ESL Assistant`, "", body, "word-normalize"));
+});
+
+// 単語正規化キャッシュ（word_normalizations）そのものの閲覧・削除。
+// /admin/word-normalize は通信ログ、こちらは実際にヒットするキャッシュ表を操作する。
+adminRouter.get("/word-normalizations", (_req, res) => {
+  const rows = listStoredNormalizations();
+
+  const correctedCount = rows.filter(
+    (row) => row.status === "inflected" || row.status === "misspelled"
+  ).length;
+
+  const tableRows = rows
+    .map(
+      (row) => `
+        <tr class="log-row">
+          <td class="mono dim">#${row.id}</td>
+          <td><strong>${escapeHtml(row.input)}</strong></td>
+          <td>${normalizeStatusBadge(row.status)}</td>
+          <td>${
+            row.lemma && row.lemma.toLowerCase() !== row.input.toLowerCase()
+              ? `<strong class="ok-text">${escapeHtml(row.lemma)}</strong>`
+              : `<span class="dim">${escapeHtml(row.lemma)}</span>`
+          }</td>
+          <td>${row.reason ? `<span class="dim">${escapeHtml(row.reason)}</span>` : "-"}</td>
+          <td>${escapeHtml(row.target_language)}</td>
+          <td class="dim">${escapeHtml(row.model)}</td>
+          <td class="mono dim">${row.generation_count}</td>
+          <td class="mono dim">${escapeHtml(formatSeattleTime(row.updated_at))}</td>
+          <td>
+            <form method="post" action="/admin/word-normalizations/${row.id}/delete"
+                  onsubmit="return confirm('「${escapeHtml(row.input)}」の正規化キャッシュを削除します。よろしいですか？（アプリから再登録されれば作り直されます）')">
+              <button type="submit" class="btn btn-danger">削除</button>
+            </form>
+          </td>
+        </tr>
+      `
+    )
+    .join("\n");
+
+  res.type("html").send(
+    renderPage(
+      "ESL Assistant - 単語正規化キャッシュ",
+      ".log-row td form { margin: 0; }",
+      `
+        <h1>単語正規化キャッシュ</h1>
+        <p class="page-sub">入力語→lemma の正規化結果キャッシュ（<code>word_normalizations</code>）。全${rows.length}件</p>
+        <div class="stats">
+          <div class="stat"><div class="lbl">総件数</div><div class="val">${rows.length}<small>件</small></div></div>
+          <div class="stat"><div class="lbl">訂正あり</div><div class="val">${correctedCount}<small>件</small></div></div>
+        </div>
+        ${
+          rows.length > 0
+            ? `<form method="post" action="/admin/word-normalizations/delete-all" style="margin:0 0 16px;"
+                     onsubmit="return confirm('正規化キャッシュを全${rows.length}件削除します。よろしいですか？（キャッシュなので、以降アクセスされた語は新しいプロンプトで作り直されます）')">
+                 <button type="submit" class="btn btn-danger">全削除（${rows.length}件）</button>
+               </form>`
+            : ""
+        }
+        <div class="card">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th><th>入力</th><th>判定</th><th>lemma</th><th>理由</th><th>母語</th>
+                <th>モデル</th><th>生成回数</th><th>更新日時</th><th></th>
+              </tr>
+            </thead>
+            <tbody>${tableRows || '<tr><td colspan="10" class="dim">キャッシュはまだありません。</td></tr>'}</tbody>
+          </table>
+        </div>
+      `,
+      "word-normalizations"
+    )
+  );
+});
+
+adminRouter.post("/word-normalizations/:id/delete", (req, res) => {
+  const id = Number(req.params.id);
+  const row = getStoredNormalizationById(id);
+  if (!row) {
+    res
+      .status(404)
+      .type("html")
+      .send(
+        renderPage(
+          "キャッシュが見つかりません",
+          "",
+          '<p>指定された正規化キャッシュは存在しません。</p><p><a href="/admin/word-normalizations">← 一覧に戻る</a></p>'
+        )
+      );
+    return;
+  }
+  deleteStoredNormalization(id);
+  logger.info(`admin: deleted word normalization cache #${id} input="${row.input}" (${row.target_language})`);
+  res.redirect("/admin/word-normalizations");
+});
+
+adminRouter.post("/word-normalizations/delete-all", (_req, res) => {
+  const deleted = deleteAllStoredNormalizations();
+  logger.info(`admin: deleted all word normalization cache (${deleted} rows)`);
+  res.redirect("/admin/word-normalizations");
 });
 
 adminRouter.get("/writing-feedback", (_req, res) => {

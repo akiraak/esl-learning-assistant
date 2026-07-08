@@ -834,6 +834,28 @@ export function upsertStoredNormalization(input: StoredNormalizationInput): void
   });
 }
 
+export function getStoredNormalizationById(id: number): StoredNormalizationRow | undefined {
+  return db
+    .prepare("SELECT * FROM word_normalizations WHERE id = ?")
+    .get(id) as StoredNormalizationRow | undefined;
+}
+
+export function listStoredNormalizations(): StoredNormalizationRow[] {
+  return db
+    .prepare("SELECT * FROM word_normalizations ORDER BY updated_at DESC, id DESC")
+    .all() as StoredNormalizationRow[];
+}
+
+/// 正規化キャッシュを 1 行削除する。削除後はアプリからの再リクエストで再生成される（自己修復）。
+export function deleteStoredNormalization(id: number): void {
+  db.prepare("DELETE FROM word_normalizations WHERE id = ?").run(id);
+}
+
+/// 正規化キャッシュを全削除する。戻り値は削除行数。キャッシュなので要求時に作り直される。
+export function deleteAllStoredNormalizations(): number {
+  return db.prepare("DELETE FROM word_normalizations").run().changes;
+}
+
 export interface TtsAudioRow {
   id: number;
   created_at: string;
