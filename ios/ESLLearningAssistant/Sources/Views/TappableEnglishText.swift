@@ -75,30 +75,98 @@ struct TappableEnglishText: View {
 
 // MARK: - マークダウン英文のタップ対応
 
-/// マークダウン英文（OCR結果など）を、見出しハイライト等の書式を保ったまま単語ごとに
-/// タップ可能にする。単語だけを `eslword://` リンク化した文字列を `Markdown` に渡し、
-/// リンクの見た目を本文と同一化（色 `.primary`・下線なし）してから `openURL` を横取りする。
-/// MarkdownUI はリンクを標準の `AttributedString.link` で描くだけなので、プレーン英文と
-/// 同じ仕組みでタップを検出できる。
+/// マークダウン英文（OCR・文字起こし結果など）を、見出し/箇条書き/強調の書式を保ったまま
+/// 単語ごとにタップ可能にする。
+///
+/// **なぜ MarkdownUI を使わないか**: MarkdownUI は1段落をインラインノード毎に `Text + Text` で連結する。
+/// 全単語をリンク化すると段落あたりのノードが数百〜千になり、`ConcatenatedTextStorage` の深いネストを
+/// `Text.resolve` が再帰処理して実機の ~1MB メインスレッドスタックを溢れさせ、`EXC_BAD_ACCESS`
+/// （Thread stack size exceeded）でクラッシュする（シミュレータは ~8MB あり無再現。
+/// [[markdownui-perword-link-stack-overflow]]）。そこで `MarkdownLite` で**ブロック**へ分解し、各ブロックを
+/// **1つの `Text(AttributedString)`**（連結ゼロ＝再帰なし）で描くことで、段落の語数に依らず落ちないようにする。
+/// タップ検出は `TappableEnglishText` と同じく `AttributedString.link` + `openURL` 横取りで行う。
 struct TappableMarkdown: View {
     let markdown: String
+    /// 単語（リンク）の文字色。標準の青リンク色を避け、本文と同じ見た目にするため明示指定する。
+    var wordColor: Color = .primary
     @Environment(\.wordTapAction) private var wordTapAction
 
+    private var blocks: [MarkdownLite.Block] { MarkdownLite.blocks(markdown) }
+
     var body: some View {
-        Markdown(EnglishWordLink.linkedMarkdown(markdown))
-            .markdownHeadingHighlight()
-            .markdownTextStyle(\.link) {
-                ForegroundColor(.primary)
-                UnderlineStyle(nil)
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(blocks.indices, id: \.self) { index in
+                blockView(blocks[index])
             }
-            // foregroundColor だけでは環境によってリンクが tint 色を拾うことがあるため併用する
-            .tint(.primary)
-            .environment(\.openURL, OpenURLAction { url in
-                guard url.scheme == EnglishWordLink.scheme else { return .systemAction }
-                guard let word = EnglishWordLink.word(from: url) else { return .discarded }
-                wordTapAction(word)
-                return .handled
-            })
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .environment(\.openURL, OpenURLAction { url in
+            guard url.scheme == EnglishWordLink.scheme else { return .systemAction }
+            guard let word = EnglishWordLink.word(from: url) else { return .discarded }
+            wordTapAction(word)
+            return .handled
+        })
+    }
+
+    @ViewBuilder
+    private func blockView(_ block: MarkdownLite.Block) -> some View {
+        switch block {
+        case .heading(let level, let spans):
+            headingView(level: level, spans: spans)
+        case .bullet(let spans):
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("•").foregroundStyle(.secondary)
+                Text(attributedString(from: spans))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        case .paragraph(let spans):
+            Text(attributedString(from: spans))
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    /// 見出しブロック。地の文と区別できるよう大きめ太字＋背景色（旧 `markdownHeadingHighlight` の見た目を踏襲）。
+    private func headingView(level: Int, spans: [MarkdownLite.Span]) -> some View {
+        let font: Font = level == 1 ? .title2 : (level == 2 ? .title3 : .headline)
+        let opacity: Double = level == 1 ? 0.18 : (level == 2 ? 0.14 : 0.10)
+        return Text(attributedString(from: spans))
+            .font(font)
+            .fontWeight(.bold)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Color.accentColor.opacity(opacity), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .padding(.top, 4)
+    }
+
+    /// スパン列を1つの `AttributedString` にする（全単語を `eslword://` リンク化＋強調フォント）。
+    /// `Text + Text` の連結を使わないため、段落の語数に依らず `Text.resolve` の再帰でスタックを溢れさせない。
+    private func attributedString(from spans: [MarkdownLite.Span]) -> AttributedString {
+        var result = AttributedString()
+        for span in spans {
+            let spanFont = swiftUIFont(for: span.style)
+            for token in EnglishWordLink.tokenize(span.text) {
+                var run = AttributedString(token.text)
+                if let spanFont { run.font = spanFont }
+                if token.isWord,
+                   let core = EnglishWordLink.core(of: token.text),
+                   let url = EnglishWordLink.linkURL(for: core) {
+                    run.link = url
+                    run.foregroundColor = wordColor
+                }
+                result.append(run)
+            }
+        }
+        return result
+    }
+
+    private func swiftUIFont(for style: MarkdownLite.InlineStyle) -> Font? {
+        switch style {
+        case .normal: return nil
+        case .bold: return .body.bold()
+        case .italic: return .body.italic()
+        case .boldItalic: return .body.bold().italic()
+        }
     }
 }
 

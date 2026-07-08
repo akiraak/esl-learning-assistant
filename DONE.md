@@ -1,5 +1,23 @@
 # DONE
 
+- [x] 2026-07-08 ドキュメント詳細画面クラッシュ修正（完了 PDF を開くと毎回落ちる）
+      [plan](docs/plans/archive/document-detail-crash-investigation.md)
+      症状: PDF 取り込み→抽出＋翻訳完了の少し後に落ち、以後その文書を開くたび必ず落ちる。
+      真因（実機 .ips で確証。devicectl の systemCrashLogs ドメインで取得）:
+      `EXC_BAD_ACCESS「Thread stack size exceeded due to excessive recursion」`＝
+      `Text.resolve → ConcatenatedTextStorage.resolve` の深い再帰。MarkdownUI 2.4.1 は1段落を
+      インラインノード毎に `result = result + Text(...)` で連結するため、`TappableMarkdown` の全単語
+      リンク化（この文書は1段落最大510語→約千ノード）で `Text` が約千段ネストし、実機の ~1MB
+      メインスレッドスタックを溢れさせていた。シミュレータは ~8MB あり無再現（当初の OOM/ウォッチドッグ
+      仮説は、実機同等コンテンツの seed 再現で棄却済み）。SwiftData enum 地雷とも無関係
+      （Document の enum は同一コミット追加で NULL 行なし）。
+      修正: `MarkdownLite`（見出し/箇条書き/段落＋太字/斜体の軽量パーサ・新規）を追加し、
+      `TappableMarkdown` を MarkdownUI 依存から1ブロック＝1つの `Text(AttributedString)` 描画へ
+      書き換え（`Text+Text` 連結ゼロ＝再帰なし。単語リンクは AttributedString の .link ラン）。
+      同コンポーネントを使う Photo/Audio 詳細の同型潜在バグも同時に解消。翻訳側 `Markdown()` は
+      リンク化せず浅いため据え置き。
+      検証: MarkdownLite 単体テスト13件新規（計29件 PASS）／シミュレータで表示崩れなし／
+      実機 iPhone 14 Pro で当該 PDF を開いても落ちないことを確認。
 - [x] 2026-07-08 PDF / DOCX 読み込み（＋アプリ内表示）＝全 Phase 完了（Phase 6 テストで締め）
       Phase 1–5 で実装した PDF/DOCX 取り込み（抽出＋翻訳・単語タップ登録・アプリ内表示・管理画面ログ）に
       Phase 6 でテストを追加し機能を完了。
