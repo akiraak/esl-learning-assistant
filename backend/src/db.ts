@@ -1330,6 +1330,7 @@ export function savePricingState(pricesJson: string): void {
 export type UsageFeature =
   | "ocr"
   | "transcription"
+  | "document"
   | "word-info"
   | "word-normalize"
   | "writing-feedback"
@@ -1388,7 +1389,7 @@ function lastNSeattleDates(n: number, todayKey: string): string[] {
   return out;
 }
 
-/// 7テーブルを共通イベント形に正規化して取り出す。OCR・翻訳と文字起こしは ocr/translate を
+/// 8テーブルを共通イベント形に正規化して取り出す。OCR・翻訳と文字起こしは ocr/translate を
 /// 2イベントに分解し、統合呼び出し（同一モデル・翻訳側0トークン＝翻訳コストは ocr 側に計上済み）は
 /// 重複計上しないよう1イベント扱いにする（admin の isCombinedCall と同じ判定）。
 function collectUsageEvents(): UsageEvent[] {
@@ -1513,6 +1514,36 @@ function collectUsageEvents(): UsageEvent[] {
         r.translate_input_tokens,
         r.translate_output_tokens
       );
+    }
+  }
+
+  // 文書抽出＋翻訳。経路で課金の載る側が変わる:
+  //   pdf-text / docx … AI抽出なし（extract_model NULL）で翻訳のみ課金
+  //   pdf-ocr        … Claude が抽出＋翻訳を1回で処理（翻訳側は0トークン/0コストで extract に統合）
+  // 記録のある側だけをイベント化すれば合計は cost_usd と一致する（error 行は両方0/NULLで無イベント）。
+  const documents = db
+    .prepare(
+      `SELECT created_at, extract_model, extract_input_tokens, extract_output_tokens, extract_cost_usd,
+        translate_model, translate_input_tokens, translate_output_tokens, translate_cost_usd
+       FROM document_requests`
+    )
+    .all() as {
+    created_at: string;
+    extract_model: string | null;
+    extract_input_tokens: number;
+    extract_output_tokens: number;
+    extract_cost_usd: number;
+    translate_model: string | null;
+    translate_input_tokens: number;
+    translate_output_tokens: number;
+    translate_cost_usd: number;
+  }[];
+  for (const r of documents) {
+    if (r.extract_model && (r.extract_cost_usd > 0 || r.extract_input_tokens > 0 || r.extract_output_tokens > 0)) {
+      push("document", r.extract_model, r.created_at, r.extract_cost_usd, r.extract_input_tokens, r.extract_output_tokens);
+    }
+    if (r.translate_model && (r.translate_cost_usd > 0 || r.translate_input_tokens > 0 || r.translate_output_tokens > 0)) {
+      push("document", r.translate_model, r.created_at, r.translate_cost_usd, r.translate_input_tokens, r.translate_output_tokens);
     }
   }
 

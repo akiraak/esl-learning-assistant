@@ -6,12 +6,15 @@ import fs from "fs";
 import {
   countQuizQuestions,
   deleteAllStoredNormalizations,
+  deleteDocumentLog,
   deleteQuizQuestions,
   deleteStoredNormalization,
   deleteStoredWord,
   deleteTranscriptionLog,
   deleteTtsAudio,
   deleteWordIllustration,
+  DocumentLogRow,
+  getDocumentLog,
   getPricingState,
   getRequestLog,
   getStoredNormalizationById,
@@ -29,6 +32,7 @@ import {
   listIllustratedWords,
   listQuizQuestions,
   listQuizQuestionSummaries,
+  listRecentDocumentLogs,
   listRecentRequestLogs,
   listRecentSystemLogs,
   listRecentTranscriptionLogs,
@@ -190,11 +194,12 @@ function renderMarkdown(value: string | null): string {
   return marked.parse(escaped, { async: false, breaks: true }) as string;
 }
 
-type NavSection = "ocr" | "transcriptions" | "word-info" | "word-normalize" | "word-normalizations" | "writing-feedback" | "words" | "quiz-questions" | "tts" | "illustrations" | "usage" | "pricing" | "logs";
+type NavSection = "ocr" | "transcriptions" | "documents" | "word-info" | "word-normalize" | "word-normalizations" | "writing-feedback" | "words" | "quiz-questions" | "tts" | "illustrations" | "usage" | "pricing" | "logs";
 
 const NAV_ITEMS: Array<[NavSection, string, string]> = [
   ["ocr", "/admin", "OCR・翻訳ログ"],
   ["transcriptions", "/admin/transcriptions", "音声文字起こしログ"],
+  ["documents", "/admin/documents", "ドキュメント抽出ログ"],
   ["word-info", "/admin/word-info", "単語情報ログ"],
   ["word-normalize", "/admin/word-normalize", "単語正規化ログ"],
   ["word-normalizations", "/admin/word-normalizations", "単語正規化キャッシュ"],
@@ -1443,6 +1448,7 @@ const USAGE_STYLE = `
 const USAGE_FEATURE_META: Record<UsageFeature, { label: string; href: string }> = {
   ocr: { label: "OCR・翻訳", href: "/admin" },
   transcription: { label: "音声文字起こし・翻訳", href: "/admin/transcriptions" },
+  document: { label: "ドキュメント抽出・翻訳", href: "/admin/documents" },
   "word-info": { label: "単語情報", href: "/admin/word-info" },
   "word-normalize": { label: "単語正規化", href: "/admin/word-normalize" },
   "writing-feedback": { label: "作文添削", href: "/admin/writing-feedback" },
@@ -1862,6 +1868,143 @@ adminRouter.post("/transcriptions/:id/delete", (req, res) => {
   deleteTranscriptionLog(id);
   logger.info(`admin: deleted transcription log #${id} (${row.media_type}, ${row.byte_size} bytes)`);
   res.redirect("/admin/transcriptions");
+});
+
+// ---- ドキュメント抽出・翻訳ログ（/api/document-extract-translate。docs/plans/document-import.md Phase 5）----
+
+// 抽出方式（extraction_method）の日本語ラベル。documentExtract.ts の DocumentExtractionMethod と対応。
+const DOCUMENT_METHOD_LABELS: Record<string, string> = {
+  "pdf-text": "PDFテキスト層",
+  "pdf-ocr": "PDFスキャンOCR",
+  docx: "Word (DOCX)",
+};
+
+function documentMethodLabel(method: string | null): string {
+  if (!method) return "";
+  return DOCUMENT_METHOD_LABELS[method] ?? method;
+}
+
+// 抽出側（テキスト抽出 or スキャンOCR）のモデル・トークン表示。
+// extract_model が入るのはスキャンOCR（Claude）だけで、テキスト層PDF・DOCX はライブラリ抽出（AI不使用）。
+function documentExtractSummary(log: DocumentLogRow): string {
+  if (!log.extraction_method) return `<span class="faint">-</span>`;
+  if (log.extract_model) {
+    return `<strong>${escapeHtml(log.extract_model)}</strong> <span class="dim">(in:${log.extract_input_tokens} / out:${log.extract_output_tokens})</span>`;
+  }
+  return `<span class="dim">ライブラリ抽出（AI不使用）</span>`;
+}
+
+// 翻訳側のモデル・トークン表示。スキャンOCR は抽出（Claude）呼び出しに翻訳を統合しており
+// 翻訳側は0トークンのため、別課金なしと明示する（OCR・翻訳の isCombinedCall と同じ考え方）。
+function documentTranslateSummary(log: DocumentLogRow): string {
+  if (!log.extraction_method) return `<span class="faint">-</span>`;
+  if (log.extract_model && log.translate_input_tokens === 0 && log.translate_output_tokens === 0) {
+    return "抽出呼び出しに統合（追加コストなし）";
+  }
+  if (!log.translate_model) return "(なし)";
+  return `<strong>${escapeHtml(log.translate_model)}</strong> <span class="dim">(in:${log.translate_input_tokens} / out:${log.translate_output_tokens})</span>`;
+}
+
+adminRouter.get("/documents", (_req, res) => {
+  const logs = listRecentDocumentLogs(100);
+
+  const totalCostUsd = logs.reduce((sum, log) => sum + log.cost_usd, 0);
+  const errorCount = logs.filter((log) => log.status !== "success").length;
+  const avgLatencySec = logs.length ? logs.reduce((sum, log) => sum + log.latency_ms, 0) / logs.length / 1000 : 0;
+
+  const tableRows = logs
+    .map((log) => {
+      const method = documentMethodLabel(log.extraction_method);
+      const fileCell = log.document_filename
+        ? `<a href="/admin/documents/${log.id}/file" target="_blank">${escapeHtml(log.file_kind.toUpperCase())} を開く</a>`
+        : `<span class="faint">(なし)</span>`;
+      return `
+        <tr class="log-row">
+          <td class="mono dim">#${log.id}</td>
+          <td class="mono dim">${escapeHtml(formatSeattleTime(log.created_at))}</td>
+          <td>
+            ${fileCell}
+            <div class="faint" style="margin-top:4px;">${(log.byte_size / 1024).toFixed(0)} KB${method ? ` / ${escapeHtml(method)}` : ""}</div>
+          </td>
+          <td style="max-width:280px;">${transcriptPreview(log.extracted_text)}</td>
+          <td style="max-width:280px;">${transcriptPreview(log.translated_text)}</td>
+          <td>
+            抽出: ${documentExtractSummary(log)}<br>
+            翻訳: ${documentTranslateSummary(log)}
+          </td>
+          <td class="mono">
+            <strong>$${log.cost_usd.toFixed(5)}</strong><br>
+            <span class="faint">抽出 $${log.extract_cost_usd.toFixed(5)} / 翻訳 $${log.translate_cost_usd.toFixed(5)}</span>
+          </td>
+          <td>${statusLabel(log)}${log.error_message ? `<div class="err-note">${escapeHtml(log.error_message)}</div>` : ""}</td>
+          <td class="mono dim">${log.latency_ms}ms</td>
+          <td>
+            <form method="post" action="/admin/documents/${log.id}/delete"
+                  onsubmit="return confirm('この抽出ログと保存文書を削除します。よろしいですか？')">
+              <button type="submit" class="btn btn-danger">削除</button>
+            </form>
+          </td>
+        </tr>
+      `;
+    })
+    .join("\n");
+
+  res.type("html").send(
+    renderPage(
+      "ESL Assistant - ドキュメント抽出ログ",
+      "",
+      `
+        <h1>ドキュメント抽出・翻訳ログ</h1>
+        <p class="page-sub">直近${logs.length}件の PDF / Word 抽出（テキスト層 or スキャンOCR）＋翻訳リクエスト</p>
+        <div class="stats">
+          <div class="stat"><div class="lbl">直近件数</div><div class="val">${logs.length}<small>件</small></div></div>
+          <div class="stat"><div class="lbl">コスト合計</div><div class="val">$${totalCostUsd.toFixed(4)}</div></div>
+          <div class="stat${errorCount > 0 ? " alert" : ""}"><div class="lbl">エラー</div><div class="val">${errorCount}<small>件</small></div></div>
+          <div class="stat"><div class="lbl">平均処理時間</div><div class="val">${avgLatencySec.toFixed(1)}<small>s</small></div></div>
+        </div>
+        <div class="card">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th><th>日時</th><th>文書</th><th>抽出英文</th><th>訳</th>
+                <th>モデル / トークン</th><th>コスト</th><th>状態</th><th>処理時間</th><th></th>
+              </tr>
+            </thead>
+            <tbody>${tableRows || '<tr><td colspan="10" class="dim">まだドキュメント抽出リクエストはありません。</td></tr>'}</tbody>
+          </table>
+        </div>
+      `,
+      "documents"
+    )
+  );
+});
+
+adminRouter.get("/documents/:id/file", (req, res) => {
+  const id = Number(req.params.id);
+  const row = getDocumentLog(id);
+  if (!row || !row.document_filename) {
+    res.status(404).end();
+    return;
+  }
+  res.sendFile(path.join(config.documentsDir, row.document_filename));
+});
+
+adminRouter.post("/documents/:id/delete", (req, res) => {
+  const id = Number(req.params.id);
+  const row = getDocumentLog(id);
+  if (!row) {
+    res.status(404).type("html").send(
+      renderPage("抽出ログが見つかりません", "", '<p>指定された抽出ログは存在しません。</p><p><a href="/admin/documents">← 一覧に戻る</a></p>')
+    );
+    return;
+  }
+  // 行を消してもファイルが残るとディスクを食い続けるため、ファイル→行の順に削除する
+  if (row.document_filename) {
+    fs.rmSync(path.join(config.documentsDir, row.document_filename), { force: true });
+  }
+  deleteDocumentLog(id);
+  logger.info(`admin: deleted document log #${id} (${row.file_kind}, ${row.byte_size} bytes)`);
+  res.redirect("/admin/documents");
 });
 
 // ---- 復習クイズ問題（docs/plans/archive/quiz-questions-server-storage.md）----

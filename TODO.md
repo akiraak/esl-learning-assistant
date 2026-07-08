@@ -6,7 +6,7 @@
   - [x] Phase 3: iOS 取り込み UI（AddContentTypeView 追加 / FileImporter / Storage / Remote サービス）
   - [x] Phase 4: iOS 詳細画面 DocumentDetailView（英文タップ登録 / 訳表示 / 削除 / 一覧導線・Documents タブ）
   - [x] Phase 4.5: アプリ内ファイル表示（PDF=PDFView / DOCX=QuickLook）
-  - [ ] Phase 5: 管理画面ログ表示
+  - [x] Phase 5: 管理画面ログ表示（/admin/documents 一覧＋原本表示＋コスト内訳、利用料金へ統合）
   - [ ] Phase 6: テスト（unit / backend / UI）
 - [ ] 熟語（２単語以上）を単語に入れる仕様を詰める
 - [ ] コンテンツタブ

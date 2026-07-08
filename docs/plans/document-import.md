@@ -198,5 +198,16 @@ ESL の授業では、教科書ページの撮影（3.1 OCR）や配布音声（
     `PDFKit.PDFView`）＋ `QuickLookPreview`（`UIViewControllerRepresentable` で `QLPreviewController`）を新規実装。
     PDF は `DocumentDetailView` にインライン埋め込み＋全画面（`fullScreenCover`）、DOCX は全画面 QuickLook。
     追加依存ゼロ（PDFKit / QuickLook は `import` で暗黙リンク）。抽出前でも原本を閲覧可能。
-- [ ] Phase 5: 管理画面ログ表示
+- [x] Phase 5: 管理画面ログ表示
+  - `admin.ts` に `/admin/documents`（`/admin/transcriptions` 範）を新設。一覧に 原本リンク（`/admin/documents/:id/file`・
+    PDF はインラインプレビュー / DOCX はダウンロード）・抽出方式（PDFテキスト層 / PDFスキャンOCR / Word DOCX）・
+    抽出英文＋訳プレビュー・抽出/翻訳のモデル&トークン・コスト内訳（抽出＋翻訳）・削除を表示。サイドバーに
+    「ドキュメント抽出ログ」を追加。スキャンOCR は「抽出呼び出しに統合（追加コストなし）」、テキスト層/DOCX は
+    「ライブラリ抽出（AI不使用）」と明示。
+  - 利用料金ページへ統合: `db.ts` の `UsageFeature` に `"document"` を追加、`collectUsageEvents` に
+    `document_requests` 集計（課金の載る側＝extract or translate のみイベント化し cost_usd と一致）を追加、
+    `admin.ts` の `USAGE_FEATURE_META` に `document` 行を追加。→ /admin/usage の機能別内訳に「ドキュメント抽出・翻訳」が出る。
+  - `app-spec.md` §5.2 の管理画面表示内容に「文書と抽出結果の対応」を追記。
+  - 検証: `tsc --noEmit` green、実データ（既存 document_requests 3件）でサーバ起動→ /admin/documents /admin/usage
+    /file /delete(404) を curl 確認。document 集計 $0.0081 が一覧合計と一致。
 - [ ] Phase 6: テスト（unit / backend / UI）
