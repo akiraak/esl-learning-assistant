@@ -527,6 +527,12 @@ function validateAndConvert(raw: RawQuestion, word: string, spec: FormatSpec): Q
     if (new Set(options.map(normalizeKey)).size !== 4) return null;
     if (raw.correctIndex == null || raw.correctIndex < 0 || raw.correctIndex > 3) return null;
     if (spec.correctMustBeWord && normalizeKey(options[raw.correctIndex]) !== normalizeKey(word)) return null;
+    // AI が返す正解位置は特定インデックスに偏りがち（tc8 は options を固定順で生成する）。
+    // 保存前に必ずシャッフルして正解位置をランダム化する（イラスト系の shuffledChoices と同じ扱い）。
+    const shuffled = shuffledChoices(
+      options[raw.correctIndex],
+      options.filter((_, i) => i !== raw.correctIndex)
+    );
     return {
       format: spec.id,
       instruction: raw.instruction.trim(),
@@ -535,8 +541,8 @@ function validateAndConvert(raw: RawQuestion, word: string, spec: FormatSpec): Q
       promptIllustrationWord: null,
       answer: {
         type: "choices",
-        options,
-        correctIndex: raw.correctIndex,
+        options: shuffled.options,
+        correctIndex: shuffled.correctIndex,
         acceptedAnswers: null,
         matchRateThreshold: null,
       },

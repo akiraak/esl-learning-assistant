@@ -1,5 +1,19 @@
 # DONE
 
+- [x] 2026-07-07 復習クイズの選択肢の正解位置をサーバ側で必ずシャッフルする
+      調査の結果、正解位置が固定/偏りうる形式があった（tc8 は `options` を
+      `["noun","verb","adjective","adverb"]` の固定順で生成し正解位置が品詞で確定、AI 生成4択
+      tc1–tc10/vc1–vc7/vtc1 は `validateAndConvert` が LLM の `correctIndex` を無シャッフルで
+      そのまま保存＝位置バイアスのリスク。イラスト系 tc11/vc8/ic1 は既に Fisher–Yates 済み）。
+      生成元は `backend/src/quizQuestions.ts` の1ファイルのみで、iOS・保存・表示側は並び替えず
+      サーバの `correctIndex` をそのまま使うことも確認。修正は `validateAndConvert` の choices
+      分岐に集約し、検証通過後の `options`/`correctIndex` を保存前に既存 `shuffledChoices()` で
+      再シャッフルして正解位置を振り直すようにした（tc8 も含め全4択が一律ランダム化）。tc8 の
+      プロンプト（4品詞をこの順で）は LLM に過不足なく出させる指示として残し、表示位置はサーバ
+      シャッフルが担保。検証: `tsc --noEmit` 通過。固定入力（正解 index=0）でも 4万回で正解位置が
+      約25%ずつ全4インデックスに分散し、正解文字列・重複なしが全回保持されることを確認。
+      [plan](docs/plans/archive/shuffle-quiz-choices.md)
+
 - [x] 2026-07-07 管理画面に単語正規化キャッシュ（word_normalizations）の表示・削除を追加
       旧プロンプト由来の誤ったキャッシュ（例 `writed`→`wrote`）を admin から確認・削除できる
       ようにした。既存 `/admin/word-normalize` は通信ログ（word_normalize_requests）の閲覧で
