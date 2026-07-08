@@ -7,23 +7,23 @@ final class ReviewSessionPlannerTests: XCTestCase {
     func testPickLimitsVariantsToSelectedFormat() {
         var generator = SeededGenerator(seed: 7)
         let candidates = [
-            question(.tc1, instruction: "a"),
-            question(.tc1, instruction: "b"),
+            question(.tc2, instruction: "a"),
+            question(.tc2, instruction: "b"),
         ]
         for _ in 0..<10 {
             let picked = ReviewSessionPlanner.pick(
                 from: candidates, sessionCounts: [:], using: &generator
             )
-            XCTAssertEqual(picked?.format, .tc1)
+            XCTAssertEqual(picked?.format, .tc2)
         }
     }
 
     func testPickRespectsSessionCountsForRatioAdjustment() {
         // 比率調整: テキスト系ばかり出題済みなら不足している音声系の形式が選ばれる
         var generator = SeededGenerator(seed: 9)
-        let candidates = [question(.tc1), question(.vc1, audioText: "audio")]
+        let candidates = [question(.tc2), question(.vc1, audioText: "audio")]
         let picked = ReviewSessionPlanner.pick(
-            from: candidates, sessionCounts: [.tc1: 5], using: &generator
+            from: candidates, sessionCounts: [.tc2: 5], using: &generator
         )
         XCTAssertEqual(picked?.format, .vc1)
     }

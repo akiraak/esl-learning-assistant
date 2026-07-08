@@ -30,40 +30,44 @@ final class ReviewQuestionTests: XCTestCase {
         XCTAssertEqual(options[correctIndex], "ran")
     }
 
+    // illustrationChoices 回答は選別（Tier B, docs/plans/word-quiz-format-curation.md）で
+    // 生成対象から外れたが、モデルのデコード互換は保持する。format は有効な現行フォーマットの
+    // プレースホルダ（デコードは format と answer.type を独立に検証する）。
     func testDecodeIllustrationChoicesQuestion() throws {
         let question = try decode("""
         {
-          "format": "vc8",
-          "instruction": "Listen. Which picture shows the word you hear?",
+          "format": "ic1",
+          "instruction": "Which picture shows the word?",
           "displayText": null,
-          "audioText": "run",
-          "promptIllustrationWord": null,
+          "audioText": null,
+          "promptIllustrationWord": "run",
           "answer": {"type": "illustrationChoices", "options": ["run", "apple", "book", "car"],
                      "correctIndex": 0, "acceptedAnswers": null, "matchRateThreshold": null}
         }
         """)
-        XCTAssertEqual(question.audioText, "run")
         guard case .illustrationChoices = question.answer else {
             return XCTFail("illustrationChoices のはず")
         }
     }
 
+    // matchRateThreshold（一致率判定）は選別で例文ディクテーション形式が外れ現行では未生成だが、
+    // モデルのデコード互換は保持する（format はプレースホルダ）。
     func testDecodeTypingQuestionWithThreshold() throws {
         let question = try decode("""
         {
-          "format": "vt2",
-          "instruction": "Listen and type the sentence you hear.",
+          "format": "vt1",
+          "instruction": "Listen and type the word you hear.",
           "displayText": null,
-          "audioText": "I run every day.",
+          "audioText": "run",
           "promptIllustrationWord": null,
           "answer": {"type": "typing", "options": null, "correctIndex": null,
-                     "acceptedAnswers": ["I run every day."], "matchRateThreshold": 0.8}
+                     "acceptedAnswers": ["run"], "matchRateThreshold": 0.8}
         }
         """)
         guard case .typing(let spec) = question.answer else {
             return XCTFail("typing のはず")
         }
-        XCTAssertEqual(spec.acceptedAnswers, ["I run every day."])
+        XCTAssertEqual(spec.acceptedAnswers, ["run"])
         XCTAssertEqual(spec.matchRateThreshold, 0.8)
     }
 
@@ -77,7 +81,7 @@ final class ReviewQuestionTests: XCTestCase {
                     "acceptedAnswers": null, "matchRateThreshold": null}}
         """
         let outOfRange = """
-        {"format": "tc1", "instruction": "?", "displayText": "def", "audioText": null,
+        {"format": "tc2", "instruction": "?", "displayText": "def", "audioText": null,
          "promptIllustrationWord": null,
          "answer": {"type": "choices", "options": ["a","b","c","d"], "correctIndex": 4,
                     "acceptedAnswers": null, "matchRateThreshold": null}}
@@ -89,7 +93,7 @@ final class ReviewQuestionTests: XCTestCase {
                     "acceptedAnswers": [], "matchRateThreshold": null}}
         """
         let unknownAnswerType = """
-        {"format": "tc1", "instruction": "?", "displayText": "def", "audioText": null,
+        {"format": "tc2", "instruction": "?", "displayText": "def", "audioText": null,
          "promptIllustrationWord": null,
          "answer": {"type": "speaking", "options": null, "correctIndex": null,
                     "acceptedAnswers": null, "matchRateThreshold": null}}

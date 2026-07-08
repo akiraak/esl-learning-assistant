@@ -17,14 +17,14 @@ final class FormatSelectorTests: XCTestCase {
         var generator = SeededGenerator(seed: 1)
         for _ in 0..<20 {
             let selected = FormatSelector.select(
-                availableFormats: [.tc9], sessionCounts: [.vc1: 5], using: &generator
+                availableFormats: [.tc2], sessionCounts: [.vc1: 5], using: &generator
             )
-            XCTAssertEqual(selected, .tc9)
+            XCTAssertEqual(selected, .tc2)
         }
     }
 
     func testSessionRatiosConvergeToTargetsWithFullAvailability() {
-        // 素材が十分なら実績比率が目標比率（出題 40:50:10、回答 60:30:10）へ収束する
+        // 素材が十分なら実績比率が目標比率（出題 45:45:10、回答 65:35）へ収束する
         var generator = SeededGenerator(seed: 42)
         let available = Set(ReviewQuestionFormat.allCases)
         var counts: [ReviewQuestionFormat: Int] = [:]
@@ -45,18 +45,17 @@ final class FormatSelectorTests: XCTestCase {
         }
         func ratio(_ count: Int?) -> Double { Double(count ?? 0) / Double(total) }
 
-        XCTAssertEqual(ratio(promptCounts[.text]), 0.4, accuracy: 0.05)
-        XCTAssertEqual(ratio(promptCounts[.audio]), 0.5, accuracy: 0.05)
+        XCTAssertEqual(ratio(promptCounts[.text]), 0.45, accuracy: 0.05)
+        XCTAssertEqual(ratio(promptCounts[.audio]), 0.45, accuracy: 0.05)
         XCTAssertEqual(ratio(promptCounts[.illustration]), 0.1, accuracy: 0.05)
-        XCTAssertEqual(ratio(answerCounts[.choice]), 0.6, accuracy: 0.05)
-        XCTAssertEqual(ratio(answerCounts[.typing]), 0.3, accuracy: 0.05)
-        XCTAssertEqual(ratio(answerCounts[.illustrationChoice]), 0.1, accuracy: 0.05)
+        XCTAssertEqual(ratio(answerCounts[.choice]), 0.65, accuracy: 0.05)
+        XCTAssertEqual(ratio(answerCounts[.typing]), 0.35, accuracy: 0.05)
     }
 
     func testSelectFallsBackWhenTargetBucketsAreUnsatisfiable() {
         // 保存問題が少ない形式構成でも、残りの形式から選び続けて例外を出さない
         var generator = SeededGenerator(seed: 7)
-        let available: Set<ReviewQuestionFormat> = [.tc9, .vc2, .vc5]
+        let available: Set<ReviewQuestionFormat> = [.tc2, .vc2, .vt1]
         var counts: [ReviewQuestionFormat: Int] = [:]
 
         for _ in 0..<100 {
@@ -75,7 +74,7 @@ final class FormatSelectorTests: XCTestCase {
     private func XCTUnwrap2(_ format: ReviewQuestionFormat?) -> ReviewQuestionFormat {
         guard let format else {
             XCTFail("select が nil を返した")
-            return .tc9
+            return .tc2
         }
         return format
     }

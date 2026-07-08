@@ -31,7 +31,7 @@ enum ReviewQuestionAnswer {
 struct ReviewTypingSpec {
     /// 正規化後にこのいずれかと一致すれば正解
     var acceptedAnswers: [String]
-    /// VT2（例文ディクテーション）の単語一致率しきい値。nil なら完全一致
+    /// 単語一致率しきい値。nil なら完全一致（現行の生成フォーマットでは常に nil）
     var matchRateThreshold: Double?
 
     init(acceptedAnswers: [String], matchRateThreshold: Double? = nil) {
@@ -108,7 +108,7 @@ extension ReviewQuestionAnswer: Codable {
 // MARK: - テキスト入力回答の判定
 
 /// テキスト入力（TT / IT / VTT / VT 系）の判定。
-/// しきい値（matchRateThreshold）はサーバ生成時に付与される（VT2 のみ 0.8）。
+/// しきい値（matchRateThreshold）は一致率判定用。現行の生成フォーマットでは完全一致のみ。
 enum ReviewAnswerJudge {
     /// 小文字化・前後空白除去・句読点除去（単語内のアポストロフィは保持）・空白の圧縮
     static func normalize(_ text: String) -> String {

@@ -1,26 +1,21 @@
 import Foundation
 
-/// 復習クイズの出題形式（27形式）。ID 表記: `[出題][回答] + 連番`
-/// （T=テキスト, V=音声, I=イラスト, C=4択。一覧: docs/plans/archive/word-memorization-quiz.md §3.3）。
+/// 復習クイズの出題形式（15形式）。ID 表記: `[出題][回答] + 連番`
+/// （T=テキスト, V=音声, I=イラスト, C=4択。一覧: docs/plans/archive/word-memorization-quiz.md §3.3、
+///   選別: docs/plans/word-quiz-format-curation.md）。
 /// rawValue はサーバ保存問題（quiz_questions.format）と一致する。
+/// 選別で廃止した形式（tc1/tc8/tc9/tc10/tc11/tt3/vc5/vc6/vc7/vc8/vtc1/vt2）の旧データは
+/// デコード失敗として自然に除外される。
 enum ReviewQuestionFormat: String, CaseIterable, Codable, Sendable {
     // 出題テキスト・回答4択
-    case tc1  // 定義→単語
     case tc2  // 単語→定義
     case tc3  // 例文穴埋め
     case tc4  // 類義語
     case tc5  // 対義語
     case tc6  // コロケーション
     case tc7  // 活用形
-    case tc8  // 品詞
-    case tc9  // スペリング
-    case tc10 // 文中語義（senses 1件の単語に限定）
-    case tc11 // 単語→イラスト4択
     // 出題テキスト・回答テキスト入力
-    // （tt2: 例文穴埋め入力 は空所の候補が多すぎて答えを特定できないため廃止。
-    //   サーバも生成・保存を停止済みで、旧データはデコード失敗として自然に除外される）
     case tt1  // 定義→単語入力
-    case tt3  // 活用形入力
     // 出題イラスト
     case ic1  // イラスト→単語4択
     case it1  // イラスト→単語入力
@@ -29,26 +24,19 @@ enum ReviewQuestionFormat: String, CaseIterable, Codable, Sendable {
     case vc2  // 音声→綴り
     case vc3  // 定義音声→単語
     case vc4  // 例文リスニング→単語特定
-    case vc5  // 類似音判別
-    case vc6  // 例文聞き分け
-    case vc7  // 活用形リスニング
-    case vc8  // 音声→イラスト4択
     // 出題音声+テキスト
-    case vtc1 // 例文リスニング穴埋め4択
     case vtt1 // 例文リスニング穴埋め入力（音声が完全文を読むため答えは一意に特定できる）
     // 出題音声・回答テキスト入力
     case vt1  // 単語ディクテーション
-    case vt2  // 例文ディクテーション（一致率判定）
 
-    /// 出題モダリティの比率枠。複合出題（VTC1・VTT1）は音声側にカウントする
+    /// 出題モダリティの比率枠。複合出題（VTT1）は音声側にカウントする
     var promptBucket: ReviewPromptBucket {
         switch self {
-        case .tc1, .tc2, .tc3, .tc4, .tc5, .tc6, .tc7, .tc8, .tc9, .tc10, .tc11,
-             .tt1, .tt3:
+        case .tc2, .tc3, .tc4, .tc5, .tc6, .tc7, .tt1:
             return .text
         case .ic1, .it1:
             return .illustration
-        case .vc1, .vc2, .vc3, .vc4, .vc5, .vc6, .vc7, .vc8, .vtc1, .vtt1, .vt1, .vt2:
+        case .vc1, .vc2, .vc3, .vc4, .vtt1, .vt1:
             return .audio
         }
     }
@@ -56,13 +44,11 @@ enum ReviewQuestionFormat: String, CaseIterable, Codable, Sendable {
     /// 回答モダリティの比率枠
     var answerBucket: ReviewAnswerBucket {
         switch self {
-        case .tc1, .tc2, .tc3, .tc4, .tc5, .tc6, .tc7, .tc8, .tc9, .tc10,
-             .ic1, .vc1, .vc2, .vc3, .vc4, .vc5, .vc6, .vc7, .vtc1:
+        case .tc2, .tc3, .tc4, .tc5, .tc6, .tc7,
+             .ic1, .vc1, .vc2, .vc3, .vc4:
             return .choice
-        case .tt1, .tt3, .it1, .vtt1, .vt1, .vt2:
+        case .tt1, .it1, .vtt1, .vt1:
             return .typing
-        case .tc11, .vc8:
-            return .illustrationChoice
         }
     }
 }
@@ -84,11 +70,12 @@ struct FormatRatioTargets: Sendable {
     var prompt: [ReviewPromptBucket: Double]
     var answer: [ReviewAnswerBucket: Double]
 
-    /// v1 既定値: 出題 テキスト50% / 音声50%（イラスト出題10%はテキスト枠から充当 → 実効 40/50/10）、
-    /// 回答 4択60% / タイプ入力30% / イラスト4択10%
+    /// v1 既定値（15形式版。選別: docs/plans/word-quiz-format-curation.md）:
+    /// 出題 テキスト45% / 音声45% / イラスト10%、回答 4択65% / タイプ入力35%
+    /// （「絵を選ぶ」回答形式は廃止したため illustrationChoice 枠は設けない）
     static let v1 = FormatRatioTargets(
-        prompt: [.text: 0.4, .audio: 0.5, .illustration: 0.1],
-        answer: [.choice: 0.6, .typing: 0.3, .illustrationChoice: 0.1]
+        prompt: [.text: 0.45, .audio: 0.45, .illustration: 0.1],
+        answer: [.choice: 0.65, .typing: 0.35]
     )
 }
 

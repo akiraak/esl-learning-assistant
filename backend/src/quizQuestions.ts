@@ -7,9 +7,7 @@ import type { WordInfo } from "./wordInfo";
 // iOS はその中からランダムに1件を出題する。
 // question_json は iOS の ReviewQuestion（ReviewQuestion.swift）と 1:1 対応。
 
-export const VARIANTS_PER_FORMAT = 3;
-/// VT2（例文ディクテーション）の単語一致率しきい値（iOS ReviewAnswerJudge と揃える）
-export const SENTENCE_MATCH_THRESHOLD = 0.8;
+export const VARIANTS_PER_FORMAT = 2;
 
 export interface QuizAnswer {
   type: "choices" | "illustrationChoices" | "typing";
@@ -64,8 +62,6 @@ const PART_OF_SPEECH_EN: Record<string, string> = {
   イディオム: "idiom",
 };
 
-const POS_CHOICES = ["noun", "verb", "adjective", "adverb"];
-
 const INFLECTION_FORM_EN: Record<string, string> = {
   過去形: "past tense",
   過去分詞: "past participle",
@@ -95,7 +91,7 @@ function mappableInflections(info: WordInfo): { formEnglish: string; text: strin
     .filter((entry): entry is { formEnglish: string; text: string } => Boolean(entry.formEnglish && entry.text));
 }
 
-// -- 形式定義（AI 生成対象の23形式）
+// -- 形式定義（AI 生成対象の13形式。選別: docs/plans/word-quiz-format-curation.md）
 
 interface FormatSpec {
   id: string;
@@ -114,17 +110,6 @@ const hasDefinition = (info: WordInfo) => info.senses.some((s) => s.englishDefin
 const hasExamples = (info: WordInfo) => info.examples.some((e) => e.english.trim());
 
 const AI_FORMAT_SPECS: FormatSpec[] = [
-  {
-    id: "tc1",
-    answerType: "choices",
-    needsDisplayText: true,
-    needsAudioText: false,
-    correctMustBeWord: true,
-    isAvailable: hasDefinition,
-    promptSpec: (word) =>
-      `tc1: displayText に "${word}" の英語定義（学習者向けに平易な言い換え。バリエーションごとに表現を変える）。` +
-      `options は単語4つで正解は "${word}"。誤答は意味の異なる同難易度の実在英単語。`,
-  },
   {
     id: "tc2",
     answerType: "choices",
@@ -199,46 +184,6 @@ const AI_FORMAT_SPECS: FormatSpec[] = [
     },
   },
   {
-    id: "tc8",
-    answerType: "choices",
-    needsDisplayText: false,
-    needsAudioText: false,
-    correctMustBeWord: false,
-    isAvailable: (info) => {
-      const pos = info.senses[0] ? englishPartOfSpeech(info.senses[0].partOfSpeech) : undefined;
-      return Boolean(pos && POS_CHOICES.includes(pos));
-    },
-    promptSpec: (word, info) => {
-      const pos = englishPartOfSpeech(info.senses[0].partOfSpeech);
-      return (
-        `tc8: instruction は「“${word}” is a …」。options は必ず ["noun","verb","adjective","adverb"] の4つ（この順）。` +
-        `正解は "${pos}"。3バリエーションとも同一でよい。`
-      );
-    },
-  },
-  {
-    id: "tc9",
-    answerType: "choices",
-    needsDisplayText: false,
-    needsAudioText: false,
-    correctMustBeWord: true,
-    isAvailable: () => true,
-    promptSpec: (word) =>
-      `tc9: instruction は「Which spelling is correct?」。displayText は null。` +
-      `options は綴り4つで正解は "${word}"。誤答は文字入替・脱字・重複によるミススペル（実在語は避ける）。`,
-  },
-  {
-    id: "tc10",
-    answerType: "choices",
-    needsDisplayText: true,
-    needsAudioText: false,
-    correctMustBeWord: false,
-    isAvailable: (info) => info.senses.length === 1 && hasDefinition(info) && hasExamples(info),
-    promptSpec: (word) =>
-      `tc10: displayText に "${word}" を含む英文（毎バリエーション新作）。instruction は「What does “${word}” mean in this sentence?」。` +
-      `options は英語定義4つで、正解はこの文での "${word}" の意味。誤答は別の単語の定義らしき文。`,
-  },
-  {
     id: "tt1",
     answerType: "typing",
     needsDisplayText: true,
@@ -246,29 +191,12 @@ const AI_FORMAT_SPECS: FormatSpec[] = [
     correctMustBeWord: true,
     isAvailable: hasDefinition,
     promptSpec: (word) =>
-      `tt1: displayText に "${word}" の英語定義（tc1 と同様、表現はバリエーションごとに変える）。` +
+      `tt1: displayText に "${word}" の英語定義（学習者向けに平易な言い換え。バリエーションごとに表現を変える）。` +
       `instruction は「Type the word that matches this definition.」。acceptedAnswers は ["${word}"]。`,
   },
   // tt2（例文穴埋め入力）は空所の候補が多すぎて答えを特定できないため廃止
   // （docs/plans/archive/remove-fill-blank-typing.md。4択版の tc3 は存続。
   //   音声で答えを特定できる vtt1 は docs/plans/archive/restore-vtt1.md で復活）
-  {
-    id: "tt3",
-    answerType: "typing",
-    needsDisplayText: false,
-    needsAudioText: false,
-    correctMustBeWord: false,
-    isAvailable: (info) => mappableInflections(info).length > 0,
-    promptSpec: (word, info) => {
-      const forms = mappableInflections(info)
-        .map((f) => `${f.formEnglish} = "${f.text}"`)
-        .join(", ");
-      return (
-        `tt3: instruction は「Type the <活用形の英語名> of “${word}”.」（使える活用形: ${forms}）。` +
-        `acceptedAnswers は正しい活用形1つ。`
-      );
-    },
-  },
   {
     id: "vc1",
     answerType: "choices",
@@ -277,7 +205,7 @@ const AI_FORMAT_SPECS: FormatSpec[] = [
     correctMustBeWord: false,
     isAvailable: hasDefinition,
     promptSpec: (word) =>
-      `vc1: audioText は "${word}"（3バリエーションとも）。instruction は「Listen. Which is the correct definition of the word you hear?」。` +
+      `vc1: audioText は "${word}"（全バリエーションとも）。instruction は「Listen. Which is the correct definition of the word you hear?」。` +
       `options は英語定義4つで正解は "${word}" の定義（表現はバリエーションごとに変える）。`,
   },
   {
@@ -289,7 +217,7 @@ const AI_FORMAT_SPECS: FormatSpec[] = [
     isAvailable: () => true,
     promptSpec: (word) =>
       `vc2: audioText は "${word}"。instruction は「Listen. Choose the correct spelling.」。` +
-      `options は綴り4つで正解は "${word}"、誤答はミススペル（tc9 と同様だが別パターン）。`,
+      `options は綴り4つで正解は "${word}"、誤答はミススペル（文字入替・脱字・重複。実在語は避ける）。`,
   },
   {
     id: "vc3",
@@ -316,65 +244,14 @@ const AI_FORMAT_SPECS: FormatSpec[] = [
       `誤答の単語は audioText の文中に現れないものにする。`,
   },
   {
-    id: "vc5",
-    answerType: "choices",
-    needsDisplayText: false,
-    needsAudioText: true,
-    correctMustBeWord: true,
-    isAvailable: () => true,
-    promptSpec: (word) =>
-      `vc5: audioText は "${word}"。instruction は「Listen carefully. Which word do you hear?」。` +
-      `options は単語4つで正解は "${word}"。誤答は発音が紛らわしい実在語（最小対語や母音違いなど）。`,
-  },
-  {
-    id: "vc6",
-    answerType: "choices",
-    needsDisplayText: false,
-    needsAudioText: true,
-    correctMustBeWord: false,
-    isAvailable: hasExamples,
-    promptSpec: (word) =>
-      `vc6: audioText に "${word}" を含む短い英文（新作）。instruction は「Listen. Which sentence do you hear?」。` +
-      `options は文4つで、正解は audioText と同一の文。誤答は語順・単語を少し変えた紛らわしい文。`,
-  },
-  {
-    id: "vc7",
-    answerType: "choices",
-    needsDisplayText: false,
-    needsAudioText: true,
-    correctMustBeWord: false,
-    isAvailable: (info) => mappableInflections(info).length > 0,
-    promptSpec: (word, info) => {
-      const forms = mappableInflections(info)
-        .map((f) => `${f.formEnglish} = "${f.text}"`)
-        .join(", ");
-      return (
-        `vc7: audioText に "${word}" の活用形1つ（候補: ${forms}）。` +
-        `instruction は「Listen. Which form of “${word}” do you hear?」。` +
-        `options は活用形の英語名4つ（"past tense" "plural" など）で、正解は audioText の形の名前。`
-      );
-    },
-  },
-  {
-    id: "vtc1",
-    answerType: "choices",
-    needsDisplayText: true,
-    needsAudioText: true,
-    correctMustBeWord: false,
-    isAvailable: hasExamples,
-    promptSpec: (word) =>
-      `vtc1: audioText に "${word}"（または活用形）を含む完全な英文（新作）、displayText にはその文の該当語を "_____" にしたもの。` +
-      `instruction は「Listen and choose the word that completes the sentence.」。options は語4つで正解は空所の形。`,
-  },
-  {
     id: "vtt1",
     answerType: "typing",
     needsDisplayText: true,
     needsAudioText: true,
     correctMustBeWord: false,
     isAvailable: hasExamples,
-    // 生成指示は形式グループ（FORMATS_PER_CALL 分割）をまたぐ参照をしない自己完結の文にする
-    // （「vtc1 の入力版」のような参照は、別グループに分割された単語で生成漏れを起こした）
+    // 生成指示は他形式を参照せず自己完結の文にする
+    // （形式グループ FORMATS_PER_CALL 分割をまたぐ参照は、別グループの単語で生成漏れを起こした）
     promptSpec: (word) =>
       `vtt1: audioText に "${word}"（または活用形）を含む完全な英文（新作）、` +
       `displayText にはその文の該当語を "_____" にしたもの。` +
@@ -389,18 +266,7 @@ const AI_FORMAT_SPECS: FormatSpec[] = [
     isAvailable: () => true,
     promptSpec: (word) =>
       `vt1: audioText は "${word}"。instruction は「Listen and type the word you hear.」。acceptedAnswers は ["${word}"]。` +
-      `3バリエーションとも同一でよい。`,
-  },
-  {
-    id: "vt2",
-    answerType: "typing",
-    needsDisplayText: false,
-    needsAudioText: true,
-    correctMustBeWord: false,
-    isAvailable: hasExamples,
-    promptSpec: (word) =>
-      `vt2: audioText に "${word}" を含む短い英文（8語以内目安、毎バリエーション新作）。` +
-      `instruction は「Listen and type the sentence you hear.」。acceptedAnswers は audioText と同一の文1つ。`,
+      `全バリエーションとも同一でよい。`,
   },
 ];
 
@@ -563,13 +429,13 @@ function validateAndConvert(raw: RawQuestion, word: string, spec: FormatSpec): Q
       options: null,
       correctIndex: null,
       acceptedAnswers: accepted,
-      // 例文ディクテーション（vt2）のみ一致率判定。AI の出力値は使わずサーバで固定する
-      matchRateThreshold: spec.id === "vt2" ? SENTENCE_MATCH_THRESHOLD : null,
+      // タイプ入力形式は完全一致判定（一致率しきい値は使わない）
+      matchRateThreshold: null,
     },
   };
 }
 
-// -- イラスト系4形式（TC11・IC1・IT1・VC8）: AI 不要のルール生成
+// -- イラスト系2形式（IC1・IT1）: AI 不要のルール生成
 
 function pickRandom<T>(pool: T[], count: number): T[] {
   const shuffled = [...pool];
@@ -599,32 +465,10 @@ export function generateIllustrationQuestions(
   const hasOwnIllustration = illustratedWords.some((w) => normalizeKey(w) === key);
   if (!hasOwnIllustration) return [];
 
-  const otherIllustrated = illustratedWords.filter((w) => normalizeKey(w) !== key);
   const otherWords = allWords.filter((w) => normalizeKey(w) !== key);
   const questions: GeneratedQuestion[] = [];
 
   for (let variant = 0; variant < VARIANTS_PER_FORMAT; variant++) {
-    // TC11: 単語→イラスト4択 / VC8: 音声→イラスト4択（誤答は他単語の生成済みイラスト3枚）
-    if (otherIllustrated.length >= 3) {
-      const tc11 = shuffledChoices(word, pickRandom(otherIllustrated, 3));
-      questions.push(ruleQuestion(variant, {
-        format: "tc11",
-        instruction: `Which picture shows “${word}”?`,
-        displayText: null,
-        audioText: null,
-        promptIllustrationWord: null,
-        answer: { type: "illustrationChoices", options: tc11.options, correctIndex: tc11.correctIndex, acceptedAnswers: null, matchRateThreshold: null },
-      }));
-      const vc8 = shuffledChoices(word, pickRandom(otherIllustrated, 3));
-      questions.push(ruleQuestion(variant, {
-        format: "vc8",
-        instruction: "Listen. Which picture shows the word you hear?",
-        displayText: null,
-        audioText: word,
-        promptIllustrationWord: null,
-        answer: { type: "illustrationChoices", options: vc8.options, correctIndex: vc8.correctIndex, acceptedAnswers: null, matchRateThreshold: null },
-      }));
-    }
     // IC1: イラスト→単語4択（誤答は単語帳の他単語テキスト）
     if (otherWords.length >= 3) {
       const ic1 = shuffledChoices(word, pickRandom(otherWords, 3));
@@ -674,7 +518,7 @@ export async function generateQuizQuestions(
 
   const results = await Promise.allSettled(
     groups.map(async (specs) => {
-      // 1グループ 最大18問（6形式×3）のJSONを確実に収めるため max_tokens を広めに取る
+      // 1グループ 最大12問（6形式×2）のJSONを確実に収めるため max_tokens を広めに取る
       const { json, inputTokens, outputTokens } = await callStructured<{ questions: RawQuestion[] }>(
         config.quizQuestionModel,
         QUIZ_QUESTIONS_SCHEMA,

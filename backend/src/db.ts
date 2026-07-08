@@ -286,6 +286,14 @@ db.exec(`
 //   vtt1 は音声で答えを特定できるため復活: docs/plans/archive/restore-vtt1.md）。
 db.exec("DELETE FROM quiz_questions WHERE format = 'tt2'");
 
+// バリエーション選別（Tier B, docs/plans/word-quiz-format-curation.md）で廃止した12形式の
+// 保存済み問題を一掃する。冪等なので毎起動で実行してよい。残存15形式は次回の生成/再生成で
+// variant 2 件に作り直される（旧 variant_index=2 のデータが残っていても出題上は無害）。
+db.exec(
+  "DELETE FROM quiz_questions WHERE format IN " +
+    "('tc1','tc8','tc9','tc10','tc11','tt3','vc5','vc6','vc7','vc8','vtc1','vt2')"
+);
+
 export interface RequestLogInput {
   imageFilename: string | null;
   targetLanguage: string;
