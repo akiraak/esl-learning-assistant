@@ -176,7 +176,8 @@ ESL の授業では、教科書ページの撮影（3.1 OCR）や配布音声（
 - [x] Phase 1: `Document` データモデル追加（+ ModelContainer 登録 / DebugDataCleaner / data-model.md）
 - [x] Phase 2: backend 抽出＋翻訳エンドポイント（PDF/DOCX＋スキャンOCRフォールバック＋コストログ）
   - `POST /api/document-extract-translate`（`documentExtract.ts` / `document_requests` テーブル / `data/documents/` 保存）を実装。DOCX・テキスト層PDF・スキャンPDF(OCR) の3経路を実機の Claude で end-to-end 確認済み。テスト（Phase 6）は未着手。
-- [ ] Phase 3: iOS 取り込み UI（AddContentTypeView 追加 / DocumentFileImporter / Storage / Remote サービス）
+- [x] Phase 3: iOS 取り込み UI（AddContentTypeView 追加 / DocumentFileImporter / Storage / Remote サービス）
+  - `AddContentTypeView` に「Document」行（`doc.text` / `addContentDocumentButton`）＋ `.fileImporter([.pdf, docx])` を追加。`DocumentFileImporter`（`AudioFileImporter` 範）と `DocumentExtractTranslateService` 抽象＋`RemoteDocumentExtractTranslateService`（`RemoteTranscriptionTranslationService` 範）を新規実装。`DocumentStorage` は Phase 1 済み。`DocumentKind` に ext↔種別↔mediaType の対応を追加（backend と一致）。取り込みは pending で作成のみ（抽出＋翻訳の起動は Phase 4 の手動ボタン）。`xcodegen generate` 済み・シミュレータビルド成功。取り込み文書の一覧表示・手動抽出ボタンは Phase 4 で可視化、UIテストは Phase 6。
 - [ ] Phase 4: iOS 詳細画面 DocumentDetailView（英文タップ登録 / 訳表示 / 削除 / 一覧導線）
 - [ ] Phase 4.5: アプリ内ファイル表示（PDF=PDFView / DOCX=QuickLook の `DocumentFileViewer`）
 - [ ] Phase 5: 管理画面ログ表示

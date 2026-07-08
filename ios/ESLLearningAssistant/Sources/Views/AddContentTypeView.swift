@@ -21,10 +21,23 @@ struct AddContentTypeView: View {
 
     @State private var isShowingCapture = false
     @State private var isShowingAudioImporter = false
+    @State private var isShowingDocumentImporter = false
     @State private var isShowingYouTubeAdd = false
     /// 内側フローが「追加完了」で閉じたか。true なら内側の `onDismiss` で外側シートも閉じる。
     @State private var didComplete = false
     @State private var audioImportError: String?
+    @State private var documentImportError: String?
+
+    /// ドキュメント取り込みで受け付ける形式（PDF / DOCX）。DOCX は system 宣言の型を優先し、
+    /// 取れなければ拡張子から解決する。
+    private static let documentContentTypes: [UTType] = {
+        var types: [UTType] = [.pdf]
+        if let docx = UTType("org.openxmlformats.wordprocessingml.document")
+            ?? UTType(filenameExtension: "docx") {
+            types.append(docx)
+        }
+        return types
+    }()
 
     var body: some View {
         NavigationStack {
@@ -45,6 +58,14 @@ struct AddContentTypeView: View {
                         tint: .orange,
                         identifier: "addContentAudioButton"
                     ) { isShowingAudioImporter = true }
+
+                    typeRow(
+                        title: "Document",
+                        subtitle: "Import a PDF or Word file",
+                        systemImage: "doc.text",
+                        tint: .green,
+                        identifier: "addContentDocumentButton"
+                    ) { isShowingDocumentImporter = true }
 
                     typeRow(
                         title: "YouTube",
@@ -81,10 +102,22 @@ struct AddContentTypeView: View {
             ) { result in
                 handleAudioImport(result)
             }
+            .fileImporter(
+                isPresented: $isShowingDocumentImporter,
+                allowedContentTypes: Self.documentContentTypes,
+                allowsMultipleSelection: true
+            ) { result in
+                handleDocumentImport(result)
+            }
             .alert("Import Failed", isPresented: audioImportErrorBinding) {
                 Button("OK", role: .cancel) { audioImportError = nil }
             } message: {
                 Text(audioImportError ?? "")
+            }
+            .alert("Import Failed", isPresented: documentImportErrorBinding) {
+                Button("OK", role: .cancel) { documentImportError = nil }
+            } message: {
+                Text(documentImportError ?? "")
             }
         }
     }
@@ -143,6 +176,26 @@ struct AddContentTypeView: View {
             }
         case .failure(let error):
             audioImportError = error.localizedDescription
+        }
+    }
+
+    private var documentImportErrorBinding: Binding<Bool> {
+        Binding(get: { documentImportError != nil }, set: { if !$0 { documentImportError = nil } })
+    }
+
+    private func handleDocumentImport(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            // 抽出＋翻訳は Document 詳細（Phase 4）の手動ボタンで走らせる。ここでは pending で取り込むだけ。
+            let count = DocumentFileImporter.importFiles(urls, into: lesson, context: modelContext)
+            if count == 0 && !urls.isEmpty {
+                documentImportError = "Could not read the selected document(s)."
+            } else if count > 0 {
+                // 取り込めたらフロー全体を閉じてレッスンへ戻す
+                dismiss()
+            }
+        case .failure(let error):
+            documentImportError = error.localizedDescription
         }
     }
 }
