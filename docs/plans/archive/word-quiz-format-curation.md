@@ -107,7 +107,7 @@
 - [x] Phase 1: 選別の確定（**Tier B / 残す15・削除12 / 変種 3→2**）
 - [x] Phase 2: backend 側の形式削除（`AI_FORMAT_SPECS` 13形式へ / `generateIllustrationQuestions` は ic1・it1 のみ / `VARIANTS_PER_FORMAT` 3→2）＋旧データ purge マイグレーション（db.ts）。`SENTENCE_MATCH_THRESHOLD`・vt2 分岐も撤去。tsc 通過
 - [x] Phase 3: iOS `ReviewQuestionFormat` を15形式へ／`promptBucket`・`answerBucket` 更新／`FormatRatioTargets.v1` を 45:45:10・65:35 へ再チューニング。影響テスト（FormatSelector/ReviewSessionPlanner/ReviewQuestion）修正。ユニットテスト15件成功
-- [ ] Phase 4: 既存単語の問題を再生成（要否判断）＋実機・管理画面で件数とバランス検証（バックエンド再起動で purge が走る）
+- [x] Phase 4: バックエンド再ビルド＋再起動で purge 実行を確認（削除12形式=0行、残存15形式のみ）。要否判断→ユーザー判断で既存5語を全再生成。再生成後は variant 0..1（2変種）・各語≤28問・削除形式ゼロ・TTS事前生成0失敗を確認。モダリティ網羅も健全と検証
 
 ## 実装メモ（Phase 2-3）
 
@@ -118,4 +118,15 @@
 
 1. 採用ティア: **Tier B**（残す15 / 削除12）
 2. `VARIANTS_PER_FORMAT`: **3 → 2**
-3. 既存単語の一括再生成: Phase 4 で要否判断（削除形式は purge で即時消え、残存形式は次回生成/再生成時に変種2へ）
+3. 既存単語の一括再生成: **実施**（Phase 4）。purge のみでもクリーン・均衡は保てるが（削除形式は即時消え、残存形式の旧3変種目は無害）、ユーザー判断で既存5語をすべて再生成し variant 0..1 のクリーンなセットへ作り直した。
+
+## Phase 4 検証結果（2026-07-07）
+
+- **purge 動作確認**: dist が Phase 2 前のもので stale だったため `npm run build` → 再起動。起動時 purge で削除12形式が全消去（0行）。残存は狙い通り15形式のみ。
+- **再生成（全5語 / 全 ja）**: `POST /admin/quiz-questions/regenerate` を achievement / apple / banana / experience / repetition に実行（各 HTTP 302 成功）。
+  - 結果: 15形式のみ・`variant_index` 0..1（2変種）・各語 20〜28問（上限 15×2=30 内）・削除形式ゼロ。
+  - TTS 事前生成（`pregenerateQuizAudio`）は全語 succeeded / failed=0。
+- **モダリティ網羅**: audio は全語6形式（vc2/vt1 常時可 + vc1/vc3 定義 + vc4/vtt1 例文）、text 5〜7、illust はイラスト生成済み2語（achievement/repetition）のみ。回答は choice 8〜11 / typing 3〜4。45:45:10・65:35 目標は達成可能。
+  - tc4/tc5/tc6 の欠けは類義語/対義語/コロケ素材が無い語のみで `isAvailable` の正しい挙動（選別の問題ではない）。
+- **観察**: 初回再生成で banana に vc2（常時可能）が欠落したが、これは生成グループ失敗ではなく AI がそのグループで有効な vc2 を返さず `validateAndConvert` で除外されたため。1回の再試行で補完された（AI 生成の確率的ギャップで、次回生成/再試行で自己修復する）。
+- **管理画面**: `/admin/quiz-questions` の問題数・形式数が DB 実測と一致。異常なし。

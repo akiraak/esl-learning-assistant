@@ -1,5 +1,19 @@
 # DONE
 
+- [x] 2026-07-07 単語出題バリエーションが多すぎるので選別する（27→15形式・変種3→2）
+      Tier B（残す15・削除12）を確定し、backend の `AI_FORMAT_SPECS` を13形式へ、
+      `generateIllustrationQuestions` を ic1/it1 のみに、`VARIANTS_PER_FORMAT` を 3→2 に変更。
+      廃止12形式（tc1/tc8/tc9/tc10/tc11/tt3/vc5/vc6/vc7/vc8/vtc1/vt2）の旧データは
+      起動時 purge（`db.ts`）で一掃。iOS は `ReviewQuestionFormat` を15形式へ整理し、
+      `FormatRatioTargets.v1` を 45:45:10・65:35 に再チューニング（ユニットテスト15件成功）。
+      Phase 4（検証）: バックエンド再起動で purge 実行を確認（削除12形式=0行）。要否判断の結果、
+      ユーザー判断で既存5語（achievement/apple/banana/experience/repetition, 全 ja）を全再生成。
+      再生成後は 15形式のみ・variant 0..1（2変種）・各語≤28問（上限30）・削除形式ゼロ、
+      TTS 事前生成も全語 0 失敗。モダリティ網羅も健全（audio 全語6形式、text 5〜7、illust は
+      イラスト語のみ、choice 8〜11 / typing 3〜4）。tc4/tc5/tc6 の欠けは類義語/対義語/コロケ素材が
+      無い語のみで `isAvailable` の正しい挙動。管理画面 `/admin/quiz-questions` の件数表示も一致。
+      [plan](docs/plans/archive/word-quiz-format-curation.md)
+
 - [x] 2026-07-07 復習クイズの選択肢の正解位置をサーバ側で必ずシャッフルする
       調査の結果、正解位置が固定/偏りうる形式があった（tc8 は `options` を
       `["noun","verb","adjective","adverb"]` の固定順で生成し正解位置が品詞で確定、AI 生成4択
