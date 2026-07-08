@@ -1,5 +1,27 @@
 # DONE
 
+- [x] 2026-07-07 入力単語の自動正規化（原形化・綴り訂正）を完了（全 Phase）
+      入力語を辞書見出し語（lemma）へ正規化して登録する仕組み。過去形/複数形の原形化・タイポ訂正を
+      「入力語→lemma 正規化」という同一操作として backend の haiku 単発＋入力単位キャッシュで扱う。
+      Phase 0: backend `POST /api/word-normalize`（wordNormalize.ts・`word_normalizations` キャッシュ＋
+      コストログ・admin 一覧/詳細）。status は canonical/inflected/misspelled/proper_noun/phrase/unknown、
+      reason は母語1文。Phase 1: iOS `WordNormalization`/`WordNormalizeStatus`（トランジェント）・
+      `WordNormalizeService`/`RemoteWordNormalizeService`（`-uiTestStubWordNormalize` スタブ付き）。
+      Phase 2: Add Word フォームで Add 押下→正規化→訂正候補があれば確認ダイアログ（主=lemma/逃げ道=入力形/
+      Cancel）、canonical は即登録、正規化形が既存語なら重複弾き、失敗時は入力のままフォールバック。
+      Phase 3: 英文タップ登録を `WordNormalizationFlow` 経由に統合（訂正確認・原形 dedup 遷移）。
+      Phase 4（今回・リネーム＋マージ）: 登録済みの誤り修正。影響精査で `Word.text` は DB キーではなく
+      （identity は UUID）、イラスト/クイズ/音声/backend キャッシュはすべて text をキーにするため、
+      リネームは新キーでミス→再生成される＝自己修復・移行不要と確認。`WordRegistrar.correct(_:to:...)`
+      を新設し、衝突なし=その場で `text` 差し替え＋旧綴り由来の派生情報（訳語/品詞/例文/AI情報）を
+      クリアして AI 再生成、衝突あり（正規化形が既存語と一致）=出現を既存語へ集約（同一 lesson/photo/audio は
+      dedup）して元行を削除、reviewState・occurrences は保持。大小のみ変更は綴りだけ整えて派生情報維持。
+      `WordDetailView` の Actions に「Correct Word」を追加（正規化→確認ダイアログ→correct、マージ時は
+      表示語が消えるため先に dismiss、canonical は「already looks correct」告知）。`register` は不変。
+      検証: `WordRegistrarTests` に correct 6 ケース追加（全74ユニット緑）、`WordCorrectionUITests`
+      2 ケース（スタブでリネーム／マージを決定的に E2E 検証）緑。
+      plan: docs/plans/archive/word-input-normalization.md
+
 - [x] 2026-07-07 既存単語を「Add Word」フォームで弾き、説明文を表示するようにした
       手動の Add Word フォーム（`WordAddView`）は同綴りの既存語を入力しても `WordRegistrar` が黙って
       再利用しシートを閉じるだけで、ユーザーが重複追加に気付けなかった。入力中に重複を検知して第1セクション

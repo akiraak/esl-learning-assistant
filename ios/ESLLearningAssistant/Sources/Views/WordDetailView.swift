@@ -6,6 +6,8 @@ struct WordDetailView: View {
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    // 訂正時の衝突（正規化形が既存語と一致）判定に全単語を参照する
+    @Query private var allWords: [Word]
 
     @State private var isConfirmingRegenerate = false
     @State private var isConfirmingDelete = false
@@ -14,6 +16,13 @@ struct WordDetailView: View {
     @State private var speakingText: String?
     @StateObject private var ttsPlayback = TTSPlaybackService()
     @State private var ttsErrorMessage: String?
+
+    /// 「Correct Word」押下後の正規化（原形化・綴り訂正）の非同期待ち。true の間はボタンをスピナーに差し替える。
+    @State private var isCorrecting = false
+    /// 訂正候補が出たときの確認ダイアログ用。nil でダイアログ非表示。
+    @State private var pendingCorrection: WordNormalization?
+    /// 訂正の結果お知らせ（既に正しい／確認に失敗）。nil で非表示。
+    @State private var correctionNotice: String?
 
     var body: some View {
         List {
@@ -110,6 +119,25 @@ struct WordDetailView: View {
             }
 
             Section {
+                // 登録済みの語を原形／正しい綴りへ後追いで直す（過去形・複数形・タイポの訂正）。
+                // 正規化待ちの間はスピナー表示（二重押下防止も兼ねる）。
+                if isCorrecting {
+                    HStack(spacing: 12) {
+                        ProgressView()
+                        Text("Checking…")
+                            .foregroundStyle(.secondary)
+                    }
+                    .accessibilityIdentifier("wordCorrectProgress")
+                } else {
+                    Button {
+                        correctWord()
+                    } label: {
+                        Label("Correct Word", systemImage: "textformat.abc")
+                    }
+                    .disabled(word.aiInfoStatus == .generating)
+                    .accessibilityIdentifier("wordCorrectButton")
+                }
+
                 Button {
                     // 生成済み情報を上書きするときだけ確認を挟む。未生成・失敗時は即生成する
                     if word.aiInfoStatus == .completed {
@@ -194,6 +222,73 @@ struct WordDetailView: View {
         } message: {
             Text("The word will be removed from the word list and all lessons.")
         }
+        // 訂正候補（原形／正しい綴り）の確認。主=訂正形 / Cancel。説明（reason）のみ母語。
+        .confirmationDialog(
+            "Correct this word?",
+            isPresented: Binding(
+                get: { pendingCorrection != nil },
+                set: { if !$0 { pendingCorrection = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: pendingCorrection
+        ) { normalization in
+            Button("Correct to “\(normalization.effectiveLemma)”") {
+                applyCorrection(to: normalization.effectiveLemma)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { normalization in
+            Text(normalization.reason)
+        }
+        // 訂正不要（既に正しい）／確認失敗（オフライン等）のお知らせ
+        .alert(
+            "Correct Word",
+            isPresented: Binding(
+                get: { correctionNotice != nil },
+                set: { if !$0 { correctionNotice = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(correctionNotice ?? "")
+        }
+    }
+
+    /// 「Correct Word」押下時の処理。現在の綴りを正規化サービスに投げ、訂正候補（原形／正しい綴り）が
+    /// あれば確認ダイアログを、無ければ「既に正しい」お知らせを出す。失敗（オフライン等）はお知らせで止める。
+    private func correctWord() {
+        isCorrecting = true
+        let current = word.text
+        let service = RemoteWordNormalizeService()
+        Task {
+            let normalization = try? await service.normalize(
+                word: current,
+                targetLanguage: WordNormalizationFlow.targetLanguage
+            )
+            isCorrecting = false
+            guard let normalization else {
+                correctionNotice = "Couldn’t check this word. Please try again."
+                return
+            }
+            if normalization.requiresConfirmation {
+                pendingCorrection = normalization
+            } else {
+                // canonical / 固有名詞 / 連語 / 判定不能、または候補が現在と実質同じ
+                correctionNotice = "“\(current)” already looks correct."
+            }
+        }
+    }
+
+    /// 確認後に訂正を確定する。マージ（正規化形が既存語と一致）では表示中の語が削除されるため、
+    /// 削除済みモデルの再描画を避けて先に画面を閉じる（`deleteWord` と同じ作法）。
+    private func applyCorrection(to lemma: String) {
+        let newText = lemma.trimmingCharacters(in: .whitespacesAndNewlines)
+        let willMerge = allWords.contains {
+            $0.id != word.id && $0.text.compare(newText, options: [.caseInsensitive]) == .orderedSame
+        }
+        if willMerge {
+            dismiss()
+        }
+        WordRegistrar.correct(word, to: newText, in: modelContext, existingWords: allWords)
     }
 
     /// 復習クイズの状態（docs/plans/archive/word-memorization-quiz.md §3.5 Phase 4）。
