@@ -1,5 +1,17 @@
 # DONE
 
+- [x] 2026-07-07 綴り間違いの変化形を原形へ正規化する（`writed`→`write`）
+      `writed` を登録しようとすると変化形 `wrote` を勧めてくる不具合を修正。原因は
+      `backend/src/wordNormalize.ts` のプロンプト／スキーマが inflected（変化形→原形）と
+      misspelled（綴り訂正）を独立処理として記述しており、両方に該当する語で綴り訂正のみが
+      効いて原形化されていなかった。lemma は inflected/misspelled では常に原形（基本形）にする
+      と明記し、綴りを直した結果が変化形なら原形へ戻す例（`writed`→`write`、status は misspelled）を
+      追記。変化形の綴り間違い（`runned` 等）は misspelled に含めると明示。iOS は変更不要
+      （`requiresConfirmation` が lemma≠入力で確認UIを出すため成立）、モデルの doc コメントのみ追従。
+      ローカルサーバに curl（regenerate:true）で検証: `writed`→`write`/`runned`→`run`（いずれ misspelled）、
+      回帰 `ran`→`run`(inflected)・`recieve`→`receive`(misspelled)・`apple`(canonical) 変化なし。
+      tsc 通過。regenerate 実行でキャッシュも上書き済み。
+
 - [x] 2026-07-07 入力単語の自動正規化（原形化・綴り訂正）を完了（全 Phase）
       入力語を辞書見出し語（lemma）へ正規化して登録する仕組み。過去形/複数形の原形化・タイポ訂正を
       「入力語→lemma 正規化」という同一操作として backend の haiku 単発＋入力単位キャッシュで扱う。

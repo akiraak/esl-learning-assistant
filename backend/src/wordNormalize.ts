@@ -7,7 +7,7 @@ import { callStructured } from "./ocrTranslate";
 // status で確認UIの出し分けを決める（詳細は docs/plans/word-input-normalization.md）:
 //   canonical    既に見出し語 → lemma は入力と同じ / 確認UIを出さず即登録
 //   inflected    語形変化（過去形/複数形/比較級等）→ lemma は原形 / 確認UIを出す
-//   misspelled   綴り間違い → lemma は正しい綴り / 確認UIを出す
+//   misspelled   綴り間違い → lemma は正しい綴りの原形（例 writed→write）/ 確認UIを出す
 //   proper_noun  固有名詞（人名等）→ 訂正しない（lemma は入力と同じ）
 //   phrase       複数語の連語 → lemma は入力と同じ
 //   unknown      判定不能・英語でない → lemma は入力と同じ
@@ -31,8 +31,8 @@ const WORD_NORMALIZE_SCHEMA = {
       description:
         "入力語の分類。" +
         "canonical=既に辞書見出し語（原形・正しい綴り）。" +
-        "inflected=語形変化（過去形・過去分詞・三単現・複数形・比較級・最上級・-ing形など）。" +
-        "misspelled=綴り間違い。" +
+        "inflected=正しく綴られた語形変化（過去形・過去分詞・三単現・複数形・比較級・最上級・-ing形など）。" +
+        "misspelled=綴り間違い。変化形の綴り間違い（例:『writed』『runned』）もここに含める。" +
         "proper_noun=固有名詞（人名・地名・商品名など。訂正しない）。" +
         "phrase=空白を含む複数語の連語。" +
         "unknown=英単語として判定できない・英語でない。",
@@ -40,7 +40,10 @@ const WORD_NORMALIZE_SCHEMA = {
     lemma: {
       type: "string",
       description:
-        "登録すべき見出し語。inflected なら原形、misspelled なら正しい綴りにする。" +
+        "登録すべき辞書見出し語。inflected/misspelled では常に『原形（基本形）』にする。" +
+        "語形変化していれば原形に戻し、綴り間違いは正しい綴りに直す。両方に該当する場合" +
+        "（＝原形でない語の綴り間違い）は、綴りを直したうえでさらに原形へ戻す。" +
+        "例:『writed』→『write』（過去形 wrote の綴り間違いだが、登録するのは原形 write）。" +
         "canonical/proper_noun/phrase/unknown では入力語をそのまま（トリムのみ）返す。小文字化はしない。",
     },
     reason: {
@@ -75,7 +78,8 @@ export async function normalizeWord(
   const prompt = [
     `英語学習アプリの語彙リスト登録の前処理として、入力された語 "${word}" を辞書見出し語（lemma）へ正規化してください。`,
     `目的は、過去形・複数形などの語形変化を原形に、綴り間違いを正しい綴りに直して、正しい見出し語で登録することです。`,
-    `reason は言語コード "${targetLanguage}" の言語（母語）で書いてください。`,
+    `lemma は常に辞書の原形（基本形）にしてください。綴り間違いを直した結果が変化形になる場合は、そこで止めずにさらに原形へ戻します（例:「writed」は過去形 wrote の綴り間違いですが、登録するのは原形「write」。この場合 status は misspelled）。`,
+    `reason は言語コード "${targetLanguage}" の言語（母語）で書いてください。原形へ直した理由が伝わるようにしてください。`,
     `固有名詞・連語・英語でない入力は訂正せず、そのまま返してください。`,
   ].join("\n");
 

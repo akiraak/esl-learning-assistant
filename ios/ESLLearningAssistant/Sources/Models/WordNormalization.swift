@@ -9,7 +9,8 @@ import Foundation
 struct WordNormalization: Codable, Equatable {
     /// バックエンドが受け取った入力語（サーバ側でトリム済み）
     let input: String
-    /// 登録すべき見出し語。inflected なら原形、misspelled なら正しい綴り。
+    /// 登録すべき見出し語。inflected/misspelled では常に原形（基本形）。
+    /// 綴りを直した結果が変化形になる場合（例:「writed」）も原形（「write」）まで戻す。
     /// canonical/proper_noun/phrase/unknown では入力語と同じ。
     let lemma: String
     let status: WordNormalizeStatus
