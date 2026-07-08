@@ -103,7 +103,7 @@ final class WordDetailButtonsUITests: XCTestCase {
     }
 
     private func clearAllData(_ app: XCUIApplication) {
-        app.tabBars.buttons["Settings"].tap()
+        app.selectTab("Settings")
         let clearButton = app.buttons["Delete All Data"]
         XCTAssertTrue(clearButton.waitForExistence(timeout: 5))
         app.swipeUp()

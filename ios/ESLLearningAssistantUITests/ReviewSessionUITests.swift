@@ -156,7 +156,8 @@ final class ReviewSessionUITests: XCTestCase {
         XCTAssertTrue(nextRow.label.contains("Due today"), "新規登録語は当日が復習日: \(nextRow.label)")
         let stepRow = app.staticTexts["wordReviewStepRow"]
         XCTAssertTrue(stepRow.exists)
-        XCTAssertTrue(stepRow.label.contains("1 / 5 (+3 days)"), "Step 表示: \(stepRow.label)")
+        // 復習間隔は [1,2,3,7,14,30,90]（7 ステップ、初回 +1 day）。2026-07-06 の頻度変更に追従。
+        XCTAssertTrue(stepRow.label.contains("1 / 7 (+1 days)"), "Step 表示: \(stepRow.label)")
         attach(app, "word-detail-review-status")
     }
 
@@ -172,7 +173,7 @@ final class ReviewSessionUITests: XCTestCase {
     }
 
     private func clearAllData(_ app: XCUIApplication) {
-        app.tabBars.buttons["Settings"].tap()
+        app.selectTab("Settings")
         let clearButton = app.buttons["Delete All Data"]
         XCTAssertTrue(clearButton.waitForExistence(timeout: 5))
         app.swipeUp()

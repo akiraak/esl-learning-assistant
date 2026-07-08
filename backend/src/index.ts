@@ -33,8 +33,7 @@ import {
 } from "./transcribe";
 import {
   extractAndTranslateDocument,
-  isSupportedDocumentMimeType,
-  SUPPORTED_DOCUMENT_MIME_EXTENSIONS,
+  validateDocumentExtractRequest,
 } from "./documentExtract";
 import { generateWordInfo, type WordInfo } from "./wordInfo";
 import { normalizeWord } from "./wordNormalize";
@@ -325,50 +324,20 @@ app.post("/api/transcribe-translate", async (req, res) => {
   }
 });
 
-// 文書インライン送信の上限（生バイト）。base64 は約1.33倍に膨らむため 14MB でも JSON ボディは
-// ~18.7MB で express.json の 25mb 上限に収まり、この 400 ガードが 413 より先に働く。Claude の
-// PDF document 上限（32MB/リクエスト）にも収まる。超過は「短い文書に分割」を促す（長尺は将来対応。§9.1）。
-const MAX_DOCUMENT_BYTES = 14 * 1024 * 1024;
-
 // 文書（base64 PDF/DOCX）→ 抽出（テキスト層抽出 or スキャンOCR）→ 既存 translateText で英→目的言語。
 // 写真OCR（/api/ocr-translate）・音声（/api/transcribe-translate）と同型: サーバキャッシュは持たず
 // 結果は iOS 側 Document に保存、ここでは料金・履歴を document_requests に記録する（管理画面表示は Phase 5）。
+// 送信前バリデーション（必須項目・mediaType・サイズ上限）は documentExtract の
+// validateDocumentExtractRequest に集約し、単体テスト可能にしている。
 app.post("/api/document-extract-translate", async (req, res) => {
-  const { fileBase64, mediaType, targetLanguage } = req.body ?? {};
+  const validation = validateDocumentExtractRequest(req.body);
+  if (!validation.ok) {
+    logger.warn(`document-extract-translate: rejected (${validation.error})`);
+    res.status(400).json({ error: validation.error });
+    return;
+  }
+  const { fileBuffer, mediaType, fileKind, targetLanguage } = validation.value;
 
-  if (typeof fileBase64 !== "string" || !fileBase64) {
-    logger.warn("document-extract-translate: rejected (fileBase64 is required)");
-    res.status(400).json({ error: "fileBase64 is required" });
-    return;
-  }
-  if (!isSupportedDocumentMimeType(mediaType)) {
-    logger.warn(`document-extract-translate: rejected (unsupported mediaType: ${String(mediaType)})`);
-    res.status(400).json({
-      error: `mediaType must be one of: ${Object.keys(SUPPORTED_DOCUMENT_MIME_EXTENSIONS).join(", ")}`,
-    });
-    return;
-  }
-  if (typeof targetLanguage !== "string" || !targetLanguage) {
-    logger.warn("document-extract-translate: rejected (targetLanguage is required)");
-    res.status(400).json({ error: "targetLanguage is required" });
-    return;
-  }
-
-  const fileBuffer = Buffer.from(fileBase64, "base64");
-  if (fileBuffer.length === 0) {
-    logger.warn("document-extract-translate: rejected (fileBase64 decoded to 0 bytes)");
-    res.status(400).json({ error: "fileBase64 is not valid base64 document data" });
-    return;
-  }
-  if (fileBuffer.length > MAX_DOCUMENT_BYTES) {
-    logger.warn(`document-extract-translate: rejected (document too large: ${fileBuffer.length} bytes)`);
-    res.status(400).json({
-      error: `document too large (${(fileBuffer.length / 1024 / 1024).toFixed(1)}MB, max ${MAX_DOCUMENT_BYTES / 1024 / 1024}MB). split into shorter documents`,
-    });
-    return;
-  }
-
-  const fileKind = SUPPORTED_DOCUMENT_MIME_EXTENSIONS[mediaType];
   const documentFilename = `${Date.now()}-${crypto.randomUUID()}.${fileKind}`;
   fs.writeFileSync(path.join(config.documentsDir, documentFilename), fileBuffer);
 

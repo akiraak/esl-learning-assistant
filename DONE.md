@@ -1,5 +1,36 @@
 # DONE
 
+- [x] 2026-07-08 PDF / DOCX 読み込み（＋アプリ内表示）＝全 Phase 完了（Phase 6 テストで締め）
+      Phase 1–5 で実装した PDF/DOCX 取り込み（抽出＋翻訳・単語タップ登録・アプリ内表示・管理画面ログ）に
+      Phase 6 でテストを追加し機能を完了。
+      backend: テストランナーが無かったため node:test + ts-node を導入（`npm test`＝`tsconfig.test.json` 指定。
+      本番 `tsc build` は `include:["src"]` のままで test を巻き込まない）。`documentExtract.ts` を挙動不変で
+      最小リファクタして検証可能に: テキスト層判定＝純関数 `hasTextLayer`＋`MIN_TEXT_LAYER_CHARS`、
+      DOCX/PDF 抽出＝`extractDocxText`/`extractPdfText`、送信前バリデーション（fileBase64／mediaType
+      ホワイトリスト／targetLanguage／0バイト／サイズ上限）＝`validateDocumentExtractRequest`＋
+      `MAX_DOCUMENT_BYTES`。index.ts のエンドポイントはこれらを呼ぶ形に集約（レスポンス・エラー文言は不変）。
+      テスト16件（mediaType ホワイトリスト、テキスト層判定の境界16、バリデーション各分岐＝サイズ上限含む、
+      DOCX/PDF 抽出、空 DOCX の例外）。fixture は再現スクリプト `test/fixtures/generate.js`（PDF は手組みバイト列、
+      DOCX は zip で最小 OOXML）で text-layer.pdf / scanned.pdf（テキスト層なし）/ sample.docx / empty.docx を
+      生成しコミット。AI/翻訳の成功経路は Phase 2 の実 Claude 疎通を信頼し非対象（音声と同方針）。
+      iOS unit（Swift Testing・15件）: DocumentStorage（保存/参照/削除・拡張子小文字化）、DocumentKind
+      （拡張子↔種別↔mediaType、backend と一致）、RemoteDocumentExtractTranslateService の送信前失敗分岐
+      （ファイル欠落／14MB 超）、DocumentFileImporter（対応/非対応の取り込み・pending・レッスン紐付け）、
+      `ModelContext.deleteDocument` の sourceDocument nullify。ユニット全89件 PASS。
+      iOS UI（LessonDocumentAddUITests 2件）: レッスンのコンテンツ追加シートに Document 行が並ぶこと、
+      Documents タブ（取り込み＋ボタン・空状態）が開けること。実取り込みはシステムの Files ピッカー経由で
+      XCUITest から駆動不可のため、状態遷移は unit 側で担保。
+      副次修正（Phase 4 で6タブ目 Documents を足したが UI テストを Phase 6 送りにしていたため放置されていた回帰）:
+      全 UI テストの `clearAllData` 等が「Settings」直タップで失敗（iPhone では Settings/Documents が「More」入り）。
+      共有ヘルパ `XCUIApplication.selectTab(_:)`（More 経由・overflow タブ再訪時は戻るボタンで一覧へ戻す）を
+      新設して 11 ファイルの Settings タップを置換、`testTabsAreVisible` を6タブ構成へ更新。あわせて stale
+      アサーションを実挙動へ追従: 復習ステップ表示 `1 / 5 (+3 days)`→`1 / 7 (+1 days)`（2026-07-06 の頻度変更）、
+      写真取り込みボタン `Choose Photo`→`Choose Photos`（2026-07-05 の複数取り込み対応）。
+      検証: backend `npm test` 16/16、iOS ユニット 89/89、UI 25/26 PASS。唯一 testClassLessonCaptureFlow は
+      写真ピッカーの座標タップ＋認証済み backend での OCR を要する環境依存の統合テストで、シミュレータ単体・
+      未認証では緑にできない（document 取り込みとは無関係の既存テスト。ラベル stale は本 Phase で修正済みで、
+      残る失敗は環境要因のみ）。plan: docs/plans/archive/document-import.md
+
 - [x] 2026-07-07 単語出題バリエーションが多すぎるので選別する（27→15形式・変種3→2）
       Tier B（残す15・削除12）を確定し、backend の `AI_FORMAT_SPECS` を13形式へ、
       `generateIllustrationQuestions` を ic1/it1 のみに、`VARIANTS_PER_FORMAT` を 3→2 に変更。

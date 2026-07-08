@@ -9,9 +9,14 @@ final class ESLLearningAssistantUITests: XCTestCase {
         let app = XCUIApplication()
         app.launch()
 
+        // 6 タブ構成のため iPhone では先頭 4 タブが直接見え、5 つ目以降（Documents/Settings）は
+        // 「More」に入る。overflow タブは More 経由で到達できることも確認する。
         XCTAssertTrue(app.tabBars.buttons["Lessons"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.tabBars.buttons["Words"].exists)
-        XCTAssertTrue(app.tabBars.buttons["Settings"].exists)
+        XCTAssertTrue(app.tabBars.buttons["Writing"].exists)
+        XCTAssertTrue(app.tabBars.buttons["Audio"].exists)
+        XCTAssertTrue(app.tabBars.buttons["More"].exists)
+        app.selectTab("Settings")
     }
 
     func testWarmUpPhotosLibrary() throws {
@@ -71,7 +76,8 @@ final class ESLLearningAssistantUITests: XCTestCase {
         choosePhotoTypeButton.tap()
         attach(app, "05b-capture-sheet")
 
-        let pickPhotoButton = app.buttons["Choose Photo"]
+        // CaptureView のライブラリ選択ボタンは複数選択対応で "Choose Photos"（2026-07-05 の複数取り込み対応）
+        let pickPhotoButton = app.buttons["Choose Photos"]
         XCTAssertTrue(pickPhotoButton.waitForExistence(timeout: 5))
         pickPhotoButton.tap()
 
@@ -250,7 +256,7 @@ final class ESLLearningAssistantUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["zebra"].waitForExistence(timeout: 5))
 
         // 設定タブのデバッグメニューを開く（フローティングタブバーに隠れるためスクロールする）
-        app.tabBars.buttons["Settings"].tap()
+        app.selectTab("Settings")
         let clearButton = app.buttons["Delete All Data"]
         XCTAssertTrue(clearButton.waitForExistence(timeout: 5))
         app.swipeUp()
@@ -269,7 +275,7 @@ final class ESLLearningAssistantUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["zebra"].waitForExistence(timeout: 5))
 
         // 削除を実行すると単語が消える
-        app.tabBars.buttons["Settings"].tap()
+        app.selectTab("Settings")
         app.swipeUp()
         clearButton.tap()
         XCTAssertTrue(deleteButton.waitForExistence(timeout: 5))
@@ -285,7 +291,7 @@ final class ESLLearningAssistantUITests: XCTestCase {
         app.launch()
 
         // 状態を確定させるため、まず全クリアしてからクラス・レッスンを1組作る
-        app.tabBars.buttons["Settings"].tap()
+        app.selectTab("Settings")
         let clearButton = app.buttons["Delete All Data"]
         XCTAssertTrue(clearButton.waitForExistence(timeout: 5))
         app.swipeUp()
@@ -314,7 +320,7 @@ final class ESLLearningAssistantUITests: XCTestCase {
         app.navigationBars.buttons["Add"].tap()
 
         // クラス指定で削除する
-        app.tabBars.buttons["Settings"].tap()
+        app.selectTab("Settings")
         let deleteClassButton = app.buttons["Delete a Class and Its Lessons"]
         XCTAssertTrue(deleteClassButton.waitForExistence(timeout: 5))
         app.swipeUp()
@@ -361,7 +367,7 @@ final class ESLLearningAssistantUITests: XCTestCase {
 
     /// 設定タブのデバッグメニューからデータを全クリアする
     private func clearAllData(_ app: XCUIApplication) {
-        app.tabBars.buttons["Settings"].tap()
+        app.selectTab("Settings")
         let clearButton = app.buttons["Delete All Data"]
         XCTAssertTrue(clearButton.waitForExistence(timeout: 5))
         app.swipeUp()

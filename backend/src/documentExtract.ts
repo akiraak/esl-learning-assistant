@@ -21,7 +21,19 @@ export function isSupportedDocumentMimeType(mediaType: unknown): mediaType is st
 // PDF のテキスト層有無の判定しきい値。スキャンPDFはテキスト抽出結果が空〜数文字になるため、
 // 空白を除いた文字数がこの値未満なら「テキスト層なし＝スキャン」とみなし OCR 経路へ回す。
 // v1 はドキュメント単位の二択（ページごとの混在処理はしない。§2.2）。
-const MIN_TEXT_LAYER_CHARS = 16;
+export const MIN_TEXT_LAYER_CHARS = 16;
+
+// 抽出テキストに実質的なテキスト層があるか（＝翻訳経路へ回せるか）を判定する。
+// 空白を除いた文字数が MIN_TEXT_LAYER_CHARS 以上なら true（テキスト層あり）、
+// 未満ならスキャンPDF とみなし false（OCR 経路へ）。
+export function hasTextLayer(text: string): boolean {
+  return text.replace(/\s/g, "").length >= MIN_TEXT_LAYER_CHARS;
+}
+
+// 文書インライン送信の上限（生バイト）。base64 は約1.33倍に膨らむため 14MB でも JSON ボディは
+// ~18.7MB で express.json の 25mb 上限に収まり、この 400 ガードが 413 より先に働く。Claude の
+// PDF document 上限（32MB/リクエスト）にも収まる。超過は「短い文書に分割」を促す（長尺は将来対応。§9.1）。
+export const MAX_DOCUMENT_BYTES = 14 * 1024 * 1024;
 
 // 文書1件ぶんの抽出/翻訳の出力上限。ESL の配布プリントは数ページ程度を想定し、英文＋訳が
 // 収まる余裕を取る。これを超える長尺文書は末尾が切り詰められうる（将来: streaming＋分割。§9.1）。
@@ -66,7 +78,7 @@ export interface DocumentExtractResult {
 
 // PDF のテキスト層をライブラリ抽出する。v2 の getText() は text にページ区切りの
 // 「-- N of M --」マーカーを混ぜるため、pages 配列の text を自前で連結して混入を避ける。
-async function extractPdfText(fileBuffer: Buffer): Promise<string> {
+export async function extractPdfText(fileBuffer: Buffer): Promise<string> {
   const parser = new PDFParse({ data: fileBuffer });
   try {
     const result = await parser.getText();
@@ -78,6 +90,13 @@ async function extractPdfText(fileBuffer: Buffer): Promise<string> {
   } finally {
     await parser.destroy();
   }
+}
+
+// DOCX（.docx）のテキスト層を mammoth で抽出する。word/document.xml の段落テキストを
+// 連結した結果を trim して返す（空なら "" ＝抽出不能）。ネットワーク・AI 課金は無い。
+export async function extractDocxText(fileBuffer: Buffer): Promise<string> {
+  const { value } = await mammoth.extractRawText({ buffer: fileBuffer });
+  return value.trim();
 }
 
 // スキャンPDF（テキスト層なし）を Claude の document ブロックで OCR＋翻訳する。
@@ -119,8 +138,7 @@ export async function extractAndTranslateDocument(
   targetLanguageCode: string
 ): Promise<DocumentExtractResult> {
   if (mediaType === DOCX_MEDIA_TYPE) {
-    const { value } = await mammoth.extractRawText({ buffer: fileBuffer });
-    const extractedText = value.trim();
+    const extractedText = await extractDocxText(fileBuffer);
     if (!extractedText) {
       throw new Error("no extractable text in document");
     }
@@ -140,9 +158,8 @@ export async function extractAndTranslateDocument(
 
   // PDF: まずテキスト層を抽出し、実質空ならスキャンとみなして OCR 経路へ。
   const pdfText = await extractPdfText(fileBuffer);
-  const nonWhitespaceCount = pdfText.replace(/\s/g, "").length;
 
-  if (nonWhitespaceCount >= MIN_TEXT_LAYER_CHARS) {
+  if (hasTextLayer(pdfText)) {
     const translation = await translateText(pdfText, targetLanguageCode, DOCUMENT_MAX_TOKENS);
     return {
       extractedText: pdfText,
@@ -170,5 +187,61 @@ export async function extractAndTranslateDocument(
     translateModel: config.translateModel,
     translateInputTokens: 0,
     translateOutputTokens: 0,
+  };
+}
+
+// /api/document-extract-translate の送信前バリデーション。fileBase64 必須・mediaType ホワイトリスト・
+// targetLanguage 必須・base64 デコード後 0 バイト拒否・サイズ上限（MAX_DOCUMENT_BYTES）をこの順で検査し、
+// 成否と（成功時は）後続処理に必要な値を返す。すべての失敗は HTTP 400 相当（呼び出し側が status を付ける）。
+export interface DocumentExtractRequestFields {
+  fileBuffer: Buffer;
+  mediaType: string;
+  fileKind: string;
+  targetLanguage: string;
+}
+
+export type DocumentExtractRequestValidation =
+  | { ok: true; value: DocumentExtractRequestFields }
+  | { ok: false; error: string };
+
+export function validateDocumentExtractRequest(body: unknown): DocumentExtractRequestValidation {
+  const { fileBase64, mediaType, targetLanguage } = (body ?? {}) as {
+    fileBase64?: unknown;
+    mediaType?: unknown;
+    targetLanguage?: unknown;
+  };
+
+  if (typeof fileBase64 !== "string" || !fileBase64) {
+    return { ok: false, error: "fileBase64 is required" };
+  }
+  if (!isSupportedDocumentMimeType(mediaType)) {
+    return {
+      ok: false,
+      error: `mediaType must be one of: ${Object.keys(SUPPORTED_DOCUMENT_MIME_EXTENSIONS).join(", ")}`,
+    };
+  }
+  if (typeof targetLanguage !== "string" || !targetLanguage) {
+    return { ok: false, error: "targetLanguage is required" };
+  }
+
+  const fileBuffer = Buffer.from(fileBase64, "base64");
+  if (fileBuffer.length === 0) {
+    return { ok: false, error: "fileBase64 is not valid base64 document data" };
+  }
+  if (fileBuffer.length > MAX_DOCUMENT_BYTES) {
+    return {
+      ok: false,
+      error: `document too large (${(fileBuffer.length / 1024 / 1024).toFixed(1)}MB, max ${MAX_DOCUMENT_BYTES / 1024 / 1024}MB). split into shorter documents`,
+    };
+  }
+
+  return {
+    ok: true,
+    value: {
+      fileBuffer,
+      mediaType,
+      fileKind: SUPPORTED_DOCUMENT_MIME_EXTENSIONS[mediaType],
+      targetLanguage,
+    },
   };
 }

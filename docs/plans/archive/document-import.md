@@ -210,4 +210,25 @@ ESL の授業では、教科書ページの撮影（3.1 OCR）や配布音声（
   - `app-spec.md` §5.2 の管理画面表示内容に「文書と抽出結果の対応」を追記。
   - 検証: `tsc --noEmit` green、実データ（既存 document_requests 3件）でサーバ起動→ /admin/documents /admin/usage
     /file /delete(404) を curl 確認。document 集計 $0.0081 が一覧合計と一致。
-- [ ] Phase 6: テスト（unit / backend / UI）
+- [x] Phase 6: テスト（unit / backend / UI）
+  - backend: テストランナー未整備だったため node:test + ts-node を導入（`npm test`＝`tsconfig.test.json`
+    指定。本番 `tsc build` は `include:["src"]` のままで test を巻き込まない）。`documentExtract.ts` を挙動不変で
+    最小リファクタし検証しやすくした: テキスト層判定＝純関数 `hasTextLayer`＋`MIN_TEXT_LAYER_CHARS`、
+    抽出＝`extractDocxText`/`extractPdfText`、送信前バリデーション（fileBase64/mediaType ホワイトリスト/
+    targetLanguage/0バイト/サイズ上限）＝`validateDocumentExtractRequest`＋`MAX_DOCUMENT_BYTES`。index.ts の
+    エンドポイントはこれを呼ぶ形へ集約（レスポンス・エラー文言は不変）。テスト16件。fixture は再現スクリプト
+    `test/fixtures/generate.js`（PDF 手組み・DOCX は zip で OOXML）で text-layer.pdf / scanned.pdf /
+    sample.docx / empty.docx を生成・コミット。AI/翻訳成功経路は Phase 2 の実 Claude 疎通を信頼し非対象。
+  - iOS unit（Swift Testing・15件）: DocumentStorage、DocumentKind（backend と mediaType 一致）、
+    RemoteDocumentExtractTranslateService の送信前失敗分岐（ファイル欠落／14MB 超）、DocumentFileImporter
+    （対応/非対応取り込み・pending・レッスン紐付け）、`deleteDocument` の sourceDocument nullify。ユニット全89件 PASS。
+  - iOS UI（LessonDocumentAddUITests 2件）: コンテンツ追加シートに Document 行が並ぶ／Documents タブが開ける。
+    実取り込みはシステムの Files ピッカー経由で XCUITest から駆動不可のため、状態遷移は unit 側で担保。
+  - 副次修正（Phase 4 で6タブ目 Documents を足した際、UI テストを Phase 6 送りにしていたため残っていた回帰）:
+    全 UI テストの `clearAllData` が「Settings」直タップで失敗（Settings/Documents は iPhone で「More」入り）。
+    共有ヘルパ `XCUIApplication.selectTab(_:)`（More 経由・overflow 再訪時は戻るボタンで一覧へ）を新設して
+    11 ファイルを置換、`testTabsAreVisible` を6タブ構成に更新。stale アサーションも実挙動へ追従
+    （復習ステップ `1 / 5 (+3 days)`→`1 / 7 (+1 days)`、写真ボタン `Choose Photo`→`Choose Photos`）。
+  - 検証: backend `npm test` 16/16、iOS ユニット 89/89、UI 25/26 PASS。唯一 testClassLessonCaptureFlow は
+    写真ピッカーの座標タップ＋認証済み backend での OCR を要する環境依存の統合テストで、document 取り込みとは
+    無関係かつシミュレータ単体・未認証では緑化不可（本 Phase の対象外）。
