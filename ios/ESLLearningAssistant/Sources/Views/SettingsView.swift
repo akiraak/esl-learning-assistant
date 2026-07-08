@@ -213,7 +213,7 @@ struct SettingsView: View {
 #Preview {
     SettingsView()
         .modelContainer(
-            for: [Class.self, Lesson.self, Photo.self, Word.self, WordOccurrence.self, Composition.self, AudioClip.self, YouTubeLink.self],
+            for: [Class.self, Lesson.self, Photo.self, Word.self, WordOccurrence.self, Composition.self, AudioClip.self, YouTubeLink.self, Document.self],
             inMemory: true
         )
 }

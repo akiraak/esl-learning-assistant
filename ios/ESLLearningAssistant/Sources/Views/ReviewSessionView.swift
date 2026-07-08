@@ -822,5 +822,5 @@ struct ReviewSessionView: View {
 
 #Preview {
     ReviewSessionView(dueWords: [])
-        .modelContainer(for: [Class.self, Lesson.self, Photo.self, Word.self, WordOccurrence.self, Composition.self, AudioClip.self, YouTubeLink.self], inMemory: true)
+        .modelContainer(for: [Class.self, Lesson.self, Photo.self, Word.self, WordOccurrence.self, Composition.self, AudioClip.self, YouTubeLink.self, Document.self], inMemory: true)
 }

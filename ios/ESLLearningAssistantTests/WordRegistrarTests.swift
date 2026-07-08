@@ -9,7 +9,7 @@ struct WordRegistrarTests {
     private func makeContext() throws -> ModelContext {
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
         let container = try ModelContainer(
-            for: Class.self, Lesson.self, Photo.self, Word.self, WordOccurrence.self, AudioClip.self,
+            for: Class.self, Lesson.self, Photo.self, Word.self, WordOccurrence.self, AudioClip.self, Document.self,
             configurations: config
         )
         return ModelContext(container)

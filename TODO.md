@@ -1,7 +1,7 @@
 # TODO
 
 - [ ] PDF / DOCX 読み込み（＋アプリ内表示）[plan](docs/plans/document-import.md)
-  - [ ] Phase 1: `Document` データモデル追加（ModelContainer 登録 / DebugDataCleaner / data-model.md）
+  - [x] Phase 1: `Document` データモデル追加（ModelContainer 登録 / DebugDataCleaner / data-model.md）
   - [ ] Phase 2: backend 抽出＋翻訳エンドポイント（PDF/DOCX＋スキャンOCRフォールバック＋コストログ）
   - [ ] Phase 3: iOS 取り込み UI（AddContentTypeView 追加 / FileImporter / Storage / Remote サービス）
   - [ ] Phase 4: iOS 詳細画面 DocumentDetailView（英文タップ登録 / 訳表示 / 削除 / 一覧導線）

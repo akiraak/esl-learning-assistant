@@ -24,6 +24,10 @@ final class Lesson {
     @Relationship(deleteRule: .nullify, inverse: \AudioClip.lessons)
     var audioClips: [AudioClip] = []
 
+    // 文書（PDF/DOCX）も音声と同型の多対多。レッスンを消してもドキュメント本体は残す（ライブラリ資産として nullify）
+    @Relationship(deleteRule: .nullify, inverse: \Document.lessons)
+    var documents: [Document] = []
+
     init(id: UUID = UUID(), schoolClass: Class, title: String, createdAt: Date = .now, memo: String? = nil) {
         self.id = id
         self.schoolClass = schoolClass
