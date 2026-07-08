@@ -6,7 +6,7 @@
     - [x] Phase 0: backend 正規化エンドポイント（/api/word-normalize）
     - [x] Phase 1: iOS 正規化サービス・モデル
     - [x] Phase 2: Add Word フォーム統合（確認UI・逃げ道・原形dedup）
-    - [ ] Phase 3: 英文タップ登録統合
+    - [x] Phase 3: 英文タップ登録統合（正規化経由・訂正確認ダイアログ・原形dedup遷移）
     - [ ] Phase 4（任意）: 既登録の誤り修正（リネーム波及のため要精査）
 - [ ] 選択肢の正解の順番が必ず固定なものがあるかチェック
 - ped, doc 読み込み

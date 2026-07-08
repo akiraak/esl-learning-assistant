@@ -109,7 +109,11 @@ struct TappableMarkdown: View {
 /// を付けるだけで、配下の `TappableEnglishText`/`TappableMarkdown` が機能する。
 ///
 /// - 既に登録済みの単語をタップ → その単語詳細へ遷移（今表示中の単語自身はスキップ）。
-/// - 未登録語をタップ → 追加確認ダイアログ → `WordRegistrar` で登録 → トースト表示。
+/// - 未登録語をタップ → 正規化（原形化・綴り訂正）を挟み、訂正候補があれば確認ダイアログ
+///   （主=正規化形 / 逃げ道=入力形 / Cancel）を出す。訂正が無ければそのまま `WordRegistrar`
+///   で登録し、結果をトーストで知らせる。正規化形が既存語と一致すれば重複としてその詳細へ遷移（dedup）。
+///   判定ロジック（確認/即登録の出し分け・失敗フォールバック）は Add Word と共通の
+///   `WordNormalizationFlow` に集約している。
 struct WordRegistrationModifier: ViewModifier {
     /// 今表示中の単語（自分自身への遷移を避けるため）。WordDetailView から渡す。
     var currentWord: Word?
@@ -123,7 +127,10 @@ struct WordRegistrationModifier: ViewModifier {
     @Environment(\.modelContext) private var modelContext
     @Query private var allWords: [Word]
 
-    @State private var pendingWord: String?
+    /// 訂正候補（原形/正しい綴り）が出たときの確認ダイアログ用。nil でダイアログ非表示。
+    @State private var pendingConfirmation: WordNormalization?
+    /// 正規化の非同期待ちフラグ。true の間は追加タップを無視して二重登録・多重ダイアログを防ぐ。
+    @State private var isNormalizing = false
     @State private var navigateToWord: WordRoute?
     @State private var feedback: String?
 
@@ -159,33 +166,75 @@ struct WordRegistrationModifier: ViewModifier {
                 try? await Task.sleep(for: .seconds(1.6))
                 feedback = nil
             }
+            // 訂正候補（原形/正しい綴り）の確認。主=正規化形 / 逃げ道=入力形 / Cancel。
+            // Add Word フォームと同一の文言・構成（説明 reason のみ母語）。
             .confirmationDialog(
-                "Add to word list?",
+                "Register the suggested form?",
                 isPresented: Binding(
-                    get: { pendingWord != nil },
-                    set: { if !$0 { pendingWord = nil } }
+                    get: { pendingConfirmation != nil },
+                    set: { if !$0 { pendingConfirmation = nil } }
                 ),
-                presenting: pendingWord
-            ) { word in
-                Button("Add “\(word)”") { register(word) }
-                Button("Cancel", role: .cancel) { pendingWord = nil }
-            } message: { word in
-                Text("Add “\(word)” to your word list?")
+                titleVisibility: .visible,
+                presenting: pendingConfirmation
+            ) { normalization in
+                Button("Register “\(normalization.effectiveLemma)”") { register(normalization.effectiveLemma) }
+                Button("Keep “\(normalization.input)”") { register(normalization.input) }
+                Button("Cancel", role: .cancel) {}
+            } message: { normalization in
+                Text(normalization.reason)
             }
     }
 
-    /// タップされた単語の振り分け。登録済みなら詳細へ、未登録なら確認ダイアログを出す。
+    /// タップされた単語の振り分け。
+    /// 1. 入力語そのものが登録済み → 即詳細へ（正規化不要の最速パス・オフラインでも動く）。
+    /// 2. 未登録語 → 正規化（原形化・綴り訂正）を挟み、`WordNormalizationFlow.decide` の結果で分岐する。
+    ///    - 訂正なし（canonical/固有名詞/連語/判定不能/失敗フォールバック）→ そのまま登録。
+    ///    - 訂正あり → 正規化形が既存語なら重複としてその詳細へ集約、無ければ確認ダイアログ。
     private func handleTap(_ rawText: String) {
         let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
-        if let existing = allWords.first(where: {
-            $0.text.compare(text, options: [.caseInsensitive]) == .orderedSame
-        }) {
-            guard existing.id != currentWord?.id else { return }
-            navigateToWord = WordRoute(word: existing)
-        } else {
-            pendingWord = text
+        // 正規化待ち中の追加タップは無視（二重登録・多重ダイアログを防ぐ）
+        guard !isNormalizing else { return }
+        // 入力語そのものが既に登録済みなら正規化せず即詳細へ
+        if let existing = existingWord(matching: text) {
+            navigate(to: existing)
+            return
         }
+
+        isNormalizing = true
+        let service = RemoteWordNormalizeService()
+        Task {
+            let decision = await WordNormalizationFlow.decide(
+                input: text,
+                targetLanguage: WordNormalizationFlow.targetLanguage,
+                using: service
+            )
+            isNormalizing = false
+            switch decision {
+            case .registerImmediately(let resolved):
+                register(resolved)
+            case .confirm(let normalization):
+                // 正規化形が既存語なら重複 → 確認を出さず既存詳細へ集約（dedup）
+                if let existing = existingWord(matching: normalization.effectiveLemma) {
+                    navigate(to: existing)
+                } else {
+                    pendingConfirmation = normalization
+                }
+            }
+        }
+    }
+
+    /// 大文字小文字を無視して同綴りの既存単語を探す（登録の集約・重複判定に使う）。
+    private func existingWord(matching text: String) -> Word? {
+        allWords.first {
+            $0.text.compare(text, options: [.caseInsensitive]) == .orderedSame
+        }
+    }
+
+    /// 既存単語の詳細へ遷移する。今表示中の単語自身への遷移はスキップする。
+    private func navigate(to word: Word) {
+        guard word.id != currentWord?.id else { return }
+        navigateToWord = WordRoute(word: word)
     }
 
     /// 確認後に単語を登録し、結果をトーストで知らせる。
