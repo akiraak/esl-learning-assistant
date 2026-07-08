@@ -121,6 +121,8 @@ struct WordRegistrationModifier: ViewModifier {
     var sourcePhoto: Photo?
     /// 出現元の音声クリップ（transcript 文脈をAI生成へ渡すため）。AudioDetailView から渡す。
     var sourceAudio: AudioClip?
+    /// 出現元の文書（抽出テキスト文脈をAI生成へ渡すため）。DocumentDetailView から渡す。
+    var sourceDocument: Document?
     /// 紐付けるレッスン。指定時は出現記録を作る。
     var lesson: Lesson?
 
@@ -245,7 +247,8 @@ struct WordRegistrationModifier: ViewModifier {
             existingWords: allWords,
             lesson: lesson,
             sourcePhoto: sourcePhoto,
-            sourceAudio: sourceAudio
+            sourceAudio: sourceAudio,
+            sourceDocument: sourceDocument
         ) else { return }
         feedback = result.isNew
             ? "Added “\(result.word.text)”"
@@ -259,12 +262,14 @@ extension View {
         currentWord: Word? = nil,
         sourcePhoto: Photo? = nil,
         sourceAudio: AudioClip? = nil,
+        sourceDocument: Document? = nil,
         lesson: Lesson? = nil
     ) -> some View {
         modifier(WordRegistrationModifier(
             currentWord: currentWord,
             sourcePhoto: sourcePhoto,
             sourceAudio: sourceAudio,
+            sourceDocument: sourceDocument,
             lesson: lesson
         ))
     }

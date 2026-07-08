@@ -5,6 +5,7 @@ enum AppTab: Hashable {
     case words
     case writing
     case audio
+    case documents
     case settings
 }
 

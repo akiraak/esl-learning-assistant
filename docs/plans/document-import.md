@@ -178,7 +178,25 @@ ESL の授業では、教科書ページの撮影（3.1 OCR）や配布音声（
   - `POST /api/document-extract-translate`（`documentExtract.ts` / `document_requests` テーブル / `data/documents/` 保存）を実装。DOCX・テキスト層PDF・スキャンPDF(OCR) の3経路を実機の Claude で end-to-end 確認済み。テスト（Phase 6）は未着手。
 - [x] Phase 3: iOS 取り込み UI（AddContentTypeView 追加 / DocumentFileImporter / Storage / Remote サービス）
   - `AddContentTypeView` に「Document」行（`doc.text` / `addContentDocumentButton`）＋ `.fileImporter([.pdf, docx])` を追加。`DocumentFileImporter`（`AudioFileImporter` 範）と `DocumentExtractTranslateService` 抽象＋`RemoteDocumentExtractTranslateService`（`RemoteTranscriptionTranslationService` 範）を新規実装。`DocumentStorage` は Phase 1 済み。`DocumentKind` に ext↔種別↔mediaType の対応を追加（backend と一致）。取り込みは pending で作成のみ（抽出＋翻訳の起動は Phase 4 の手動ボタン）。`xcodegen generate` 済み・シミュレータビルド成功。取り込み文書の一覧表示・手動抽出ボタンは Phase 4 で可視化、UIテストは Phase 6。
-- [ ] Phase 4: iOS 詳細画面 DocumentDetailView（英文タップ登録 / 訳表示 / 削除 / 一覧導線）
-- [ ] Phase 4.5: アプリ内ファイル表示（PDF=PDFView / DOCX=QuickLook の `DocumentFileViewer`）
+- [x] Phase 4: iOS 詳細画面 DocumentDetailView（英文タップ登録 / 訳表示 / 削除 / 一覧導線）
+  - `DocumentDetailView`（`AudioDetailView` 範）を新規実装。状態分岐（pending=手動ボタン / processing=インジケータ /
+    failed=エラー＋再試行 / completed=抽出英文＋訳＋再実行）。抽出英文は `TappableMarkdown`、訳は `Markdown`。
+    手動ボタンから `RemoteDocumentExtractTranslateService` を呼ぶ。削除は `ModelContext.deleteDocument`。
+  - **ライブラリ導線（ユーザー決定=Documents タブ追加）**: `DocumentsView`（`AudioView` 範）を新設し
+    `ContentView` に「Documents」タブ（`AppTab.documents`）を追加（タブは6つ＝iPhone では一部が「More」に入る。
+    将来 TODO『コンテンツタブ』で統合予定）。取り込みは `.fileImporter([.pdf, docx])` → `DocumentImportLessonView`
+    （`AudioImportLessonView` 範）→ `DocumentFileImporter`。`DocumentRow` は Documents タブとレッスン一覧で共用。
+  - レッスン一覧（`LessonsView`）: `LessonContentItem` に `.document` を追加し統合コンテンツ一覧へ文書行を表示、
+    行タップで `DocumentDetailView` へ遷移。
+  - 単語タップ登録に `sourceDocument` を導入: `WordOccurrence.sourceDocument` を `WordRegistrar`/`.wordTapRegistration`/
+    `WordAIInfoGenerator`（抽出テキストを AI 文脈へ流用）へ配線。重複ガードは
+    `lesson + sourcePhoto + sourceAudio + sourceDocument` の一致で判定。
+  - 検証: `xcodegen generate` 済み・シミュレータビルド成功、アプリ起動クラッシュ無し（タブ表示確認）、
+    既存ユニット全74件 PASS。UI テストは Phase 6。
+- [x] Phase 4.5: アプリ内ファイル表示（PDF=PDFView / DOCX=QuickLook の `DocumentFileViewer`）
+  - `DocumentFileViewer`（`fileKind` で分岐する薄い SwiftUI ラッパ）＋ `PDFViewer`（`UIViewRepresentable` で
+    `PDFKit.PDFView`）＋ `QuickLookPreview`（`UIViewControllerRepresentable` で `QLPreviewController`）を新規実装。
+    PDF は `DocumentDetailView` にインライン埋め込み＋全画面（`fullScreenCover`）、DOCX は全画面 QuickLook。
+    追加依存ゼロ（PDFKit / QuickLook は `import` で暗黙リンク）。抽出前でも原本を閲覧可能。
 - [ ] Phase 5: 管理画面ログ表示
 - [ ] Phase 6: テスト（unit / backend / UI）

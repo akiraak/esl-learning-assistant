@@ -23,6 +23,8 @@ struct LessonsView: View {
     @State private var bulkTranslateDone = 0
     @State private var bulkTranslateTotal = 0
     @State private var selectedAudioClip: AudioClip?
+    /// この画面のスタックで開く文書詳細。戻ればレッスンに戻る
+    @State private var selectedDocument: Document?
     /// この画面のスタックで開く YouTube 詳細。戻ればレッスンに戻る
     @State private var selectedYouTubeLink: YouTubeLink?
     /// レッスン画面の音声再生（Audioタブとは独立したプレイヤー）
@@ -74,6 +76,9 @@ struct LessonsView: View {
             }
             .navigationDestination(item: $selectedAudioClip) { clip in
                 AudioDetailView(clip: clip, playback: audioPlayback)
+            }
+            .navigationDestination(item: $selectedDocument) { document in
+                DocumentDetailView(document: document)
             }
             .navigationDestination(item: $selectedYouTubeLink) { link in
                 YouTubeDetailView(link: link)
@@ -245,6 +250,14 @@ struct LessonsView: View {
                 selectedAudioClip = clip
             } label: {
                 AudioClipRow(clip: clip)
+            }
+            .buttonStyle(.plain)
+        case .document(let document):
+            // 行タップで詳細へ遷移する（原本表示・抽出は詳細画面で行う。Documentsタブと同挙動）
+            Button {
+                selectedDocument = document
+            } label: {
+                DocumentRow(document: document)
             }
             .buttonStyle(.plain)
         case .youtube(let link):

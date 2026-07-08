@@ -39,6 +39,12 @@ struct ContentView: View {
                 }
                 .tag(AppTab.audio)
 
+            DocumentsView()
+                .tabItem {
+                    Label("Documents", systemImage: "doc.text")
+                }
+                .tag(AppTab.documents)
+
             SettingsView()
                 .tabItem {
                     Label("Settings", systemImage: "gearshape")
