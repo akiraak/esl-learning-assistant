@@ -3,12 +3,12 @@ import SwiftUI
 /// Content タブのトップ。取り込んだ学習コンテンツのライブラリをセグメントで切り替えて一覧する。
 /// タブを5個以下に保つため Audio / Documents タブを統合したもの（6個以上だと iOS の More タブに
 /// 入り、More のナビゲーションバーと NavigationStack が二重になる）。
-/// 将来 YouTube の横断一覧セグメントを追加する（docs/plans/content-tab.md）。
 struct ContentTabView: View {
     /// セグメントで切り替えるコンテンツ種別
     private enum ContentKind: Hashable {
         case photos
         case audio
+        case youtube
         case documents
     }
 
@@ -20,10 +20,12 @@ struct ContentTabView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                // 4セグメントに収めるため Documents は "Docs" と短縮表示する
                 Picker("Content Type", selection: $kind) {
                     Text("Photos").tag(ContentKind.photos)
                     Text("Audio").tag(ContentKind.audio)
-                    Text("Documents").tag(ContentKind.documents)
+                    Text("YouTube").tag(ContentKind.youtube)
+                    Text("Docs").tag(ContentKind.documents)
                 }
                 .pickerStyle(.segmented)
                 .padding(.horizontal)
@@ -34,6 +36,8 @@ struct ContentTabView: View {
                     PhotoLibraryView()
                 case .audio:
                     AudioLibraryView(playback: playback)
+                case .youtube:
+                    YouTubeLibraryView()
                 case .documents:
                     DocumentLibraryView()
                 }

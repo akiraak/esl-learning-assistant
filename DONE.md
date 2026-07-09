@@ -1,5 +1,20 @@
 # DONE
 
+- [x] 2026-07-08 コンテンツタブ（画像 / Audio / YouTube / Documents を統合、タブ5個化）＝全 Phase 完了
+      [plan](docs/plans/archive/content-tab.md)
+      Phase 1: Audio + Documents を Content タブに統合しタブを5個化（More タブ廃止で
+      戻るボタン二重表示を解消）。Phase 2: 画像の横断一覧（Photos セグメント）。
+      Phase 3: YouTube の横断一覧（YouTube セグメント）で完了。
+      Phase 3 の内容: `YouTubeLibraryView` 新設（全レッスンの YouTubeLink を追加日降順で横断一覧、
+      行タップで既存 `YouTubeDetailView` へ push、スワイプ削除）。`YouTubeRow` に `showsLesson` を
+      追加しレッスン名サブタイトルを表示。YouTube はレッスン必須（to-one）のため `YouTubeAddView` を
+      CaptureView と同様に拡張（固定レッスン無しで開くとフォーム内レッスン選択・既定は最新レッスン、
+      レッスン無しは案内表示）。セグメントは Photos | Audio | YouTube | Docs の4個
+      （Documents は Docs に短縮）。
+      検証: UIテスト `ContentYouTubeLibraryUITests` 新規2件（空状態＋レッスン無し案内／レッスン選択
+      経由の追加→一覧反映→詳細遷移の E2E、oEmbed スタブ使用）、`LessonDocumentAddUITests` の
+      セグメント名を Docs に追随。unit + 影響 UI テスト計171件 PASS、スクリーンショットで
+      4セグメントのレイアウト崩れなしを確認。
 - [x] 2026-07-08 ドキュメント詳細画面クラッシュ修正（完了 PDF を開くと毎回落ちる）
       [plan](docs/plans/archive/document-detail-crash-investigation.md)
       症状: PDF 取り込み→抽出＋翻訳完了の少し後に落ち、以後その文書を開くたび必ず落ちる。

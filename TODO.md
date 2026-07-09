@@ -1,10 +1,6 @@
 # TODO
 
 - [ ] 熟語（２単語以上）を単語に入れる仕様を詰める
-- [ ] コンテンツタブ（画像 / Audio / YouTube / Documents を統合、タブ5個化） [plan](docs/plans/content-tab.md)
-  - [x] Phase 1: Audio + Documents を Content タブに統合（More タブ廃止・戻るボタン二重表示の解消）
-  - [x] Phase 2: 画像の横断一覧を追加
-  - [ ] Phase 3: YouTube の横断一覧を追加
 - [ ] 単語回答後の正解の緑が見ずらい。もっと目立つように
 - [ ] レッスンをカレンダーに置き換える
   - クラスにはレッスンの日付が関連づけられる

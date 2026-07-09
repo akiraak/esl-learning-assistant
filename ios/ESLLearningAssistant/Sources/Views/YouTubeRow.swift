@@ -2,9 +2,11 @@ import SwiftUI
 
 /// レッスンコンテンツ一覧の YouTube 行。左にサムネイル（再生バッジ付き）、右に表示名と追加日。
 /// `PhotoRow` / `AudioClipRow` と同じ 44pt サムネイル + タイトル + 日付のレイアウトに揃える。
-/// Phase 3 で `LessonsView` の統合コンテンツ一覧から使うため非 private。
+/// `LessonsView` と `YouTubeLibraryView` で共用する（`showsLesson` で紐付くレッスン名を追加表示）。
 struct YouTubeRow: View {
     let link: YouTubeLink
+    /// 紐付くレッスン名（クラス / レッスン）をサブタイトル表示するか（横断一覧用）
+    var showsLesson = false
 
     @Environment(\.modelContext) private var modelContext
 
@@ -15,6 +17,12 @@ struct YouTubeRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(link.displayTitle)
                     .lineLimit(1)
+                if showsLesson {
+                    Text("\(link.lesson.schoolClass.name) / \(link.lesson.title)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
                 HStack(spacing: 6) {
                     Text(link.addedAt, style: .date)
                         .font(.caption)

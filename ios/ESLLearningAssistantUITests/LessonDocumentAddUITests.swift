@@ -59,10 +59,10 @@ final class LessonDocumentAddUITests: XCTestCase {
 
         clearAllData(app)
 
-        // 文書ライブラリは Content タブの Documents セグメントにある
+        // 文書ライブラリは Content タブの Docs セグメントにある（4セグメント化に伴い短縮表示）
         app.selectTab("Content")
         XCTAssertTrue(app.navigationBars["Content"].waitForExistence(timeout: 5))
-        let documentsSegment = app.segmentedControls.buttons["Documents"]
+        let documentsSegment = app.segmentedControls.buttons["Docs"]
         XCTAssertTrue(documentsSegment.waitForExistence(timeout: 5))
         documentsSegment.tap()
 
