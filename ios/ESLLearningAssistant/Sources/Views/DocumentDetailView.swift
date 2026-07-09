@@ -15,6 +15,10 @@ struct DocumentDetailView: View {
     @State private var isConfirmingDelete = false
     /// 原本を全画面ビューアで開いているか
     @State private var isShowingFullScreenViewer = false
+    /// サーバTTS失敗で端末内蔵TTSへフォールバックしたときに、控えめな告知を数秒だけ表示する
+    @State private var isUsingFallbackVoice = false
+    @StateObject private var speechService = SpeechService()
+    @StateObject private var ttsPlayback = TTSPlaybackService()
 
     /// 文書→英文抽出（テキスト層 or スキャンOCR）＋翻訳。差し替え可能に protocol 型で保持する。
     private let extractService: DocumentExtractTranslateService = RemoteDocumentExtractTranslateService()
@@ -109,6 +113,30 @@ struct DocumentDetailView: View {
             Button("Delete", role: .destructive) { delete() }
             Button("Cancel", role: .cancel) {}
         }
+        .safeAreaInset(edge: .bottom) {
+            if ttsPlayback.isActive {
+                TTSPlayerBar(playback: ttsPlayback)
+            }
+        }
+        .animation(.snappy(duration: 0.2), value: ttsPlayback.isActive)
+        .onDisappear {
+            stopSpeaking()
+        }
+    }
+
+    private func stopSpeaking() {
+        speechService.stop()
+        ttsPlayback.stop()
+    }
+
+    /// サーバTTSが使えないとき、端末内蔵TTSで読み上げつつ控えめな告知を数秒表示する
+    private func fallBackToOnDeviceVoice(_ text: String) {
+        speechService.speak(text)
+        withAnimation(.snappy) { isUsingFallbackVoice = true }
+        Task {
+            try? await Task.sleep(for: .seconds(5))
+            withAnimation(.snappy) { isUsingFallbackVoice = false }
+        }
     }
 
     // MARK: - Original file viewer
@@ -192,8 +220,30 @@ struct DocumentDetailView: View {
     @ViewBuilder
     private var completedExtract: some View {
         VStack(alignment: .leading, spacing: 12) {
-            TappableEnglishText(text: "Extracted Text (English)")
-                .font(.headline)
+            HStack {
+                TappableEnglishText(text: "Extracted Text (English)")
+                    .font(.headline)
+                Spacer()
+                // AI音声（サーバTTS）の生成→キャッシュ→再生。写真詳細と同じ TTSButton を共有。
+                // 生成失敗時は端末内蔵TTSへフォールバックする（onGenerateFailure）。
+                TTSButton(
+                    text: MarkdownPlainText.plainText(document.extractedText),
+                    playback: ttsPlayback,
+                    errorMessage: .constant(nil),
+                    onGenerateFailure: {
+                        fallBackToOnDeviceVoice(MarkdownPlainText.plainText(document.extractedText))
+                    }
+                )
+            }
+            if isUsingFallbackVoice {
+                Label(
+                    "Server voice unavailable — using on-device voice",
+                    systemImage: "iphone"
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .transition(.opacity)
+            }
             TappableMarkdown(markdown: document.extractedText ?? "")
 
             Divider()

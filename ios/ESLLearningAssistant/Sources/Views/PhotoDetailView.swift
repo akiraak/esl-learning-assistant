@@ -53,10 +53,12 @@ struct PhotoDetailView: View {
                             // AI音声（サーバTTS）の生成→キャッシュ→再生。単語詳細と同じ TTSButton を共有。
                             // 生成失敗時は端末内蔵TTSへフォールバックする（onGenerateFailure）。
                             TTSButton(
-                                text: plainText(photo.ocrText),
+                                text: MarkdownPlainText.plainText(photo.ocrText),
                                 playback: ttsPlayback,
                                 errorMessage: .constant(nil),
-                                onGenerateFailure: { fallBackToOnDeviceVoice(plainText(photo.ocrText)) }
+                                onGenerateFailure: {
+                                    fallBackToOnDeviceVoice(MarkdownPlainText.plainText(photo.ocrText))
+                                }
                             )
                         }
                         if isUsingFallbackVoice {
@@ -187,14 +189,5 @@ struct PhotoDetailView: View {
         isRetrying = true
         await ocrTranslationService.process(photo)
         isRetrying = false
-    }
-
-    private func plainText(_ value: String?) -> String {
-        guard let value, !value.isEmpty else { return "" }
-        let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .full)
-        guard let attributed = try? AttributedString(markdown: value, options: options) else {
-            return value
-        }
-        return String(attributed.characters)
     }
 }

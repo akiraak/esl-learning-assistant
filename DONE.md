@@ -1,5 +1,14 @@
 # DONE
 
+- [x] 2026-07-08 Photo と同様に Docs の文字起こし英語にも読み上げ機能を入れる
+      [plan](docs/plans/archive/document-tts-readaloud.md)
+      `DocumentDetailView` の「Extracted Text (English)」ヘッダーに Photo と同じ `TTSButton`
+      （サーバTTS生成→キャッシュ→再生、失敗時は端末内蔵TTSフォールバック＋控えめ告知）を追加し、
+      `TTSPlayerBar` を `.safeAreaInset(edge: .bottom)` で表示、`.onDisappear` で停止するよう配線。
+      Photo 専用だった Markdown→プレーンテキスト変換は `MarkdownPlainText`（Support）へ共通化
+      （出力不変＝TTSキャッシュキー不変）。シミュレータ実動確認: 生成（/api/tts 258字・$0.0044）→
+      再生→プレイヤーバー→離脱停止→キャッシュ再生、接続不可時の端末TTSフォールバック告知まで確認。
+
 - [x] 2026-07-08 コンテンツタブ（画像 / Audio / YouTube / Documents を統合、タブ5個化）＝全 Phase 完了
       [plan](docs/plans/archive/content-tab.md)
       Phase 1: Audio + Documents を Content タブに統合しタブを5個化（More タブ廃止で
