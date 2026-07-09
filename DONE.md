@@ -1,5 +1,12 @@
 # DONE
 
+- [x] 2026-07-08 単語回答後の正解の緑が見ずらい。もっと目立つように（不正解の赤も調整）
+      [plan](docs/plans/archive/review-answer-highlight.md)
+      復習クイズの選択肢ハイライトを強調（`ReviewSessionView` のみ）。背景の不透明度 0.25 → 0.4、
+      テキスト4択に正解=緑 / 選んだ誤答=赤 の 2.5pt 枠線と行末アイコン（checkmark/xmark.circle.fill）を追加。
+      イラスト4択は選んだ誤答にも赤3pt枠線＋右上に正誤バッジを追加（色弱でも形で判別可能に）。
+      シミュレータで実セッションを回しライト/ダーク両モードのスクリーンショットで確認。
+
 - [x] 2026-07-08 Photo と同様に Docs の文字起こし英語にも読み上げ機能を入れる
       [plan](docs/plans/archive/document-tts-readaloud.md)
       `DocumentDetailView` の「Extracted Text (English)」ヘッダーに Photo と同じ `TTSButton`

@@ -292,16 +292,27 @@ struct ReviewSessionView: View {
                 Button {
                     submitChoice(index, correctIndex: correctIndex, correctAnswer: options[correctIndex])
                 } label: {
-                    Text(option)
-                        .multilineTextAlignment(.leading)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.vertical, 12)
-                        .padding(.horizontal, 14)
-                        .background(choiceBackground(index: index, correctIndex: correctIndex), in: RoundedRectangle(cornerRadius: 10))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 10)
-                                .strokeBorder(.quaternary)
-                        )
+                    HStack(spacing: 8) {
+                        Text(option)
+                            .multilineTextAlignment(.leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        // 正誤を色だけに頼らず形でも示す（正解=チェック / 選んだ誤答=バツ）
+                        if let icon = choiceResultIcon(index: index, correctIndex: correctIndex) {
+                            Image(systemName: icon.name)
+                                .font(.title3)
+                                .foregroundStyle(icon.color)
+                        }
+                    }
+                    .padding(.vertical, 12)
+                    .padding(.horizontal, 14)
+                    .background(choiceBackground(index: index, correctIndex: correctIndex), in: RoundedRectangle(cornerRadius: 10))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .strokeBorder(
+                                choiceBorderColor(index: index, correctIndex: correctIndex),
+                                lineWidth: choiceResultIcon(index: index, correctIndex: correctIndex) != nil ? 2.5 : 1
+                            )
+                    )
                 }
                 .buttonStyle(.plain)
                 .disabled(feedback != nil)
@@ -333,10 +344,19 @@ struct ReviewSessionView: View {
                     .overlay(
                         RoundedRectangle(cornerRadius: 12)
                             .strokeBorder(
-                                feedback != nil && index == correctIndex ? Color.green : Color(.separator),
-                                lineWidth: feedback != nil && index == correctIndex ? 3 : 1
+                                illustrationBorderColor(index: index, correctIndex: correctIndex),
+                                lineWidth: choiceResultIcon(index: index, correctIndex: correctIndex) != nil ? 3 : 1
                             )
                     )
+                    // 右上の正誤バッジ（イラストは背景の色被りで塗りが見分けにくいため形でも示す）
+                    .overlay(alignment: .topTrailing) {
+                        if let icon = choiceResultIcon(index: index, correctIndex: correctIndex) {
+                            Image(systemName: icon.name)
+                                .font(.title2)
+                                .foregroundStyle(.white, icon.color)
+                                .padding(6)
+                        }
+                    }
                 }
                 .buttonStyle(.plain)
                 .disabled(feedback != nil)
@@ -346,11 +366,33 @@ struct ReviewSessionView: View {
     }
 
     /// 回答後は正答を緑・選んだ誤答を赤で塗って見せる
+    /// （淡すぎて見分けにくいという報告があったため 0.25 → 0.4 に強調。枠線・アイコンでも補強する）
     private func choiceBackground(index: Int, correctIndex: Int) -> Color {
         guard feedback != nil else { return Color(.secondarySystemBackground) }
-        if index == correctIndex { return .green.opacity(0.25) }
-        if index == selectedChoiceIndex { return .red.opacity(0.25) }
+        if index == correctIndex { return .green.opacity(0.4) }
+        if index == selectedChoiceIndex { return .red.opacity(0.4) }
         return Color(.secondarySystemBackground)
+    }
+
+    /// 回答後の正誤アイコン（正解=チェック / 選んだ誤答=バツ）。回答前・対象外の選択肢は nil
+    private func choiceResultIcon(index: Int, correctIndex: Int) -> (name: String, color: Color)? {
+        guard feedback != nil else { return nil }
+        if index == correctIndex { return ("checkmark.circle.fill", .green) }
+        if index == selectedChoiceIndex { return ("xmark.circle.fill", .red) }
+        return nil
+    }
+
+    /// 回答後の選択肢の枠線。正解=緑 / 選んだ誤答=赤 / それ以外は従来の淡い枠線
+    private func choiceBorderColor(index: Int, correctIndex: Int) -> AnyShapeStyle {
+        guard let icon = choiceResultIcon(index: index, correctIndex: correctIndex) else {
+            return AnyShapeStyle(.quaternary)
+        }
+        return AnyShapeStyle(icon.color)
+    }
+
+    /// イラスト4択の枠線（テキスト4択と同じ強調ルール。既定色のみセパレータ）
+    private func illustrationBorderColor(index: Int, correctIndex: Int) -> Color {
+        choiceResultIcon(index: index, correctIndex: correctIndex)?.color ?? Color(.separator)
     }
 
     @ViewBuilder
