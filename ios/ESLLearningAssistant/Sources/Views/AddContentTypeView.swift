@@ -84,7 +84,7 @@ struct AddContentTypeView: View {
                 }
             }
             .sheet(isPresented: $isShowingCapture, onDismiss: dismissIfCompleted) {
-                CaptureView(lesson: lesson) {
+                CaptureView(lesson: lesson) { _ in
                     // 写真は pending 登録済み。翻訳は呼び出し元で走らせ、フロー全体を閉じる。
                     onPhotoAdded()
                     didComplete = true
