@@ -43,6 +43,20 @@ enum TTSAudioStore {
         try? FileManager.default.removeItem(at: directory)
     }
 
+    /// リキー移行（`TTSCacheRekeyMigration`）用: 旧テキストのローカル音声を新テキストのキー名へ付け替える。
+    /// 旧ファイルが無ければ何もしない。新キーのファイルが既にあれば旧ファイルの削除だけ行う（新しい方を残す）。
+    /// どの分岐も冪等で、移行の再実行に耐える。
+    static func rekeyLocalFile(oldText: String, newText: String, model: String) {
+        let oldURL = fileURL(text: oldText, model: model)
+        guard FileManager.default.fileExists(atPath: oldURL.path) else { return }
+        let newURL = fileURL(text: newText, model: model)
+        if FileManager.default.fileExists(atPath: newURL.path) {
+            try? FileManager.default.removeItem(at: oldURL)
+        } else {
+            try? FileManager.default.moveItem(at: oldURL, to: newURL)
+        }
+    }
+
     private static func fileURL(text: String, model: String) -> URL {
         directory.appendingPathComponent("\(key(text: text, model: model)).wav")
     }

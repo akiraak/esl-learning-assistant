@@ -1,5 +1,11 @@
 import path from "path";
 
+// テスト（test/*.test.ts）が実データを汚さず一時ディレクトリへ隔離するための上書き。
+// 通常運用では未設定のまま backend/data を使う。
+const dataDir = process.env.DATA_DIR
+  ? path.resolve(process.env.DATA_DIR)
+  : path.resolve(__dirname, "..", "data");
+
 export const config = {
   port: Number(process.env.PORT ?? 8801),
   anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? "",
@@ -18,11 +24,11 @@ export const config = {
   geminiApiKey: process.env.GEMINI_API_KEY ?? "",
   openaiApiKey: process.env.OPENAI_API_KEY ?? "",
   apiSecret: process.env.API_SECRET ?? "",
-  dataDir: path.resolve(__dirname, "..", "data"),
-  imagesDir: path.resolve(__dirname, "..", "data", "images"),
-  ttsDir: path.resolve(__dirname, "..", "data", "tts"),
-  audioDir: path.resolve(__dirname, "..", "data", "audio"),
-  documentsDir: path.resolve(__dirname, "..", "data", "documents"),
-  illustrationsDir: path.resolve(__dirname, "..", "data", "illustrations"),
-  dbPath: path.resolve(__dirname, "..", "data", "db.sqlite"),
+  dataDir,
+  imagesDir: path.join(dataDir, "images"),
+  ttsDir: path.join(dataDir, "tts"),
+  audioDir: path.join(dataDir, "audio"),
+  documentsDir: path.join(dataDir, "documents"),
+  illustrationsDir: path.join(dataDir, "illustrations"),
+  dbPath: path.join(dataDir, "db.sqlite"),
 };

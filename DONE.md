@@ -1,5 +1,19 @@
 # DONE
 
+- [x] 2026-07-08 TTS用プレーンテキスト変換で見出しと直後の段落が区切りなし連結される問題を直す＝全 Phase 完了
+      [plan](docs/plans/archive/tts-plaintext-block-boundary.md)
+      `MarkdownPlainText` を presentationIntent の identity チェーンによるブロック分割 + `"\n\n"` 連結に
+      修正（見出し・段落・リスト項目が分離。単一段落は出力不変＝キャッシュキー不変）。変換結果が
+      TTS キャッシュキー sha256("model|text") のため、既存音声は「リキー移行」で再合成課金ゼロで引き継ぐ:
+      サーバに `POST /api/tts/rekey`（tts_audio 行と WAV をリネーム、4分岐 rekeyed/unchanged/not_found/
+      duplicate_removed）を新設し、iOS 起動時に `TTSCacheRekeyMigration` が Photo/Docs の Markdown 原文
+      から新旧キーを計算してローカル `.wav` リネーム + サーバ rekey を一括実行（全成功時のみ
+      `ttsPlainTextRekeyV1` フラグ、失敗時は次回起動で再試行。全操作冪等）。旧変換は `legacyPlainText`
+      として移行専用に温存。検証: iOS ユニット13件 + backend 6件（`DATA_DIR` 環境変数で一時ディレクトリへ
+      隔離するテスト基盤を追加）、一時サーバへの curl で endpoint 4分岐 + 401/400、シミュレータ実起動で
+      移行フック完走（フラグ永続化）を確認。
+      注意: 本番デプロイは backend を先に（エンドポイント未デプロイだと端末移行が失敗→次回起動リトライ）。
+
 - [x] 2026-07-08 単語回答後の正解の緑が見ずらい。もっと目立つように（不正解の赤も調整）
       [plan](docs/plans/archive/review-answer-highlight.md)
       復習クイズの選択肢ハイライトを強調（`ReviewSessionView` のみ）。背景の不透明度 0.25 → 0.4、

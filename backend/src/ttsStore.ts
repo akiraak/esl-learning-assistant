@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 import { config } from "./config";
-import { getTtsAudioByHash, upsertTtsAudio, deleteTtsAudio, type TtsAudioRow } from "./db";
+import { getTtsAudioByHash, upsertTtsAudio, deleteTtsAudio, updateTtsAudioKey, type TtsAudioRow } from "./db";
 import { synthesizeSpeech, VOICE_PRESETS, MODEL_PRESETS, type VoiceKey, type ModelKey } from "./tts";
 import { estimateCostUsd } from "./pricing";
 import { logger } from "./logger";
@@ -58,6 +58,47 @@ export async function getOrSynthesizeTtsAudio(text: string, model: ModelKey): Pr
     );
     throw error;
   }
+}
+
+export type TtsRekeyStatus = "unchanged" | "not_found" | "duplicate_removed" | "rekeyed";
+
+/// iOS 側のプレーンテキスト変換（MarkdownPlainText）修正でキャッシュキーが変わったとき、
+/// 既存音声を旧キー→新キーへ付け替える（再合成なし＝課金なし）。
+/// Markdown 原文は端末にしかないため、新テキストは端末から受け取る（POST /api/tts/rekey）。
+export function rekeyTtsAudio(oldHash: string, newText: string, model: ModelKey): TtsRekeyStatus {
+  const newHash = ttsCacheHash(newText, model);
+  if (newHash === oldHash) return "unchanged";
+
+  const row = getTtsAudioByHash(oldHash);
+  if (!row) return "not_found"; // 未生成 or 移行済み。冪等に成功扱いとする
+
+  const oldPath = path.join(config.ttsDir, row.filename);
+
+  if (getTtsAudioByHash(newHash)) {
+    // 移行前に新テキストで生成済み（端末が先に「生成」ボタンを押した等）。新しい方を残す
+    try {
+      if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn(`tts: rekey could not unlink ${row.filename}: ${message}`);
+    }
+    deleteTtsAudio(row.id);
+    logger.info(`tts: rekey removed duplicate id=${row.id} model=${model} hash=${oldHash.slice(0, 12)}`);
+    return "duplicate_removed";
+  }
+
+  const newFilename = `${newHash}.wav`;
+  if (fs.existsSync(oldPath)) {
+    fs.renameSync(oldPath, path.join(config.ttsDir, newFilename));
+  } else {
+    // ファイル欠損はメタデータだけ付け替える（次回再生時に getOrSynthesizeTtsAudio が自己修復する）
+    logger.warn(`tts: rekey file missing ${row.filename} (metadata only)`);
+  }
+  updateTtsAudioKey(row.id, { text: newText, textHash: newHash, filename: newFilename });
+  logger.info(
+    `tts: rekeyed id=${row.id} model=${model} ${oldHash.slice(0, 12)} -> ${newHash.slice(0, 12)} textLength=${newText.length}`
+  );
+  return "rekeyed";
 }
 
 /// 単語の「単体読み上げ」に使うモデル候補（新しい順に走査）。

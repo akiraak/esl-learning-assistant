@@ -1069,6 +1069,17 @@ export function deleteTtsAudio(id: number): void {
   db.prepare("DELETE FROM tts_audio WHERE id = ?").run(id);
 }
 
+/// TTSキャッシュのリキー（プレーンテキスト変換の修正でキーが変わったときの付け替え）用。
+/// text / text_hash / filename をまとめて更新する（音声実体は変えない）。
+export function updateTtsAudioKey(id: number, input: { text: string; textHash: string; filename: string }): void {
+  db.prepare("UPDATE tts_audio SET text = ?, text_hash = ?, filename = ? WHERE id = ?").run(
+    input.text,
+    input.textHash,
+    input.filename,
+    id
+  );
+}
+
 export interface WordIllustrationRow {
   id: number;
   created_at: string;
