@@ -9,13 +9,14 @@ final class ESLLearningAssistantUITests: XCTestCase {
         let app = XCUIApplication()
         app.launch()
 
-        // 6 タブ構成のため iPhone では先頭 4 タブが直接見え、5 つ目以降（Documents/Settings）は
-        // 「More」に入る。overflow タブは More 経由で到達できることも確認する。
+        // 5 タブ構成（6 個以上だと iOS の「More」タブに入り、ナビゲーションバーが二重になるため）。
+        // 全タブが直接見えること・More が存在しないことを確認する。
         XCTAssertTrue(app.tabBars.buttons["Lessons"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.tabBars.buttons["Words"].exists)
         XCTAssertTrue(app.tabBars.buttons["Writing"].exists)
-        XCTAssertTrue(app.tabBars.buttons["Audio"].exists)
-        XCTAssertTrue(app.tabBars.buttons["More"].exists)
+        XCTAssertTrue(app.tabBars.buttons["Content"].exists)
+        XCTAssertTrue(app.tabBars.buttons["Settings"].exists)
+        XCTAssertFalse(app.tabBars.buttons["More"].exists)
         app.selectTab("Settings")
     }
 

@@ -9,13 +9,16 @@ private struct PendingAudioImport: Identifiable {
     let urls: [URL]
 }
 
-/// Audioタブのトップ。iOSの「ファイル」（Dropbox・iCloud・端末内）から取り込んだ音声
-/// （AudioClip）のライブラリ。行タップで再生＋詳細へ遷移（既存 TTSPlayerBar が継続表示）。
+/// Content タブの Audio セグメント。iOSの「ファイル」（Dropbox・iCloud・端末内）から取り込んだ
+/// 音声（AudioClip）のライブラリ。行タップで再生＋詳細へ遷移（既存 TTSPlayerBar が継続表示）。
 /// 詳細画面でタイトル編集・レッスン割当・削除を行う。
-struct AudioView: View {
+/// `ContentTabView` の NavigationStack 配下に埋め込む前提（自前の NavigationStack は持たない）。
+/// 再生サービスは詳細 push 中も生かすため親（ContentTabView）が保持して渡す。
+struct AudioLibraryView: View {
+    @ObservedObject var playback: TTSPlaybackService
+
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \AudioClip.importedAt, order: .reverse) private var clips: [AudioClip]
-    @StateObject private var playback = TTSPlaybackService()
 
     @State private var isShowingFileImporter = false
     /// ファイル選択後、レッスン選択シートへ渡す取り込み待ちURL群
@@ -25,63 +28,58 @@ struct AudioView: View {
     @State private var selectedClip: AudioClip?
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if clips.isEmpty {
-                    emptyState
-                } else {
-                    List {
-                        ForEach(clips) { clip in
-                            // 行タップで詳細へ遷移する（再生は詳細画面で行う）。
-                            Button {
-                                selectedClip = clip
-                            } label: {
-                                AudioClipRow(clip: clip)
-                            }
-                            .buttonStyle(.plain)
-                            .contextMenu {
-                                Button("Delete", systemImage: "trash", role: .destructive) { delete(clip) }
-                            }
+        Group {
+            if clips.isEmpty {
+                emptyState
+            } else {
+                List {
+                    ForEach(clips) { clip in
+                        // 行タップで詳細へ遷移する（再生は詳細画面で行う）。
+                        Button {
+                            selectedClip = clip
+                        } label: {
+                            AudioClipRow(clip: clip)
                         }
-                        .onDelete(perform: deleteAt)
+                        .buttonStyle(.plain)
+                        .contextMenu {
+                            Button("Delete", systemImage: "trash", role: .destructive) { delete(clip) }
+                        }
                     }
-                    .navigationDestination(item: $selectedClip) { clip in
-                        AudioDetailView(clip: clip, playback: playback)
-                    }
+                    .onDelete(perform: deleteAt)
                 }
-            }
-            .navigationTitle("Audio")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        isShowingFileImporter = true
-                    } label: {
-                        Image(systemName: "plus")
-                    }
-                    .accessibilityLabel("Import Audio")
+                .navigationDestination(item: $selectedClip) { clip in
+                    AudioDetailView(clip: clip, playback: playback)
                 }
-            }
-            .fileImporter(
-                isPresented: $isShowingFileImporter,
-                allowedContentTypes: [.audio],
-                allowsMultipleSelection: true
-            ) { result in
-                handleFileSelection(result)
-            }
-            // ファイル選択後にレッスンを選んでから取り込む
-            .sheet(item: $pendingImport) { pending in
-                AudioImportLessonView(urls: pending.urls) { lesson in
-                    importFiles(pending.urls, into: lesson)
-                }
-            }
-            .alert("Import Failed", isPresented: importErrorBinding) {
-                Button("OK", role: .cancel) { importError = nil }
-            } message: {
-                Text(importError ?? "")
             }
         }
-        // 再生UIは AudioDetailView の safeAreaInset に集約する（一覧には出さない）
-        .onDisappear { playback.stop() }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    isShowingFileImporter = true
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .accessibilityLabel("Import Audio")
+            }
+        }
+        .fileImporter(
+            isPresented: $isShowingFileImporter,
+            allowedContentTypes: [.audio],
+            allowsMultipleSelection: true
+        ) { result in
+            handleFileSelection(result)
+        }
+        // ファイル選択後にレッスンを選んでから取り込む
+        .sheet(item: $pendingImport) { pending in
+            AudioImportLessonView(urls: pending.urls) { lesson in
+                importFiles(pending.urls, into: lesson)
+            }
+        }
+        .alert("Import Failed", isPresented: importErrorBinding) {
+            Button("OK", role: .cancel) { importError = nil }
+        } message: {
+            Text(importError ?? "")
+        }
     }
 
     private var emptyState: some View {

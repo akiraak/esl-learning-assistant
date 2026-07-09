@@ -4,8 +4,7 @@ enum AppTab: Hashable {
     case lessons
     case words
     case writing
-    case audio
-    case documents
+    case content
     case settings
 }
 

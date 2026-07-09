@@ -9,10 +9,11 @@ private struct PendingDocumentImport: Identifiable {
     let urls: [URL]
 }
 
-/// Documents タブのトップ。iOSの「ファイル」（iCloud・端末内等）から取り込んだ文書
+/// Content タブの Documents セグメント。iOSの「ファイル」（iCloud・端末内等）から取り込んだ文書
 /// （PDF/DOCX＝`Document`）のライブラリ。行タップで詳細へ遷移し、詳細で原本表示・抽出＋翻訳・
-/// タイトル編集・レッスン割当・削除を行う。音声の `AudioView` の文書版。
-struct DocumentsView: View {
+/// タイトル編集・レッスン割当・削除を行う。音声の `AudioLibraryView` の文書版。
+/// `ContentTabView` の NavigationStack 配下に埋め込む前提（自前の NavigationStack は持たない）。
+struct DocumentLibraryView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Document.importedAt, order: .reverse) private var documents: [Document]
 
@@ -34,60 +35,57 @@ struct DocumentsView: View {
     }()
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if documents.isEmpty {
-                    emptyState
-                } else {
-                    List {
-                        ForEach(documents) { document in
-                            Button {
-                                selectedDocument = document
-                            } label: {
-                                DocumentRow(document: document)
-                            }
-                            .buttonStyle(.plain)
-                            .contextMenu {
-                                Button("Delete", systemImage: "trash", role: .destructive) { delete(document) }
-                            }
+        Group {
+            if documents.isEmpty {
+                emptyState
+            } else {
+                List {
+                    ForEach(documents) { document in
+                        Button {
+                            selectedDocument = document
+                        } label: {
+                            DocumentRow(document: document)
                         }
-                        .onDelete(perform: deleteAt)
+                        .buttonStyle(.plain)
+                        .contextMenu {
+                            Button("Delete", systemImage: "trash", role: .destructive) { delete(document) }
+                        }
                     }
-                    .navigationDestination(item: $selectedDocument) { document in
-                        DocumentDetailView(document: document)
-                    }
+                    .onDelete(perform: deleteAt)
+                }
+                .navigationDestination(item: $selectedDocument) { document in
+                    DocumentDetailView(document: document)
                 }
             }
-            .navigationTitle("Documents")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        isShowingFileImporter = true
-                    } label: {
-                        Image(systemName: "plus")
-                    }
-                    .accessibilityLabel("Import Document")
-                    .accessibilityIdentifier("documentImportButton")
+        }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    isShowingFileImporter = true
+                } label: {
+                    Image(systemName: "plus")
                 }
+                .accessibilityLabel("Import Document")
+                .accessibilityIdentifier("documentImportButton")
             }
-            .fileImporter(
-                isPresented: $isShowingFileImporter,
-                allowedContentTypes: Self.documentContentTypes,
-                allowsMultipleSelection: true
-            ) { result in
-                handleFileSelection(result)
+        }
+        .fileImporter(
+            isPresented: $isShowingFileImporter,
+            allowedContentTypes: Self.documentContentTypes,
+            allowsMultipleSelection: true
+        ) { result in
+            handleFileSelection(result)
+        }
+        // ファイル選択後にレッスンを選んでから取り込む
+        .sheet(item: $pendingImport) { pending in
+            DocumentImportLessonView(urls: pending.urls) { lesson in
+                importFiles(pending.urls, into: lesson)
             }
-            // ファイル選択後にレッスンを選んでから取り込む
-            .sheet(item: $pendingImport) { pending in
-                DocumentImportLessonView(urls: pending.urls) { lesson in
-                    importFiles(pending.urls, into: lesson)
-                }
-            }
-            .alert("Import Failed", isPresented: importErrorBinding) {
-                Button("OK", role: .cancel) { importError = nil }
-            } message: {
-                Text(importError ?? "")
-            }
+        }
+        .alert("Import Failed", isPresented: importErrorBinding) {
+            Button("OK", role: .cancel) { importError = nil }
+        } message: {
+            Text(importError ?? "")
         }
     }
 

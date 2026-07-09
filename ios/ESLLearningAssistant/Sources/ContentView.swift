@@ -33,17 +33,13 @@ struct ContentView: View {
                 }
                 .tag(AppTab.writing)
 
-            AudioView()
+            // タブは5個まで（6個以上は iOS の More タブに入り、More のナビゲーションバーと
+            // 各タブの NavigationStack が二重になる）。音声・文書は Content タブに統合する。
+            ContentTabView()
                 .tabItem {
-                    Label("Audio", systemImage: "waveform")
+                    Label("Content", systemImage: "tray.full")
                 }
-                .tag(AppTab.audio)
-
-            DocumentsView()
-                .tabItem {
-                    Label("Documents", systemImage: "doc.text")
-                }
-                .tag(AppTab.documents)
+                .tag(AppTab.content)
 
             SettingsView()
                 .tabItem {

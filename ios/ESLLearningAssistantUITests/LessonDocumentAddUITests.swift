@@ -59,10 +59,13 @@ final class LessonDocumentAddUITests: XCTestCase {
 
         clearAllData(app)
 
-        // Documents タブは 5 つ目以降のため「More」に入る。selectTab が overflow を吸収する。
-        app.selectTab("Documents")
+        // 文書ライブラリは Content タブの Documents セグメントにある
+        app.selectTab("Content")
+        XCTAssertTrue(app.navigationBars["Content"].waitForExistence(timeout: 5))
+        let documentsSegment = app.segmentedControls.buttons["Documents"]
+        XCTAssertTrue(documentsSegment.waitForExistence(timeout: 5))
+        documentsSegment.tap()
 
-        XCTAssertTrue(app.navigationBars["Documents"].waitForExistence(timeout: 5))
         // ツールバーの取り込みボタンと、空状態の取り込み導線が出る
         XCTAssertTrue(app.buttons["documentImportButton"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["No documents yet"].exists)
