@@ -1,6 +1,21 @@
 # DONE
 
-- [x] 2026-07-10 画面を閉じると音再生が止まる。鳴るようにする
+- [x] 2026-07-10 レッスンをカレンダーに置き換える
+      [plan](docs/plans/archive/lesson-calendar.md)
+      レッスンを「クラスカレンダー上の授業日」に紐づく単位へ変更（クラス内で1日1レッスン、
+      タイトルは任意ラベルで空なら日付表示 `displayTitle`）。選択・作成は切り替えシート内の
+      カレンダー（`LessonCalendarView` = UICalendarView ラッパー。レッスンのある日にドット、
+      現在レッスンに✓）から行い、空き日タップ→任意タイトル付きアラートで即作成。
+      「Create/Open Today's Lesson」ボタンと Menu でのクラス切り替えも同シートに集約。
+      `Lesson.dateStorage`（optional storage + computed `date`）を追加し、起動時1回の
+      `LessonDateBackfill`（フラグ `lessonDateBackfillV1`）で既存レッスンを createdAt の日付へ
+      バックフィル（同日衝突は createdAt 昇順で翌日以降の空き日へ順送り・冪等）。
+      並び順・既定選択・レッスンピッカー類はすべて `date` 基準へ切り替え。`LessonAddView` と
+      タイトル重複チェックは廃止し、リネームはヘッダーカードの長押しメニューへ移設。
+      UIテストは共通ヘルパー（`createClassAndTodayLesson` 等）で新フローに追随。
+      検証: 新規ユニットテスト9件、UIテスト29件通過（`testClassLessonCaptureFlow` のみ
+      本作業前からの既存問題で失敗 → TODO 化）、実データ入りシミュレータで移行・GUI 動作確認、
+      仕様書（app-spec / data-model / screen-design）更新。
       [plan](docs/plans/archive/background-audio-playback.md)
       原因は `UIBackgroundModes: audio` 未設定（AVAudioSession は `.playback` 設定済みだった）。
       `ios/project.yml` の info.properties に追加して `xcodegen generate`。コード変更なし。

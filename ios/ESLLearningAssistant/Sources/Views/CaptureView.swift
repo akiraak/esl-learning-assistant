@@ -16,7 +16,7 @@ struct CaptureView: View {
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
-    @Query(sort: \Lesson.createdAt, order: .reverse) private var lessons: [Lesson]
+    @Query(sort: \Lesson.dateStorage, order: .reverse) private var lessons: [Lesson]
 
     @State private var photosPickerItems: [PhotosPickerItem] = []
     @State private var isShowingCamera = false
@@ -123,7 +123,7 @@ struct CaptureView: View {
     }
 
     private func lessonLabel(_ lesson: Lesson) -> String {
-        "\(lesson.schoolClass.name) / \(lesson.title)"
+        "\(lesson.schoolClass.name) / \(lesson.displayTitle)"
     }
 
     /// ライブラリから選んだ複数枚を順に読み込み、pending 登録する

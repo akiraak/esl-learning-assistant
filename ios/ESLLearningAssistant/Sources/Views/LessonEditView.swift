@@ -1,6 +1,8 @@
 import SwiftUI
 import SwiftData
 
+/// レッスン名（任意ラベル）の編集。レッスンの識別子は授業日（クラス内で一意）なので、
+/// 同名の重複チェックは行わず、空にすると表示は授業日（displayTitle）に戻る。
 struct LessonEditView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
@@ -17,10 +19,7 @@ struct LessonEditView: View {
                     .focused($isTitleFocused)
                     .accessibilityIdentifier("lessonTitleField")
             } footer: {
-                if isDuplicateTitle {
-                    Text("\(lesson.schoolClass.name) already has a lesson with this name.")
-                        .foregroundStyle(.red)
-                }
+                Text("Optional. Leave empty to show the lesson date (\(lesson.date.formatted(date: .abbreviated, time: .omitted))).")
             }
         }
         .navigationTitle("Edit Lesson")
@@ -28,7 +27,6 @@ struct LessonEditView: View {
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Save", action: saveLesson)
-                    .disabled(trimmedTitle.isEmpty || isDuplicateTitle)
             }
         }
         .onAppear {
@@ -37,23 +35,8 @@ struct LessonEditView: View {
         }
     }
 
-    private var trimmedTitle: String {
-        title.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    /// 同じクラス内に同名（大文字小文字を区別しない）のレッスンが既にあるか（編集対象自身は除く）
-    private var isDuplicateTitle: Bool {
-        let candidate = trimmedTitle
-        guard !candidate.isEmpty else { return false }
-        return lesson.schoolClass.lessons.contains {
-            $0.id != lesson.id
-                && $0.title.compare(candidate, options: [.caseInsensitive]) == .orderedSame
-        }
-    }
-
     private func saveLesson() {
-        guard !trimmedTitle.isEmpty, !isDuplicateTitle else { return }
-        lesson.title = trimmedTitle
+        lesson.title = title.trimmingCharacters(in: .whitespacesAndNewlines)
         modelContext.saveOrLog()
         dismiss()
     }

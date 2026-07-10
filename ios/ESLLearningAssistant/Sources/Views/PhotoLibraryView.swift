@@ -118,7 +118,7 @@ struct PhotoRow: View {
                 Text(displayTitle)
                     .lineLimit(1)
                 if showsLesson {
-                    Text("\(photo.lesson.schoolClass.name) / \(photo.lesson.title)")
+                    Text("\(photo.lesson.schoolClass.name) / \(photo.lesson.displayTitle)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)

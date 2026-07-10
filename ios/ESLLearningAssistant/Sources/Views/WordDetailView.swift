@@ -78,7 +78,7 @@ struct WordDetailView: View {
                     } label: {
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(occurrence.lesson.title)
+                                Text(occurrence.lesson.displayTitle)
                                     .foregroundStyle(.primary)
                                 Text(occurrence.lesson.schoolClass.name)
                                     .font(.caption)

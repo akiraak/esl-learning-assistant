@@ -14,7 +14,7 @@ struct YouTubeAddView: View {
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
-    @Query(sort: \Lesson.createdAt, order: .reverse) private var lessons: [Lesson]
+    @Query(sort: \Lesson.dateStorage, order: .reverse) private var lessons: [Lesson]
 
     @State private var input = ""
     /// レッスン割当は UUID で選ぶ（@Model の Picker タグはIDで扱うのが安全）。nil = 既定（最新レッスン）
@@ -129,7 +129,7 @@ struct YouTubeAddView: View {
     }
 
     private func lessonLabel(_ lesson: Lesson) -> String {
-        "\(lesson.schoolClass.name) / \(lesson.title)"
+        "\(lesson.schoolClass.name) / \(lesson.displayTitle)"
     }
 
     private func add() {

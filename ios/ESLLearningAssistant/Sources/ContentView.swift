@@ -3,6 +3,7 @@ import SwiftData
 
 struct ContentView: View {
     @State private var router = AppRouter()
+    @Environment(\.modelContext) private var modelContext
     // Words タブのバッジ用。復習状態は埋め込み Codable のため #Predicate は使えず、
     // 全件取得してメモリ内で isDue 判定する（件数は小さい）
     @Query private var words: [Word]
@@ -48,6 +49,10 @@ struct ContentView: View {
                 .tag(AppTab.settings)
         }
         .environment(router)
+        .task {
+            // レッスンのカレンダー化に伴う授業日バックフィル（未完了時のみ実行、冪等）
+            LessonDateBackfill.runIfNeeded(modelContext: modelContext)
+        }
     }
 }
 

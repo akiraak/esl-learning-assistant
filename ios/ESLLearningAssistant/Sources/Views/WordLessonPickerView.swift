@@ -29,11 +29,11 @@ struct WordLessonPickerView: View {
                                         dismiss()
                                     } label: {
                                         LabeledContent {
-                                            Text(lesson.createdAt, style: .date)
+                                            Text(lesson.date, style: .date)
                                                 .font(.caption)
                                                 .foregroundStyle(.secondary)
                                         } label: {
-                                            Text(lesson.title)
+                                            Text(lesson.displayTitle)
                                                 .foregroundStyle(.primary)
                                         }
                                     }
@@ -64,6 +64,6 @@ struct WordLessonPickerView: View {
     private func selectableLessons(in schoolClass: Class) -> [Lesson] {
         schoolClass.lessons
             .filter { !excludedLessonIDs.contains($0.id) }
-            .sorted { $0.createdAt > $1.createdAt }
+            .sorted { $0.date > $1.date }
     }
 }

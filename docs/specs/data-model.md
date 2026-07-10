@@ -58,8 +58,8 @@ WordOccurrence ── * (sourceDocument: Document?)
 ```
 Class
 ├─ id / name / createdAt
-└─ lessons: [Lesson]                         (1 Class - * Lesson)
-    ├─ id / title / createdAt
+└─ lessons: [Lesson]                         (1 Class - * Lesson、クラス内で date は一意)
+    ├─ id / title / createdAt / dateStorage(date) / memo
     ├─ photos: [Photo]                       (1 Lesson - * Photo)
     │   ├─ id
     │   ├─ imageFileName
@@ -143,21 +143,34 @@ Composition                                   (Lessonに従属しない独立エ
 
 ## 3. Lesson（授業）
 
-クラス内の1回分の授業の単位。ユーザーが手動で作成・切り替えを行う（仕様書4章）。
+クラス内の1回分の授業の単位。授業日（`date`）がクラスカレンダー上の実質の識別子で、
+**同一クラス内に同日のレッスンは作れない**（1日1レッスン）。選択・作成はカレンダー UI
+（`LessonCalendarView`）から行う（経緯: [docs/plans/lesson-calendar.md](../plans/archive/lesson-calendar.md)）。
 
 | フィールド | 型 | 説明 |
 |---|---|---|
 | id | UUID | 主キー |
 | class | Class | 所属クラス（to-one, 必須） |
-| title | String | レッスン名（ユーザー入力、例:「Unit 3 Reading」） |
+| title | String | レッスン名（**任意ラベル**。空可。例:「Unit 3 Reading」） |
 | createdAt | Date | 作成日時 |
+| dateStorage | Date? | 授業日の実ストレージ（ローカル Calendar の startOfDay に正規化して保存）。オプショナル追加のためライトウェイトマイグレーション維持 |
+| memo | String? | 自由記述メモ（未入力は nil） |
 | photos | [Photo] | 関連写真（to-many, cascade delete） |
 | wordOccurrences | [WordOccurrence] | この授業で出会った単語の出現記録（to-many, cascade delete） |
 | questions | [Question] | 関連問題（to-many, cascade delete） |
 | audioClips | [AudioClip] | 紐付けた取り込み音声（to-many, **nullify**）。レッスン削除でクリップ本体は残す（[§4.5](#45-audioclip取り込み音声とその文字起こし翻訳)） |
 | documents | [Document] | 紐付けた取り込み文書（PDF/DOCX）（to-many, **nullify**）。レッスン削除で文書本体は残す（[§4.6](#46-document取り込み文書pdfdocxとその抽出翻訳)） |
 
-- 自動の日付区切りは行わない。`createdAt` は記録のみで区切り条件には使わない
+- **computed プロパティ**:
+  - `date: Date` — 授業日の公開 API。`dateStorage ?? startOfDay(createdAt)`（未バックフィルの
+    旧データ向けフォールバック）。同日判定は保存値の直接比較ではなく必ず
+    `Calendar.isDate(_:inSameDayAs:)` で行う（`Class.lesson(on:)` ヘルパーを使う）
+  - `displayTitle: String` — 表示名。`title` が空なら授業日の書式表示を返す
+- **既存データの移行**: 起動時に1回だけ `LessonDateBackfill`（UserDefaults フラグ
+  `lessonDateBackfillV1`）が全レッスンの `dateStorage` を `createdAt` の日付で埋める。
+  同一クラス内で同日衝突した場合は `createdAt` 昇順で最初の1件がその日を取り、以降は
+  翌日以降の空き日へ順送りする（データは消さない・決定的・冪等）
+- レッスンの並び順・既定選択（「現在のレッスン」フォールバック）は `date` 基準（最新日）
 - レッスン削除時は配下の `Photo` / `WordOccurrence` / `Question` / `QuizResult` をカスケード削除する
   （`WordOccurrence` が指す `Word` 本体は削除しない）
 - レッスンの単語帳ビュー（仕様書4章）は `wordOccurrences.map { $0.word }` で取得する

@@ -43,27 +43,10 @@ final class ESLLearningAssistantUITests: XCTestCase {
         let addClassButton = app.buttons["lessonAddClassButton"]
         XCTAssertTrue(addClassButton.waitForExistence(timeout: 5))
         addClassButton.tap()
-
-        let switcherAddClassButton = app.buttons["switcherAddClassButton"]
-        XCTAssertTrue(switcherAddClassButton.waitForExistence(timeout: 5))
-        switcherAddClassButton.tap()
-
-        let classNameField = app.textFields["classNameField"]
-        XCTAssertTrue(classNameField.waitForExistence(timeout: 5))
-        classNameField.tap()
-        classNameField.typeText("ESL Beginner A")
-        app.navigationBars.buttons["Add"].tap()
+        addClassInSwitcher(app, className: "ESL Beginner A")
         attach(app, "02-switcher-class-added")
 
-        let addLessonButton = app.buttons["switcherAddLessonButton"]
-        XCTAssertTrue(addLessonButton.waitForExistence(timeout: 5))
-        addLessonButton.tap()
-
-        let lessonTitleField = app.textFields["lessonTitleField"]
-        XCTAssertTrue(lessonTitleField.waitForExistence(timeout: 5))
-        lessonTitleField.tap()
-        lessonTitleField.typeText("Unit 1 Greetings")
-        app.navigationBars.buttons["Add"].tap()
+        createTodayLessonInSwitcher(app, title: "Unit 1 Greetings")
         attach(app, "04-lesson-with-lesson")
 
         let addContentButton = app.buttons["lessonContentAddButton"]
@@ -84,10 +67,12 @@ final class ESLLearningAssistantUITests: XCTestCase {
 
         // PHPicker is hosted out-of-process: its cells aren't queryable via `app`'s
         // accessibility tree, so tap by screen coordinate instead of element lookup.
+        // dy はプライベートアクセス告知バナーの有無どちらでも写真グリッドの行に当たる位置にする
+        // （バナー表示時は先頭行、非表示時は2行目付近。0.6 はバナー表示時にグリッド下の余白を叩いて失敗する）
         Thread.sleep(forTimeInterval: 3)
         attach(app, "06-photos-picker")
         let photoCellCoordinate = app.windows.firstMatch.coordinate(
-            withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6)
+            withNormalizedOffset: CGVector(dx: 0.5, dy: 0.33)
         )
         photoCellCoordinate.tap()
 
@@ -103,57 +88,30 @@ final class ESLLearningAssistantUITests: XCTestCase {
         attach(app, "07-photo-detail")
     }
 
-    func testDuplicateLessonTitleBlocked() throws {
+    func testSameDayLessonOpensExistingInsteadOfCreating() throws {
         let app = XCUIApplication()
         app.launch()
 
-        // クラス・レッスンを用意する（未作成の場合のみ）
-        let addClassButton = app.buttons["lessonAddClassButton"]
-        if addClassButton.waitForExistence(timeout: 5) {
-            addClassButton.tap()
-            app.buttons["switcherAddClassButton"].tap()
-            let classNameField = app.textFields["classNameField"]
-            XCTAssertTrue(classNameField.waitForExistence(timeout: 5))
-            classNameField.tap()
-            classNameField.typeText("ESL Beginner A")
-            app.navigationBars.buttons["Add"].tap()
-            let addLessonButton = app.buttons["switcherAddLessonButton"]
-            XCTAssertTrue(addLessonButton.waitForExistence(timeout: 5))
-            addLessonButton.tap()
-            let lessonTitleField = app.textFields["lessonTitleField"]
-            XCTAssertTrue(lessonTitleField.waitForExistence(timeout: 5))
-            lessonTitleField.tap()
-            lessonTitleField.typeText("Unit 1 Greetings")
-            app.navigationBars.buttons["Add"].tap()
-        }
+        // クラス・今日のレッスンを用意する（未作成の場合のみ）
+        ensureClassAndTodayLesson(app)
 
-        // 切り替えシートを開き、既存と同名のレッスンを追加しようとする
+        // 切り替えシートを開き、もう一度「今日」をタップする。クラス内で同日は1レッスンなので
+        // 作成アラートは出ず、既存の今日のレッスンが選択されてシートが閉じる
         let switcherButton = app.buttons["classLessonSwitcherButton"]
         XCTAssertTrue(switcherButton.waitForExistence(timeout: 5))
         switcherButton.tap()
-        let addLessonButton = app.buttons["switcherAddLessonButton"].firstMatch
-        XCTAssertTrue(addLessonButton.waitForExistence(timeout: 5))
-        addLessonButton.tap()
 
-        let lessonTitleField = app.textFields["lessonTitleField"]
-        XCTAssertTrue(lessonTitleField.waitForExistence(timeout: 5))
-        lessonTitleField.tap()
-        lessonTitleField.typeText("Unit 1 Greetings")
+        let todayButton = app.buttons["calendarTodayLessonButton"]
+        XCTAssertTrue(todayButton.waitForExistence(timeout: 5))
+        XCTAssertTrue(todayButton.label.contains("Open Today's Lesson"))
+        attach(app, "17-calendar-open-today")
+        todayButton.tap()
 
-        // 追加ボタンが無効になり、重複メッセージが表示される
-        let addButton = app.navigationBars.buttons["Add"]
-        XCTAssertTrue(addButton.waitForExistence(timeout: 5))
-        XCTAssertFalse(addButton.isEnabled)
-        XCTAssertTrue(
-            app.staticTexts["ESL Beginner A already has a lesson with this name."]
-                .waitForExistence(timeout: 5)
-        )
-        attach(app, "17-duplicate-lesson-blocked")
-
-        // 別名にすれば追加できる
-        lessonTitleField.typeText(" 2")
-        XCTAssertTrue(addButton.isEnabled)
-        attach(app, "18-unique-lesson-allowed")
+        // 作成アラートは表示されず、シートが閉じてレッスン画面に戻る
+        XCTAssertFalse(app.alerts.firstMatch.waitForExistence(timeout: 2))
+        XCTAssertTrue(switcherButton.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Unit 1 Greetings"].waitForExistence(timeout: 5))
+        attach(app, "18-same-day-lesson-selected")
     }
 
     func testWordAddFlow() throws {
@@ -161,24 +119,7 @@ final class ESLLearningAssistantUITests: XCTestCase {
         app.launch()
 
         // クラス・レッスンを用意する（未作成の場合のみ）
-        let addClassButton = app.buttons["lessonAddClassButton"]
-        if addClassButton.waitForExistence(timeout: 5) {
-            addClassButton.tap()
-            app.buttons["switcherAddClassButton"].tap()
-            let classNameField = app.textFields["classNameField"]
-            XCTAssertTrue(classNameField.waitForExistence(timeout: 5))
-            classNameField.tap()
-            classNameField.typeText("ESL Beginner A")
-            app.navigationBars.buttons["Add"].tap()
-            let addLessonButton = app.buttons["switcherAddLessonButton"]
-            XCTAssertTrue(addLessonButton.waitForExistence(timeout: 5))
-            addLessonButton.tap()
-            let lessonTitleField = app.textFields["lessonTitleField"]
-            XCTAssertTrue(lessonTitleField.waitForExistence(timeout: 5))
-            lessonTitleField.tap()
-            lessonTitleField.typeText("Unit 1 Greetings")
-            app.navigationBars.buttons["Add"].tap()
-        }
+        ensureClassAndTodayLesson(app)
 
         // 単語タブ: レッスン指定ありで追加（入力は見出し語のみ）
         app.tabBars.buttons["Words"].tap()
@@ -303,22 +244,7 @@ final class ESLLearningAssistantUITests: XCTestCase {
 
         app.tabBars.buttons["Lessons"].tap()
         let addClassButton = app.buttons["lessonAddClassButton"]
-        XCTAssertTrue(addClassButton.waitForExistence(timeout: 5))
-        addClassButton.tap()
-        app.buttons["switcherAddClassButton"].tap()
-        let classNameField = app.textFields["classNameField"]
-        XCTAssertTrue(classNameField.waitForExistence(timeout: 5))
-        classNameField.tap()
-        classNameField.typeText("Debug Class")
-        app.navigationBars.buttons["Add"].tap()
-        let addLessonButton = app.buttons["switcherAddLessonButton"]
-        XCTAssertTrue(addLessonButton.waitForExistence(timeout: 5))
-        addLessonButton.tap()
-        let lessonTitleField = app.textFields["lessonTitleField"]
-        XCTAssertTrue(lessonTitleField.waitForExistence(timeout: 5))
-        lessonTitleField.tap()
-        lessonTitleField.typeText("Unit 1")
-        app.navigationBars.buttons["Add"].tap()
+        createClassAndTodayLesson(app, className: "Debug Class", lessonTitle: "Unit 1")
 
         // クラス指定で削除する
         app.selectTab("Settings")

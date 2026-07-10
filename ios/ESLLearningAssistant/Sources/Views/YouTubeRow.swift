@@ -18,7 +18,7 @@ struct YouTubeRow: View {
                 Text(link.displayTitle)
                     .lineLimit(1)
                 if showsLesson {
-                    Text("\(link.lesson.schoolClass.name) / \(link.lesson.title)")
+                    Text("\(link.lesson.schoolClass.name) / \(link.lesson.displayTitle)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)

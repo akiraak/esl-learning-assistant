@@ -47,7 +47,7 @@ struct WordAddView: View {
                 Section {
                     if let fixedLesson {
                         LabeledContent {
-                            Text("\(fixedLesson.schoolClass.name) / \(fixedLesson.title)")
+                            Text("\(fixedLesson.schoolClass.name) / \(fixedLesson.displayTitle)")
                         } label: {
                             TappableEnglishText(text: "Lesson")
                         }
@@ -56,8 +56,8 @@ struct WordAddView: View {
                         Picker("Lesson", selection: $selectedLessonID) {
                             Text("None").tag(UUID?.none)
                             ForEach(classes) { schoolClass in
-                                ForEach(schoolClass.lessons.sorted { $0.createdAt > $1.createdAt }) { lesson in
-                                    Text("\(schoolClass.name) / \(lesson.title)")
+                                ForEach(schoolClass.lessons.sorted { $0.date > $1.date }) { lesson in
+                                    Text("\(schoolClass.name) / \(lesson.displayTitle)")
                                         .tag(Optional(lesson.id))
                                 }
                             }

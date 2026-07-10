@@ -9,6 +9,8 @@ struct LessonsView: View {
     @AppStorage("currentLessonID") private var currentLessonIDString: String?
 
     @State private var isShowingSwitcher = false
+    /// 現在レッスンのリネーム対象（切り替えシートからレッスン行が消えたため、ここに導線を置く）
+    @State private var renamingLesson: Lesson?
     /// コンテンツ追加の入口（タイプ選択シート）。写真/Audio/YouTube をここから追加する
     @State private var isShowingAddContent = false
     @State private var isEditingMemo = false
@@ -88,6 +90,9 @@ struct LessonsView: View {
                     LessonMemoEditView(lesson: lesson)
                 }
             }
+            .navigationDestination(item: $renamingLesson) { lesson in
+                LessonEditView(lesson: lesson)
+            }
             .confirmationDialog(
                 "Delete this photo?",
                 isPresented: photoDeletionConfirmationBinding,
@@ -124,7 +129,7 @@ struct LessonsView: View {
            let match = schoolClass.lessons.first(where: { $0.id == id }) {
             return match
         }
-        return schoolClass.lessons.max(by: { $0.createdAt < $1.createdAt })
+        return schoolClass.lessons.max(by: { $0.date < $1.date })
     }
 
     private var currentClassIDBinding: Binding<UUID?> {
@@ -153,9 +158,16 @@ struct LessonsView: View {
                         Text(schoolClass.name)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
-                        Text(currentLesson?.title ?? "No lesson selected")
+                        Text(currentLesson?.displayTitle ?? "No lesson selected")
                             .font(.title3)
                             .fontWeight(.semibold)
+                        // タイトル付きレッスンは授業日が見えないため補足表示する
+                        // （タイトル無しは displayTitle 自体が日付なので出さない）
+                        if let lesson = currentLesson, !lesson.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            Text(lesson.date, format: .dateTime.year().month().day().weekday())
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                     Spacer()
                     Image(systemName: "chevron.up.chevron.down")
@@ -166,6 +178,15 @@ struct LessonsView: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("classLessonSwitcherButton")
+            .contextMenu {
+                if let lesson = currentLesson {
+                    Button {
+                        renamingLesson = lesson
+                    } label: {
+                        Label("Rename Lesson", systemImage: "pencil")
+                    }
+                }
+            }
         }
     }
 
@@ -407,14 +428,14 @@ struct LessonsView: View {
                     .foregroundStyle(.secondary)
                 TappableEnglishText(text: "No Lessons")
                     .font(.headline)
-                TappableEnglishText(text: "Add a lesson to \(schoolClass.name) to get started.", color: .secondary)
+                TappableEnglishText(text: "Pick a day on the calendar to add a lesson to \(schoolClass.name).", color: .secondary)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                 Button {
                     isShowingSwitcher = true
                 } label: {
-                    Label("Add Lesson", systemImage: "plus")
+                    Label("Add Lesson", systemImage: "calendar.badge.plus")
                 }
                 .buttonStyle(.borderedProminent)
             }

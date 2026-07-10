@@ -26,7 +26,7 @@ struct DocumentDetailView: View {
     private var fileURL: URL { DocumentStorage.url(fileName: document.documentFileName) }
     /// 単語タップ登録の紐付け先。紐付くレッスンのうち最新のものを使う（未割当なら nil）。
     private var primaryLesson: Lesson? {
-        document.lessons.sorted { $0.createdAt > $1.createdAt }.first
+        document.lessons.sorted { $0.date > $1.date }.first
     }
 
     var body: some View {
@@ -42,10 +42,10 @@ struct DocumentDetailView: View {
 
             Section {
                 // 音声詳細と同型：一覧＋スワイプ解除＋追加ボタン
-                let linked = document.lessons.sorted { $0.createdAt > $1.createdAt }
+                let linked = document.lessons.sorted { $0.date > $1.date }
                 ForEach(linked) { lesson in
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(lesson.title)
+                        Text(lesson.displayTitle)
                             .foregroundStyle(.primary)
                         Text(lesson.schoolClass.name)
                             .font(.caption)

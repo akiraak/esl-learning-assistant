@@ -12,7 +12,7 @@ struct DocumentImportLessonView: View {
     let onImport: (Lesson?) -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @Query(sort: \Lesson.createdAt, order: .reverse) private var lessons: [Lesson]
+    @Query(sort: \Lesson.dateStorage, order: .reverse) private var lessons: [Lesson]
 
     /// レッスン割当は UUID で選ぶ（@Model の Picker タグはIDで扱うのが安全）。nil = 未割当
     @State private var selectedLessonID: UUID?
@@ -30,7 +30,7 @@ struct DocumentImportLessonView: View {
                     Picker("Lesson", selection: $selectedLessonID) {
                         Text("None").tag(UUID?.none)
                         ForEach(lessons) { lesson in
-                            Text("\(lesson.schoolClass.name) / \(lesson.title)")
+                            Text("\(lesson.schoolClass.name) / \(lesson.displayTitle)")
                                 .tag(UUID?.some(lesson.id))
                         }
                     }

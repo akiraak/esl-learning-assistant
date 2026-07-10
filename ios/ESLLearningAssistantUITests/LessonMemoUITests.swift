@@ -14,23 +14,7 @@ final class LessonMemoUITests: XCTestCase {
         app.tabBars.buttons["Lessons"].tap()
 
         // クラスとレッスンを作成する
-        let addClassButton = app.buttons["lessonAddClassButton"]
-        XCTAssertTrue(addClassButton.waitForExistence(timeout: 5))
-        addClassButton.tap()
-        app.buttons["switcherAddClassButton"].tap()
-        let classNameField = app.textFields["classNameField"]
-        XCTAssertTrue(classNameField.waitForExistence(timeout: 5))
-        classNameField.tap()
-        classNameField.typeText("ESL Beginner A")
-        app.navigationBars.buttons["Add"].tap()
-        let addLessonButton = app.buttons["switcherAddLessonButton"]
-        XCTAssertTrue(addLessonButton.waitForExistence(timeout: 5))
-        addLessonButton.tap()
-        let lessonTitleField = app.textFields["lessonTitleField"]
-        XCTAssertTrue(lessonTitleField.waitForExistence(timeout: 5))
-        lessonTitleField.tap()
-        lessonTitleField.typeText("Unit 1 Greetings")
-        app.navigationBars.buttons["Add"].tap()
+        createClassAndTodayLesson(app)
 
         // Memoセクション: 初期状態はプレースホルダ表示
         scrollTo(app, staticText: "No memo yet")

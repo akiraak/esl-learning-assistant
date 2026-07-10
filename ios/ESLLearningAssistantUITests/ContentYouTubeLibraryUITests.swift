@@ -48,23 +48,7 @@ final class ContentYouTubeLibraryUITests: XCTestCase {
 
         // クラスとレッスンを作成する
         app.tabBars.buttons["Lessons"].tap()
-        let addClassButton = app.buttons["lessonAddClassButton"]
-        XCTAssertTrue(addClassButton.waitForExistence(timeout: 5))
-        addClassButton.tap()
-        app.buttons["switcherAddClassButton"].tap()
-        let classNameField = app.textFields["classNameField"]
-        XCTAssertTrue(classNameField.waitForExistence(timeout: 5))
-        classNameField.tap()
-        classNameField.typeText("ESL Beginner A")
-        app.navigationBars.buttons["Add"].tap()
-        let addLessonButton = app.buttons["switcherAddLessonButton"]
-        XCTAssertTrue(addLessonButton.waitForExistence(timeout: 5))
-        addLessonButton.tap()
-        let lessonTitleField = app.textFields["lessonTitleField"]
-        XCTAssertTrue(lessonTitleField.waitForExistence(timeout: 5))
-        lessonTitleField.tap()
-        lessonTitleField.typeText("Unit 1 Greetings")
-        app.navigationBars.buttons["Add"].tap()
+        createClassAndTodayLesson(app)
 
         // YouTube セグメントの「+」で追加シートを開くと、レッスン選択（既定=最新）と入力欄が出る
         app.selectTab("Content")

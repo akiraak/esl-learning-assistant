@@ -138,7 +138,7 @@ struct AudioClipRow: View {
 
     /// 紐付くレッスンのサブタイトル。複数時は先頭＋ "+N"。未割当は nil。
     private var lessonSubtitle: String? {
-        let lessons = clip.lessons.sorted { $0.createdAt > $1.createdAt }
+        let lessons = clip.lessons.sorted { $0.date > $1.date }
         guard let first = lessons.first else { return nil }
         let base = "\(first.schoolClass.name) / \(first.title)"
         return lessons.count > 1 ? "\(base)  +\(lessons.count - 1)" : base
