@@ -1,5 +1,13 @@
 # DONE
 
+- [x] 2026-07-10 画面を閉じると音再生が止まる。鳴るようにする
+      [plan](docs/plans/archive/background-audio-playback.md)
+      原因は `UIBackgroundModes: audio` 未設定（AVAudioSession は `.playback` 設定済みだった）。
+      `ios/project.yml` の info.properties に追加して `xcodegen generate`。コード変更なし。
+      画面ロック・ホーム移動でも TTS・取り込み音声の再生が継続する。ロック画面の再生コントロール
+      （MPNowPlayingInfoCenter / MPRemoteCommandCenter）はスコープ外。ScreenWakeLock（再生中の
+      自動ロック抑止）は「画面を見ながら聞く」UX として温存。検証: ビルド産物 Info.plist に
+      反映確認 + `xcodebuild test` 102件全通過。実機でのロック時継続は要手動確認。
 - [x] 2026-07-10 TTSリキー移行（ttsPlainTextRekeyV1）の移行コードを削除（全端末移行済みのため）
       [plan](docs/plans/archive/remove-tts-rekey-migration.md)
       iOS: `TTSCacheRekeyMigration`（本体・テスト）、`MarkdownPlainText.legacyPlainText`、ContentView の

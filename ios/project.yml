@@ -42,6 +42,9 @@ targets:
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         NSCameraUsageDescription: 教科書ページを撮影してOCR・翻訳するためにカメラを使用します。
+        # 画面ロック・バックグラウンドでも音声再生（TTS・取り込み音声）を継続する
+        UIBackgroundModes:
+          - audio
         # ローカル開発用バックエンド（HTTP/非TLS）に接続するため。クラウド化する際に見直す。
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
