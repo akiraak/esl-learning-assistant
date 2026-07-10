@@ -1,5 +1,13 @@
 # DONE
 
+- [x] 2026-07-10 TTSリキー移行（ttsPlainTextRekeyV1）の移行コードを削除（全端末移行済みのため）
+      [plan](docs/plans/archive/remove-tts-rekey-migration.md)
+      iOS: `TTSCacheRekeyMigration`（本体・テスト）、`MarkdownPlainText.legacyPlainText`、ContentView の
+      起動フック（専用の modelContext プロパティ含む）、`TTSAudioStore.rekeyLocalFile`（テスト4件含む）を削除。
+      backend: `POST /api/tts/rekey`、`rekeyTtsAudio`・`TtsRekeyStatus`、`db.updateTtsAudioKey`、
+      `test/ttsRekey.test.ts` を削除。`MarkdownPlainText` ヘッダの「キー変更時はリキー移行必須」の警告は
+      git 履歴参照に書き換えて温存。検証: backend `npm run build` + テスト16件、iOS `xcodegen generate` 後
+      `xcodebuild test` 102件全通過。
 - [x] 2026-07-08 TTS用プレーンテキスト変換で見出しと直後の段落が区切りなし連結される問題を直す＝全 Phase 完了
       [plan](docs/plans/archive/tts-plaintext-block-boundary.md)
       `MarkdownPlainText` を presentationIntent の identity チェーンによるブロック分割 + `"\n\n"` 連結に

@@ -43,7 +43,7 @@ import { estimateCostUsd } from "./pricing";
 import { startPricingSync } from "./pricingSync";
 import { logger } from "./logger";
 import { MODEL_PRESETS, type ModelKey } from "./tts";
-import { getOrSynthesizeTtsAudio, pregenerateQuizAudio, regenerateTtsAudio, rekeyTtsAudio } from "./ttsStore";
+import { getOrSynthesizeTtsAudio, pregenerateQuizAudio, regenerateTtsAudio } from "./ttsStore";
 import { buildIllustrationPrompt, generateIllustration, ILLUSTRATION_MODEL } from "./illustration";
 
 process.on("uncaughtException", (error) => {
@@ -1000,43 +1000,6 @@ app.post("/api/tts", async (req, res) => {
     res.send(wav);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    res.status(500).json({ error: errorMessage });
-  }
-});
-
-// iOS 側のプレーンテキスト変換（MarkdownPlainText）修正でキャッシュキーが変わったとき、
-// 既存音声を旧キー→新キーへ付け替える（再合成なし）。端末の一括移行（TTSCacheRekeyMigration）から呼ばれる。
-app.post("/api/tts/rekey", (req, res) => {
-  const { oldHash, newText, model } = req.body ?? {};
-
-  if (typeof oldHash !== "string" || !/^[0-9a-f]{64}$/.test(oldHash)) {
-    logger.warn("tts/rekey: rejected (oldHash must be a sha256 hex string)");
-    res.status(400).json({ error: "oldHash must be a sha256 hex string" });
-    return;
-  }
-  if (typeof newText !== "string" || !newText.trim()) {
-    logger.warn("tts/rekey: rejected (newText is required)");
-    res.status(400).json({ error: "newText is required" });
-    return;
-  }
-  if (newText.length > TTS_TEXT_MAX_LENGTH) {
-    logger.warn(`tts/rekey: rejected (newText too long: ${newText.length})`);
-    res.status(400).json({ error: `newText must be ${TTS_TEXT_MAX_LENGTH} characters or fewer` });
-    return;
-  }
-  if (model !== "flash" && model !== "pro") {
-    logger.warn(`tts/rekey: rejected (invalid model: ${String(model)})`);
-    res.status(400).json({ error: `model must be one of: ${Object.keys(MODEL_PRESETS).join(", ")}` });
-    return;
-  }
-
-  try {
-    const status = rekeyTtsAudio(oldHash, newText, model as ModelKey);
-    logger.info(`tts/rekey: ${status} oldHash=${oldHash.slice(0, 12)} model=${model}`);
-    res.json({ status });
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    logger.error(`tts/rekey: failed oldHash=${oldHash.slice(0, 12)} error=${errorMessage}`);
     res.status(500).json({ error: errorMessage });
   }
 });

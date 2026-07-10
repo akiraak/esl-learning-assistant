@@ -24,35 +24,26 @@ final class MarkdownPlainTextTests: XCTestCase {
         )
     }
 
-    // 単一段落（インライン強調のみ）は旧実装と出力が一致する
+    // 単一段落（インライン強調のみ）はブロック分割の影響を受けない
     // ＝TTSキャッシュキー sha256("model|text") が変わらないことの回帰テスト
-    func testSingleParagraphMatchesLegacyOutput() {
-        let cases = [
-            "The **north wind** and the sun argued about strength.",
-            "line one\nline two",
-            "Plain sentence without any markup.",
-        ]
-        for markdown in cases {
-            XCTAssertEqual(
-                MarkdownPlainText.plainText(markdown),
-                MarkdownPlainText.legacyPlainText(markdown),
-                "単一ブロックのキャッシュキーが変わってしまう: \(markdown)"
-            )
-        }
-    }
-
-    // 旧実装がブロック境界を落とすこと自体の記録（リキー移行が前提にしている挙動）
-    func testLegacyDropsBlockBoundaries() {
+    func testSingleParagraphKeepsInlineOnlyOutput() {
         XCTAssertEqual(
-            MarkdownPlainText.legacyPlainText("# Title\n\nBody paragraph."),
-            "TitleBody paragraph."
+            MarkdownPlainText.plainText("The **north wind** and the sun argued about strength."),
+            "The north wind and the sun argued about strength."
+        )
+        // 段落内の単一改行（ソフト改行）はスペースになる（Markdown 仕様どおり、ブロック分割はされない）
+        XCTAssertEqual(
+            MarkdownPlainText.plainText("line one\nline two"),
+            "line one line two"
+        )
+        XCTAssertEqual(
+            MarkdownPlainText.plainText("Plain sentence without any markup."),
+            "Plain sentence without any markup."
         )
     }
 
     func testNilAndEmptyReturnEmpty() {
         XCTAssertEqual(MarkdownPlainText.plainText(nil), "")
         XCTAssertEqual(MarkdownPlainText.plainText(""), "")
-        XCTAssertEqual(MarkdownPlainText.legacyPlainText(nil), "")
-        XCTAssertEqual(MarkdownPlainText.legacyPlainText(""), "")
     }
 }

@@ -5,7 +5,7 @@ import Foundation
 ///
 /// 注意: 出力テキストは TTS キャッシュ（`TTSAudioStore` / サーバ `tts_audio`）のキーそのものになる。
 /// 変換ロジックを変えると既存キャッシュが無効化され再合成（課金）が走るため、安易に変更しない。
-/// 変える場合はリキー移行（`TTSCacheRekeyMigration` の v1 参照）をセットで行うこと。
+/// 変える場合は旧キー→新キーのリキー移行をセットで行うこと（v1 の例: git 履歴の `TTSCacheRekeyMigration`）。
 enum MarkdownPlainText {
     static func plainText(_ value: String?) -> String {
         guard let value, !value.isEmpty else { return "" }
@@ -31,16 +31,5 @@ enum MarkdownPlainText {
         }
         if !currentBlock.isEmpty { blocks.append(currentBlock) }
         return blocks.joined(separator: "\n\n")
-    }
-
-    /// 旧変換（ブロック境界の改行が落ちる版）。`TTSCacheRekeyMigration` が旧キャッシュキーを
-    /// 計算するためだけに残している。移行が全端末に行き渡ったら移行コードごと削除する。
-    static func legacyPlainText(_ value: String?) -> String {
-        guard let value, !value.isEmpty else { return "" }
-        let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .full)
-        guard let attributed = try? AttributedString(markdown: value, options: options) else {
-            return value
-        }
-        return String(attributed.characters)
     }
 }
