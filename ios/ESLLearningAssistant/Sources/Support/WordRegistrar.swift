@@ -11,6 +11,14 @@ enum WordRegistrar {
         let isNew: Bool
     }
 
+    /// 登録テキストの機械的な空白正規化: trim + 連続空白を単一スペースへ畳む。
+    /// 熟語（"look up"）で "look  up" のような空白違いが別語・別キャッシュキーに
+    /// ならないよう、フォーム登録・タップ登録・訂正の全入口で同じ規則を通す
+    /// （docs/plans/word-phrase-support.md 2-(a)）。
+    static func normalizeSpacing(_ raw: String) -> String {
+        raw.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    }
+
     /// 単語を登録（再利用 or 新規作成）する。
     /// - Parameters:
     ///   - lesson: 指定時は出現記録を作って紐付ける。同一 word + sourcePhoto + sourceAudio の重複は作らない。
@@ -31,7 +39,7 @@ enum WordRegistrar {
         sourceDocument: Document? = nil,
         generateAIInfo: (Word) -> Void = { WordAIInfoGenerator.shared.generateInBackground(for: $0) }
     ) -> Result? {
-        let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = normalizeSpacing(rawText)
         guard !text.isEmpty else { return nil }
 
         let word: Word
@@ -163,7 +171,7 @@ enum WordRegistrar {
         existingWords: [Word],
         regenerateAIInfo: (Word) -> Void = { WordAIInfoGenerator.shared.generateInBackground(for: $0) }
     ) -> CorrectionOutcome? {
-        let newText = lemma.trimmingCharacters(in: .whitespacesAndNewlines)
+        let newText = normalizeSpacing(lemma)
         guard !newText.isEmpty else { return nil }
         // 完全一致は訂正不要
         guard newText != word.text else { return nil }

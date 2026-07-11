@@ -34,6 +34,18 @@ struct WordNormalizationTests {
         #expect(n.requiresConfirmation)
     }
 
+    /// 変化形のフレーズ（句動詞）も inflected として単語と同じ確認フローに乗る
+    /// （docs/plans/word-phrase-support.md 2-(b)）
+    @Test func decodesInflectedPhraseResponse() throws {
+        let n = try decode("""
+        { "input": "looked up", "lemma": "look up", "status": "inflected",
+          "reason": "「looked up」は句動詞「look up」の過去形です", "cached": false }
+        """)
+        #expect(n.status == .inflected)
+        #expect(n.effectiveLemma == "look up")
+        #expect(n.requiresConfirmation)
+    }
+
     @Test func canonicalDoesNotRequireConfirmation() throws {
         let n = try decode(#"{ "input": "apple", "lemma": "apple", "status": "canonical", "reason": "", "cached": false }"#)
         #expect(n.status == .canonical)

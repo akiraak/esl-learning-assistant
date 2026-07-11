@@ -11,6 +11,7 @@ struct WordNormalization: Codable, Equatable {
     let input: String
     /// 登録すべき見出し語。inflected/misspelled では常に原形（基本形）。
     /// 綴りを直した結果が変化形になる場合（例:「writed」）も原形（「write」）まで戻す。
+    /// 複数語フレーズも中心動詞を原形化した辞書見出し（例:「looked up」→「look up」）。
     /// canonical/proper_noun/phrase/unknown では入力語と同じ。
     let lemma: String
     let status: WordNormalizeStatus
@@ -39,15 +40,17 @@ struct WordNormalization: Codable, Equatable {
 enum WordNormalizeStatus: String, Codable {
     /// 既に辞書見出し語（原形・正しい綴り）。lemma は入力と同じ。確認UIを出さず即登録。
     case canonical
-    /// 語形変化（過去形・過去分詞・三単現・複数形・比較級など）。lemma は原形。確認UIを出す。
+    /// 語形変化（過去形・過去分詞・三単現・複数形・比較級など）。フレーズの変化形
+    /// （looked up 等）も含む。lemma は原形。確認UIを出す。
     case inflected
-    /// 綴り間違い。lemma は正しい綴り。確認UIを出す。
+    /// 綴り間違い。フレーズ内の綴り間違いも含む。lemma は正しい綴り。確認UIを出す。
     case misspelled
     /// 固有名詞（人名・地名など）。訂正せず lemma は入力と同じ。
     case properNoun = "proper_noun"
-    /// 空白を含む複数語の連語。訂正せず lemma は入力と同じ。
+    /// 空白を含む複数語の連語（句動詞・イディオム等）で、既に辞書見出しの基本形のもの。
+    /// 訂正せず lemma は入力と同じ。変化形・綴り間違いのフレーズは inflected / misspelled になる。
     case phrase
-    /// 英単語として判定できない・英語でない。lemma は入力と同じ。
+    /// 英単語として判定できない・英語でない・明らかな文。lemma は入力と同じ。
     case unknown
 
     /// 訂正（原形化・綴り訂正）を提案する status か。true の時だけ確認UIの候補になる。

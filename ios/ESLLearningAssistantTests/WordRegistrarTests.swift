@@ -205,6 +205,41 @@ struct WordRegistrarTests {
         #expect(try context.fetch(FetchDescriptor<AudioClip>()).isEmpty)
     }
 
+    // MARK: - 空白正規化（熟語対応。docs/plans/word-phrase-support.md 2-(a)）
+
+    /// 前後の空白トリムに加え、連続空白を単一スペースへ畳んで登録する。
+    @Test func registerCollapsesInternalWhitespace() throws {
+        let context = try makeContext()
+        let result = WordRegistrar.register(
+            text: "  look   up ",
+            in: context,
+            existingWords: try allWords(context),
+            generateAIInfo: { _ in }
+        )
+        #expect(try #require(result).word.text == "look up")
+        #expect(try allWords(context).count == 1)
+    }
+
+    /// 空白の数が違っても（大小無視で）同一フレーズの既存語へ集約される。
+    @Test func registerReusesExistingPhraseDespiteExtraSpaces() throws {
+        let context = try makeContext()
+        let existing = Word(text: "look up", translation: "調べる")
+        context.insert(existing)
+        try context.save()
+
+        let result = WordRegistrar.register(
+            text: "Look  Up",
+            in: context,
+            existingWords: try allWords(context),
+            generateAIInfo: { _ in }
+        )
+
+        let unwrapped = try #require(result)
+        #expect(!unwrapped.isNew)
+        #expect(unwrapped.word.id == existing.id)
+        #expect(try allWords(context).count == 1)
+    }
+
     @Test func returnsNilForEmptyText() throws {
         let context = try makeContext()
         let result = WordRegistrar.register(
@@ -390,6 +425,44 @@ struct WordRegistrarTests {
         #expect(renamed.translation == "りんご")
         #expect(renamed.aiInfoStatus == .completed)
         #expect(regenerated.isEmpty)
+    }
+
+    /// 訂正でもフレーズの連続空白は単一スペースへ畳まれる。
+    @Test func correctCollapsesInternalWhitespace() throws {
+        let context = try makeContext()
+        let word = makeWord("looked up", in: context)
+        try context.save()
+
+        let outcome = WordRegistrar.correct(
+            word,
+            to: "look  up",
+            in: context,
+            existingWords: try allWords(context),
+            regenerateAIInfo: { _ in }
+        )
+
+        guard case .renamedInPlace(let renamed) = try #require(outcome) else {
+            Issue.record("expected renamedInPlace")
+            return
+        }
+        #expect(renamed.text == "look up")
+    }
+
+    /// 空白の数だけの違いは正規化後に完全一致となり、訂正不要（nil）。
+    @Test func correctReturnsNilWhenOnlyWhitespaceDiffers() throws {
+        let context = try makeContext()
+        let word = makeWord("look up", in: context)
+        try context.save()
+
+        let outcome = WordRegistrar.correct(
+            word,
+            to: " look  up ",
+            in: context,
+            existingWords: try allWords(context),
+            regenerateAIInfo: { _ in }
+        )
+        #expect(outcome == nil)
+        #expect(word.text == "look up")
     }
 
     /// 空文字の lemma は訂正不要として nil を返す。

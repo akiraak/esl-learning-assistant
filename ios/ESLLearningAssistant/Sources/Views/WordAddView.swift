@@ -28,7 +28,7 @@ struct WordAddView: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("Word (e.g. apple)", text: $text)
+                    TextField("Word or phrase (e.g. apple, look up)", text: $text)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .focused($isTextFocused)
@@ -83,7 +83,7 @@ struct WordAddView: View {
                             .accessibilityIdentifier("wordNormalizeProgress")
                     } else {
                         Button("Add", action: addWord)
-                            .disabled(trimmedText.isEmpty || duplicateMessage != nil)
+                            .disabled(normalizedText.isEmpty || duplicateMessage != nil)
                     }
                 }
                 ToolbarItem(placement: .cancellationAction) {
@@ -117,8 +117,10 @@ struct WordAddView: View {
         }
     }
 
-    private var trimmedText: String {
-        text.trimmingCharacters(in: .whitespacesAndNewlines)
+    /// 入力の空白正規化（trim + 連続空白→単一スペース）。重複判定・正規化・登録の全てで
+    /// この形を使い、"look  up" が "look up" と別語扱いにならないようにする（WordRegistrar と同一規則）。
+    private var normalizedText: String {
+        WordRegistrar.normalizeSpacing(text)
     }
 
     /// 実際に紐付けられるレッスン（固定レッスン優先、無ければ Picker 選択）。
@@ -132,9 +134,9 @@ struct WordAddView: View {
     /// - レッスン指定ありでその単語が既にそのレッスンに出現 → レッスン内の重複。
     /// - レッスン指定ありでまだ未紐付けなら「新規リンク」が生じる有用な操作なので弾かない（nil）。
     private var duplicateMessage: String? {
-        guard !trimmedText.isEmpty else { return nil }
+        guard !normalizedText.isEmpty else { return nil }
         guard let existing = allWords.first(where: {
-            $0.text.compare(trimmedText, options: [.caseInsensitive]) == .orderedSame
+            $0.text.compare(normalizedText, options: [.caseInsensitive]) == .orderedSame
         }) else { return nil }
 
         if let lesson = effectiveLesson {
@@ -155,7 +157,7 @@ struct WordAddView: View {
     private func addWord() {
         // 重複時は Add ボタンが無効なので通常ここには来ないが、防御的にガードする。
         guard duplicateMessage == nil else { return }
-        let input = trimmedText
+        let input = normalizedText
         guard !input.isEmpty else { return }
 
         // Add 押下 → 正規化（原形化・綴り訂正）→ 訂正候補があれば確認ダイアログ、無ければ即登録。
