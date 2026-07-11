@@ -81,11 +81,20 @@ function englishPartOfSpeech(label: string): string | undefined {
   return PART_OF_SPEECH_EN[label.trim()];
 }
 
+/// 活用形ラベルを英語表記へ。日本語は INFLECTION_FORM_EN で写像（2026-07-04 以前の
+/// 保存データ）、それ以降の word info は form が最初から英語ラベルのためそのまま使う。
+function englishInflectionForm(label: string): string | undefined {
+  const trimmed = label.trim();
+  const mapped = INFLECTION_FORM_EN[trimmed];
+  if (mapped) return mapped;
+  return /^[a-z][a-z\s-]*$/i.test(trimmed) ? trimmed.toLowerCase() : undefined;
+}
+
 /// 英語ラベルへ写像できる活用形の一覧 [{formEnglish, text}]
 function mappableInflections(info: WordInfo): { formEnglish: string; text: string }[] {
   return info.inflections
     .map((inflection) => ({
-      formEnglish: INFLECTION_FORM_EN[inflection.form.trim()],
+      formEnglish: englishInflectionForm(inflection.form),
       text: inflection.text,
     }))
     .filter((entry): entry is { formEnglish: string; text: string } => Boolean(entry.formEnglish && entry.text));
@@ -100,6 +109,10 @@ interface FormatSpec {
   needsAudioText: boolean;
   /// options[correctIndex]（または acceptedAnswers）が単語そのものであるべき形式の検証用
   correctMustBeWord: boolean;
+  /// 見出し語が複数語のフレーズ（句動詞・熟語）でも出題可能か。省略時 true。
+  /// vc2（綴り4択）のみ false: フレーズのミススペル選択肢が不自然になりやすいため
+  /// （docs/plans/word-phrase-support.md §4）。
+  supportsPhrase?: boolean;
   /// この単語の素材で出題可能か
   isAvailable: (info: WordInfo) => boolean;
   /// AI への生成指示（1形式分）
@@ -214,6 +227,7 @@ const AI_FORMAT_SPECS: FormatSpec[] = [
     needsDisplayText: false,
     needsAudioText: true,
     correctMustBeWord: true,
+    supportsPhrase: false,
     isAvailable: () => true,
     promptSpec: (word) =>
       `vc2: audioText は "${word}"。instruction は「Listen. Choose the correct spelling.」。` +
@@ -269,6 +283,15 @@ const AI_FORMAT_SPECS: FormatSpec[] = [
       `全バリエーションとも同一でよい。`,
   },
 ];
+
+/// 出題対象の AI 形式（素材ゲート + フレーズゲート）。
+/// 見出し語に空白を含む（= 熟語）場合は supportsPhrase: false の形式を除外する。
+export function availableFormatSpecs(word: string, info: WordInfo): FormatSpec[] {
+  const isPhrase = /\s/.test(word.trim());
+  return AI_FORMAT_SPECS.filter(
+    (spec) => (!isPhrase || spec.supportsPhrase !== false) && spec.isAvailable(info)
+  );
+}
 
 // -- AI 呼び出し（形式グループ単位）
 
@@ -510,7 +533,7 @@ export async function generateQuizQuestions(
   illustratedWords: string[],
   allWords: string[]
 ): Promise<QuizGenerationResult> {
-  const availableSpecs = AI_FORMAT_SPECS.filter((spec) => spec.isAvailable(info));
+  const availableSpecs = availableFormatSpecs(word, info);
   const groups: FormatSpec[][] = [];
   for (let i = 0; i < availableSpecs.length; i += FORMATS_PER_CALL) {
     groups.push(availableSpecs.slice(i, i + FORMATS_PER_CALL));

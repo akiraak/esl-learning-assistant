@@ -31,10 +31,15 @@ const WORD_INFO_SCHEMA = {
     pronunciation: {
       type: "object",
       properties: {
-        ipa: { type: "string", description: "IPA発音記号（例: /ˈæp.əl/）" },
+        ipa: {
+          type: "string",
+          description:
+            "IPA発音記号（例: /ˈæp.əl/）。複数語のフレーズは全体を語ごとにスペース区切りで書く（例: /lʊk ˈʌp/）",
+        },
         syllables: {
           type: ["string", "null"],
-          description: "音節区切りとアクセント位置。強勢音節を大文字にする（例: AP-ple）。単音節ならnull",
+          description:
+            "音節区切りとアクセント位置。強勢音節を大文字にする（例: AP-ple）。単音節または複数語のフレーズならnull",
         },
       },
       required: ["ipa", "syllables"],
@@ -42,7 +47,8 @@ const WORD_INFO_SCHEMA = {
     },
     inflections: {
       type: "array",
-      description: "語形変化。該当するもののみ最大8件（無ければ空配列）。",
+      description:
+        "語形変化。該当するもののみ最大8件（無ければ空配列）。句動詞は中心の動詞を活用させたフレーズ全体を挙げる（例: \"looked up\"）。",
       items: {
         type: "object",
         properties: {
@@ -162,6 +168,21 @@ export async function generateWordInfo(
     `英単語 "${word}" について、ESL学習者向けの単語情報を生成してください。`,
     `「母語」と指示されている項目は言語コード "${targetLanguage}" の言語で書いてください。`,
   ];
+  // 複数語のフレーズ（句動詞・イディオム・コロケーション）のときだけ指示を追加する。
+  // 1語の単語のプロンプトは従来と同一に保つ。
+  if (/\s/.test(word.trim())) {
+    promptParts.push(
+      `"${word}" は複数語のフレーズ（句動詞・イディオム・コロケーション等）です。以下に従ってください:\n` +
+        `- senses.partOfSpeech はフレーズの種類を母語で書く（日本語なら「句動詞」「熟語」など）。\n` +
+        `- inflections は句動詞なら中心の動詞を活用させたフレーズ全体を挙げる` +
+        `（例: "look up" → "looked up" / "looking up" / "looks up"）。` +
+        `"by heart" のような活用しない固定イディオムは空配列にする。\n` +
+        `- pronunciation.ipa はフレーズ全体を1組のスラッシュで囲み、語の間はスペースで区切る` +
+        `（例: /baɪ hɑːrt/。/baɪ/ /hɑːrt/ のように語ごとに囲まない）。syllables は null にする。\n` +
+        `- 分離可能句動詞（"look it up" のように目的語を間に挟める）や語順の制約がある場合は、` +
+        `usageNote や commonMistakes で必ず説明する。`
+    );
+  }
   if (userTranslation) {
     promptParts.push(
       `学習者はこの単語を「${userTranslation}」という意味で登録しました。語義の選定・並び順のヒントにしてください。`
