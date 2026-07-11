@@ -69,6 +69,18 @@ struct WordNormalizationTests {
         #expect(!unknown.requiresConfirmation)
     }
 
+    /// 文脈付き呼び出しでタップ語が熟語の一部（phrase_part）→ 表現全体の lemma で確認UIに乗る
+    /// （docs/plans/word-phrase-support.md Phase 4）
+    @Test func decodesPhrasePartResponse() throws {
+        let n = try decode("""
+        { "input": "up", "lemma": "look up", "status": "phrase_part",
+          "reason": "文中の「up」は句動詞「look up」の一部です", "cached": false }
+        """)
+        #expect(n.status == .phrasePart)
+        #expect(n.effectiveLemma == "look up")
+        #expect(n.requiresConfirmation)
+    }
+
     /// 将来サーバが未知の status を返しても .unknown に倒して安全側（訂正しない）に扱う
     @Test func unknownStatusValueFallsBackToUnknown() throws {
         let n = try decode(#"{ "input": "x", "lemma": "x", "status": "brand_new_status", "reason": "" }"#)
@@ -101,6 +113,7 @@ struct WordNormalizationTests {
     @Test func suggestsCorrectionMatchesStatus() {
         #expect(WordNormalizeStatus.inflected.suggestsCorrection)
         #expect(WordNormalizeStatus.misspelled.suggestsCorrection)
+        #expect(WordNormalizeStatus.phrasePart.suggestsCorrection)
         #expect(!WordNormalizeStatus.canonical.suggestsCorrection)
         #expect(!WordNormalizeStatus.properNoun.suggestsCorrection)
         #expect(!WordNormalizeStatus.phrase.suggestsCorrection)

@@ -56,6 +56,79 @@ struct EnglishWordLinkTests {
         #expect(EnglishWordLink.word(from: https) == nil)
     }
 
+    /// 位置情報（オフセット・ブロック番号）付きリンクの往復（本文タップの文脈切り出しに使う）
+    @Test func urlRoundTripWithOffsets() throws {
+        let url = try #require(EnglishWordLink.linkURL(for: "up", offset: 12, blockIndex: 3))
+        let tap = try #require(EnglishWordLink.tapPayload(from: url))
+        #expect(tap.word == "up")
+        #expect(tap.offset == 12)
+        #expect(tap.blockIndex == 3)
+    }
+
+    /// 位置情報なしの従来リンクは offset / blockIndex が nil のままデコードできる
+    @Test func tapPayloadWithoutOffsetsIsNil() throws {
+        let url = try #require(EnglishWordLink.linkURL(for: "apple"))
+        let tap = try #require(EnglishWordLink.tapPayload(from: url))
+        #expect(tap.word == "apple")
+        #expect(tap.offset == nil)
+        #expect(tap.blockIndex == nil)
+    }
+
+    // MARK: - 文脈（タップ語を含む文）の切り出し
+
+    /// テキスト内で substring が最初に現れる文字オフセット（リンク URL の `o` と同じ数え方）
+    private func charOffset(of substring: String, in text: String) throws -> Int {
+        let range = try #require(text.range(of: substring))
+        return text.distance(from: text.startIndex, to: range.lowerBound)
+    }
+
+    @Test func sentenceContextExtractsMiddleSentence() throws {
+        let text = "He runs fast. I looked it up yesterday. She smiled."
+        let offset = try charOffset(of: "up yesterday", in: text)
+        let context = EnglishWordLink.sentenceContext(in: text, around: offset, wordLength: 2)
+        #expect(context == "I looked it up yesterday.")
+    }
+
+    @Test func sentenceContextHandlesTextEdges() {
+        // 文頭の語（前に境界なし）と文末の語（後ろに境界なし・終端記号なし）
+        let text = "Take care of your brother"
+        let head = EnglishWordLink.sentenceContext(in: text, around: 0, wordLength: 4)
+        #expect(head == "Take care of your brother")
+        let tail = EnglishWordLink.sentenceContext(in: text, around: 18, wordLength: 7)
+        #expect(tail == "Take care of your brother")
+    }
+
+    @Test func sentenceContextStopsAtNewline() throws {
+        let text = "First line words\nSecond line target here\nThird line"
+        let offset = try charOffset(of: "target", in: text)
+        let context = EnglishWordLink.sentenceContext(in: text, around: offset, wordLength: 6)
+        #expect(context == "Second line target here")
+    }
+
+    /// 「3.5」のような語中ピリオド（直後が空白でない）は文境界にしない
+    @Test func sentenceContextIgnoresMidTokenPeriod() throws {
+        let text = "Version 3.5 looks it up quickly."
+        let offset = try charOffset(of: "up quickly", in: text)
+        let context = EnglishWordLink.sentenceContext(in: text, around: offset, wordLength: 2)
+        #expect(context == "Version 3.5 looks it up quickly.")
+    }
+
+    /// 上限を超える長文はタップ語を中心にしたウィンドウへ丸める（タップ語を必ず含む）
+    @Test func sentenceContextClampsLongSentenceAroundWord() throws {
+        let text = String(repeating: "aaaa ", count: 40) + "look it up " + String(repeating: "bbbb ", count: 40)
+        let offset = try charOffset(of: "up ", in: text)
+        let context = try #require(
+            EnglishWordLink.sentenceContext(in: text, around: offset, wordLength: 2, maxLength: 60)
+        )
+        #expect(context.count <= 60)
+        #expect(context.contains("up"))
+        #expect(context.contains("look it"))
+    }
+
+    @Test func sentenceContextReturnsNilForEmptyText() {
+        #expect(EnglishWordLink.sentenceContext(in: "", around: 0, wordLength: 1) == nil)
+    }
+
     // MARK: - マークダウン単語リンク化
 
     @Test func linkedMarkdownWrapsWordsAsLinks() {

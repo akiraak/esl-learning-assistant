@@ -6,6 +6,7 @@ import express from "express";
 import { config } from "./config";
 import {
   countQuizQuestions,
+  getStoredContextNormalization,
   getStoredNormalization,
   getStoredWord,
   getWordIllustrationByHash,
@@ -20,6 +21,7 @@ import {
   listStoredWordTexts,
   normalizeWordKey,
   replaceQuizQuestions,
+  upsertStoredContextNormalization,
   upsertStoredNormalization,
   upsertStoredWord,
   upsertWordIllustration,
@@ -429,6 +431,8 @@ app.post("/api/document-extract-translate", async (req, res) => {
 
 const WORD_MAX_LENGTH = 100;
 const WORD_INFO_CONTEXT_MAX_LENGTH = 8000;
+// word-normalize の文脈（タップ語を含む1文）の上限。iOS 側の切り出し上限 240 字より広めの防御
+const WORD_NORMALIZE_CONTEXT_MAX_LENGTH = 300;
 
 app.post("/api/word-info", async (req, res) => {
   const { word, targetLanguage, context, userTranslation, regenerate } = req.body ?? {};
@@ -572,9 +576,12 @@ app.post("/api/word-info", async (req, res) => {
 
 // 入力語を辞書見出し語（lemma）へ正規化する（原形化・綴り訂正）。登録・派生生成の前段で呼び、
 // 誤った語での連鎖生成を防ぐ。結果は (input, targetLanguage) 単位でキャッシュする。
-// docs/plans/word-input-normalization.md 参照。
+// 本文タップ登録では任意の context（タップ語を含む文）を受け取り、タップ語が文中の熟語の一部なら
+// status=phrase_part で表現全体の lemma を返す。文脈付きの結果は文に依存するため、
+// (input, contextHash, targetLanguage) の別キャッシュに読み書きし、文脈なしキャッシュへは触れない。
+// docs/plans/word-input-normalization.md / word-phrase-support.md Phase 4 参照。
 app.post("/api/word-normalize", async (req, res) => {
-  const { word, targetLanguage, regenerate } = req.body ?? {};
+  const { word, targetLanguage, regenerate, context } = req.body ?? {};
 
   if (typeof word !== "string" || !word.trim()) {
     logger.warn("word-normalize: rejected (word is required)");
@@ -596,13 +603,24 @@ app.post("/api/word-normalize", async (req, res) => {
     res.status(400).json({ error: "regenerate must be a boolean" });
     return;
   }
+  if (context !== undefined && typeof context !== "string") {
+    logger.warn("word-normalize: rejected (context must be a string)");
+    res.status(400).json({ error: "context must be a string" });
+    return;
+  }
 
   const trimmedWord = word.trim();
+  // iOS 側の切り出し上限（240字）より少し広めでクランプ（プロンプト肥大の防御）
+  const trimmedContext =
+    typeof context === "string" ? context.trim().slice(0, WORD_NORMALIZE_CONTEXT_MAX_LENGTH) : "";
+  const hasContext = trimmedContext.length > 0;
   const startedAt = Date.now();
 
   // 保存済みなら Claude API を呼ばずに返す（regenerate 指定時は作りなおす）
   if (!regenerate) {
-    const stored = getStoredNormalization(trimmedWord, targetLanguage);
+    const stored = hasContext
+      ? getStoredContextNormalization(trimmedWord, trimmedContext, targetLanguage)
+      : getStoredNormalization(trimmedWord, targetLanguage);
     if (stored) {
       const latencyMs = Date.now() - startedAt;
       insertWordNormalizeLog({
@@ -620,7 +638,10 @@ app.post("/api/word-normalize", async (req, res) => {
         latencyMs,
         cacheHit: true,
       });
-      logger.info(`word-normalize: cache hit word="${trimmedWord}" status=${stored.status} latencyMs=${latencyMs}`);
+      logger.info(
+        `word-normalize: cache hit word="${trimmedWord}" status=${stored.status} ` +
+          `context=${hasContext} latencyMs=${latencyMs}`
+      );
       res.json({
         input: trimmedWord,
         lemma: stored.lemma,
@@ -634,22 +655,34 @@ app.post("/api/word-normalize", async (req, res) => {
 
   logger.info(
     `word-normalize: start word="${trimmedWord}" targetLanguage=${targetLanguage} ` +
-      `regenerate=${regenerate === true} model=${config.wordNormalizeModel}`
+      `context=${hasContext} regenerate=${regenerate === true} model=${config.wordNormalizeModel}`
   );
   try {
-    const result = await normalizeWord(trimmedWord, targetLanguage);
+    const result = await normalizeWord(trimmedWord, targetLanguage, hasContext ? trimmedContext : undefined);
     const latencyMs = Date.now() - startedAt;
     const costUsd = estimateCostUsd(result.model, result.inputTokens, result.outputTokens);
     const { status, lemma, reason } = result.normalization;
 
-    upsertStoredNormalization({
-      input: trimmedWord,
-      targetLanguage,
-      lemma,
-      status,
-      reason: reason || null,
-      model: result.model,
-    });
+    if (hasContext) {
+      upsertStoredContextNormalization({
+        input: trimmedWord,
+        context: trimmedContext,
+        targetLanguage,
+        lemma,
+        status,
+        reason: reason || null,
+        model: result.model,
+      });
+    } else {
+      upsertStoredNormalization({
+        input: trimmedWord,
+        targetLanguage,
+        lemma,
+        status,
+        reason: reason || null,
+        model: result.model,
+      });
+    }
 
     insertWordNormalizeLog({
       input: trimmedWord,
@@ -667,7 +700,10 @@ app.post("/api/word-normalize", async (req, res) => {
       cacheHit: false,
     });
 
-    logger.info(`word-normalize: success word="${trimmedWord}" status=${status} lemma="${lemma}" latencyMs=${latencyMs}`);
+    logger.info(
+      `word-normalize: success word="${trimmedWord}" status=${status} lemma="${lemma}" ` +
+        `context=${hasContext} latencyMs=${latencyMs}`
+    );
     res.json({ input: trimmedWord, lemma, status, reason, cached: false });
   } catch (error) {
     const latencyMs = Date.now() - startedAt;

@@ -12,6 +12,7 @@ struct WordNormalization: Codable, Equatable {
     /// 登録すべき見出し語。inflected/misspelled では常に原形（基本形）。
     /// 綴りを直した結果が変化形になる場合（例:「writed」）も原形（「write」）まで戻す。
     /// 複数語フレーズも中心動詞を原形化した辞書見出し（例:「looked up」→「look up」）。
+    /// phrase_part ではタップ語を含む表現全体の辞書基本形（例: 文中の「up」→「look up」）。
     /// canonical/proper_noun/phrase/unknown では入力語と同じ。
     let lemma: String
     let status: WordNormalizeStatus
@@ -50,13 +51,17 @@ enum WordNormalizeStatus: String, Codable {
     /// 空白を含む複数語の連語（句動詞・イディオム等）で、既に辞書見出しの基本形のもの。
     /// 訂正せず lemma は入力と同じ。変化形・綴り間違いのフレーズは inflected / misspelled になる。
     case phrase
+    /// 文脈付き呼び出し（本文タップ登録）で、タップ語が文中の複数語表現（句動詞・イディオム）の
+    /// 一部として使われているもの。lemma は表現全体の辞書基本形（例: 文中の「up」→「look up」）。
+    /// 確認UI（主=表現全体 / 逃げ道=タップ語のまま）を出す。docs/plans/word-phrase-support.md Phase 4。
+    case phrasePart = "phrase_part"
     /// 英単語として判定できない・英語でない・明らかな文。lemma は入力と同じ。
     case unknown
 
-    /// 訂正（原形化・綴り訂正）を提案する status か。true の時だけ確認UIの候補になる。
+    /// 訂正（原形化・綴り訂正・熟語提案）を提案する status か。true の時だけ確認UIの候補になる。
     var suggestsCorrection: Bool {
         switch self {
-        case .inflected, .misspelled: true
+        case .inflected, .misspelled, .phrasePart: true
         case .canonical, .properNoun, .phrase, .unknown: false
         }
     }

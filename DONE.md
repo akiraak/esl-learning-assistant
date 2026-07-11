@@ -1,5 +1,22 @@
 # DONE
 
+- [x] 2026-07-11 熟語（２単語以上）を単語に入れる（全 Phase 完了）
+      [plan](docs/plans/archive/word-phrase-support.md)
+      句動詞・イディオム（look up / take care of / by heart 等）を既存 `Word` の第一級市民として
+      登録・学習できるようにした（SwiftData モデル変更なし・text にスペース入りで格納）。
+      Phase 1: 空白正規化（trim+連続空白畳み）を登録全入口で共通適用、backend 正規化プロンプトの
+      フレーズ原形化（looked up→look up）、WordAddView placeholder 変更。
+      Phase 2: wordInfo プロンプトのフレーズ対応（品詞=句動詞/熟語・中心動詞活用の inflections・
+      フレーズ全体 IPA・分離可能句動詞の説明）。
+      Phase 3: クイズ生成に supportsPhrase ガード（vc2 綴り4択のみ除外）。tc7 素材ゲートの
+      既存バグ（活用形ラベル英語化に未追従で全滅）も修復。イラストは実測品質良好で対象のまま。
+      Phase 4: 本文タップからの熟語登録（案 A）。タップ語+文（リンク URL のオフセットから
+      タップ時に切り出し）を word-normalize へ渡し、熟語の一部なら `phrase_part` で表現全体を提案
+      （「Register “look up” / Keep “up”」）。文脈付き結果は `word_context_normalizations`
+      （input+context_hash+言語）に分離キャッシュし既存キャッシュを汚染しない。
+      検証: backend 単体21件・iOS 単体120件・関連 UI テスト緑。curl 実測（phrase_part 判定・
+      文脈別キャッシュ・回帰）とシミュレータ E2E（Writing 本文タップ→提案→登録→AI情報・
+      クイズ連鎖）で確認。
 - [x] 2026-07-10 レッスンをカレンダーに置き換える
       [plan](docs/plans/archive/lesson-calendar.md)
       レッスンを「クラスカレンダー上の授業日」に紐づく単位へ変更（クラス内で1日1レッスン、

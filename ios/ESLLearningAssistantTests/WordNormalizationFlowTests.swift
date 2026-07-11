@@ -50,6 +50,28 @@ struct WordNormalizationFlowTests {
         }
     }
 
+    /// 文脈付きタップでタップ語が熟語の一部（phrase_part）→ 表現全体の lemma で確認UIを出す
+    /// （docs/plans/word-phrase-support.md Phase 4）
+    @Test func phrasePartRequestsConfirmation() async {
+        let n = normalization(.phrasePart, input: "up", lemma: "look up", reason: "句動詞「look up」の一部")
+        let decision = await WordNormalizationFlow.decide(
+            input: "up", targetLanguage: "ja", context: "I looked it up yesterday.", using: service(.success(n))
+        )
+        #expect(decision == .confirm(n))
+    }
+
+    /// decide は context をサービスへそのまま渡す（省略時は nil）
+    @Test func decidePassesContextThroughToService() async {
+        let mock = service(.success(normalization(.canonical, input: "apple", lemma: "apple")))
+        _ = await WordNormalizationFlow.decide(
+            input: "apple", targetLanguage: "ja", context: "I ate an apple.", using: mock
+        )
+        #expect(mock.lastContext == "I ate an apple.")
+
+        _ = await WordNormalizationFlow.decide(input: "apple", targetLanguage: "ja", using: mock)
+        #expect(mock.lastContext == nil)
+    }
+
     /// inflected でも lemma が入力と実質同じなら（訂正するものが無い）確認を出さず即登録
     @Test func inflectedButUnchangedLemmaRegistersImmediately() async {
         let n = normalization(.inflected, input: "run", lemma: "run")
@@ -149,5 +171,13 @@ struct WordNormalizationFlowTests {
         let n = WordNormalizeStub.parse("nonsense|x", input: "foo")
         #expect(n.status == .unknown)
         #expect(n.lemma == "foo")
+    }
+
+    /// タップ熟語提案（phrase_part）も UI テスト用スタブで再現できる
+    @Test func stubParsesPhrasePartWithLemmaAndReason() {
+        let n = WordNormalizeStub.parse("phrase_part|look up|文中の「up」は句動詞「look up」の一部です", input: "up")
+        #expect(n.status == .phrasePart)
+        #expect(n.lemma == "look up")
+        #expect(n.requiresConfirmation)
     }
 }

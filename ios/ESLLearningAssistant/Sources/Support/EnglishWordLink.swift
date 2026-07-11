@@ -65,22 +65,113 @@ enum EnglishWordLink {
 
     /// 単語の芯から `eslword://add?w=<word>` を組み立てる。
     /// `'`・`-` を含む語も `URLComponents` 経由で安全にエンコードされる。
-    static func linkURL(for core: String) -> URL? {
+    ///
+    /// タップ語の文脈（周辺の文）を正規化 API へ渡す熟語自動判定のため、任意でタップ語の
+    /// 位置情報を載せる（docs/plans/word-phrase-support.md Phase 4）。文そのものを URL に
+    /// 埋めると全単語分の AttributedString が肥大するため、オフセットだけ載せてタップ時に
+    /// 元テキストから 1 回だけ切り出す。
+    /// - Parameters:
+    ///   - offset: 元テキスト内でのトークン開始位置（文字数）。`o` クエリに載る。
+    ///   - blockIndex: `TappableMarkdown` のブロック番号（openURL ハンドラがルート1箇所のため、
+    ///     どのブロックの素文から文を切り出すかを識別する）。`b` クエリに載る。
+    static func linkURL(for core: String, offset: Int? = nil, blockIndex: Int? = nil) -> URL? {
         var comps = URLComponents()
         comps.scheme = scheme
         comps.host = "add"
-        comps.queryItems = [URLQueryItem(name: "w", value: core)]
+        var items = [URLQueryItem(name: "w", value: core)]
+        if let offset {
+            items.append(URLQueryItem(name: "o", value: String(offset)))
+        }
+        if let blockIndex {
+            items.append(URLQueryItem(name: "b", value: String(blockIndex)))
+        }
+        comps.queryItems = items
         return comps.url
     }
 
     /// `eslword://` リンクから単語をデコードする（タップ検出時に使う）。
     static func word(from url: URL) -> String? {
+        tapPayload(from: url)?.word
+    }
+
+    /// タップされたリンクのデコード結果。offset / blockIndex は `linkURL` が載せた位置情報
+    /// （無いリンクでは nil）。
+    struct TapPayload: Equatable {
+        let word: String
+        let offset: Int?
+        let blockIndex: Int?
+    }
+
+    /// `eslword://` リンクから単語と位置情報をデコードする（タップ検出時に使う）。
+    static func tapPayload(from url: URL) -> TapPayload? {
         guard url.scheme == scheme,
               let comps = URLComponents(url: url, resolvingAgainstBaseURL: false),
-              let w = comps.queryItems?.first(where: { $0.name == "w" })?.value,
+              let items = comps.queryItems,
+              let w = items.first(where: { $0.name == "w" })?.value,
               !w.isEmpty
         else { return nil }
-        return w
+        let offset = items.first(where: { $0.name == "o" })?.value.flatMap(Int.init)
+        let blockIndex = items.first(where: { $0.name == "b" })?.value.flatMap(Int.init)
+        return TapPayload(word: w, offset: offset, blockIndex: blockIndex)
+    }
+
+    // MARK: - 文脈（タップ語を含む文）の切り出し
+
+    /// 文脈の切り出し上限。backend 側のクランプ（300字）より小さくし、二重に防ぐ。
+    static let sentenceContextMaxLength = 240
+
+    /// タップ語を含む文（前後の文境界まで）を切り出す。熟語自動判定のヒントとして
+    /// word-normalize API の context に渡す。境界は `.` `!` `?`（直後が空白/末尾のもの）と改行。
+    /// 略語（e.g. 等）での誤分割はベストエフォート（文脈はヒントなので多少切れても成立する）。
+    /// 文が上限より長い場合はタップ語を中心にしたウィンドウへ丸める。
+    /// - Parameters:
+    ///   - offset: テキスト内でのタップ語の開始位置（文字数）。範囲外は末尾へクランプ。
+    ///   - wordLength: タップ語の文字数（文末方向の探索開始位置に使う）。
+    /// - Returns: トリム済みの文。空になる場合は nil。
+    static func sentenceContext(
+        in text: String,
+        around offset: Int,
+        wordLength: Int,
+        maxLength: Int = sentenceContextMaxLength
+    ) -> String? {
+        let chars = Array(text)
+        guard !chars.isEmpty, maxLength > 0 else { return nil }
+        let wordStart = max(0, min(offset, chars.count - 1))
+        let wordEnd = max(wordStart, min(wordStart + wordLength, chars.count))
+
+        /// i の文字が文境界（この文字の直後から次の文が始まる）か。
+        func isBoundary(at i: Int) -> Bool {
+            let c = chars[i]
+            if c == "\n" { return true }
+            guard c == "." || c == "!" || c == "?" else { return false }
+            // 「3.5」「don't.」等の語中ピリオドを避け、直後が空白か末尾のときだけ境界扱い
+            return i + 1 >= chars.count || chars[i + 1].isWhitespace
+        }
+
+        // 文頭: タップ語の直前方向へ境界を探す（境界の次の文字が文頭）
+        var start = wordStart
+        while start > 0, !isBoundary(at: start - 1) {
+            start -= 1
+        }
+        // 文末: タップ語の直後方向へ境界を探す（境界文字まで含める）
+        var end = wordEnd
+        while end < chars.count, !isBoundary(at: end) {
+            end += 1
+        }
+        if end < chars.count, chars[end] != "\n" {
+            end += 1 // 終端記号（. ! ?）は文に含める
+        }
+
+        // 上限超過はタップ語中心のウィンドウへ丸める（熟語の構成語は近傍にあるため）
+        if end - start > maxLength {
+            let half = maxLength / 2
+            let center = (wordStart + wordEnd) / 2
+            start = max(start, center - half)
+            end = min(end, start + maxLength)
+        }
+
+        let sentence = String(chars[start..<end]).trimmingCharacters(in: .whitespacesAndNewlines)
+        return sentence.isEmpty ? nil : sentence
     }
 
     // MARK: - マークダウンの単語リンク化

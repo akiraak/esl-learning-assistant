@@ -22,15 +22,19 @@ enum WordNormalizationFlow {
 
     /// 入力語を正規化し、確認UIを出すか即登録かを決める。
     /// サービス失敗（オフライン等）時は登録をブロックせず、入力のまま即登録へフォールバックする。
+    /// - Parameter context: タップ語を含む文（本文タップ登録の熟語自動判定用。手動入力では nil）。
     static func decide(
         input: String,
         targetLanguage: String,
+        context: String? = nil,
         using service: any WordNormalizeService
     ) async -> Decision {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return .registerImmediately(text: trimmed) }
 
-        guard let normalization = try? await service.normalize(word: trimmed, targetLanguage: targetLanguage) else {
+        guard let normalization = try? await service.normalize(
+            word: trimmed, targetLanguage: targetLanguage, context: context
+        ) else {
             // 正規化に失敗しても登録は止めない（従来どおり入力のまま登録する）
             return .registerImmediately(text: trimmed)
         }

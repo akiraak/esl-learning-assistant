@@ -1,4 +1,5 @@
 import fs from "fs";
+import { createHash } from "crypto";
 import Database from "better-sqlite3";
 import { config } from "./config";
 import { providerForModel, type Provider } from "./pricing";
@@ -289,6 +290,28 @@ db.exec(`
     updated_at TEXT NOT NULL,
     generation_count INTEGER NOT NULL DEFAULT 1,
     UNIQUE(input, target_language)
+  )
+`);
+
+// 文脈付き正規化キャッシュ（本文タップからの熟語登録。docs/plans/word-phrase-support.md Phase 4）。
+// タップ語+文脈の判定結果は文に依存するため、文脈なしの word_normalizations とは読み書きとも
+// 完全に分離する（「up→look up」が文脈なしキャッシュを汚染しないように）。
+// キーは (trim+小文字化した input, 文脈の正規化ハッシュ, target_language)。context 原文はデバッグ用。
+db.exec(`
+  CREATE TABLE IF NOT EXISTS word_context_normalizations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    input TEXT NOT NULL,
+    context_hash TEXT NOT NULL,
+    context TEXT NOT NULL,
+    target_language TEXT NOT NULL,
+    lemma TEXT NOT NULL,
+    status TEXT NOT NULL,
+    reason TEXT,
+    model TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    generation_count INTEGER NOT NULL DEFAULT 1,
+    UNIQUE(input, context_hash, target_language)
   )
 `);
 
@@ -999,6 +1022,87 @@ export function deleteStoredNormalization(id: number): void {
 /// 正規化キャッシュを全削除する。戻り値は削除行数。キャッシュなので要求時に作り直される。
 export function deleteAllStoredNormalizations(): number {
   return db.prepare("DELETE FROM word_normalizations").run().changes;
+}
+
+// MARK: 文脈付き正規化キャッシュ（word_context_normalizations）
+
+export interface StoredContextNormalizationRow {
+  id: number;
+  input: string;
+  context_hash: string;
+  context: string;
+  target_language: string;
+  lemma: string;
+  status: string;
+  reason: string | null;
+  model: string;
+  created_at: string;
+  updated_at: string;
+  generation_count: number;
+}
+
+/// 文脈のキャッシュキー正規化: trim + 連続空白を単一スペースへ + 小文字化した文の sha256。
+/// OCR 由来の空白揺れ・大小の違いで別エントリにならないようにする。
+export function contextHashKey(context: string): string {
+  const normalized = context.trim().split(/\s+/).join(" ").toLowerCase();
+  return createHash("sha256").update(normalized, "utf8").digest("hex");
+}
+
+export function getStoredContextNormalization(
+  input: string,
+  context: string,
+  targetLanguage: string
+): StoredContextNormalizationRow | undefined {
+  return db
+    .prepare(
+      "SELECT * FROM word_context_normalizations WHERE input = ? AND context_hash = ? AND target_language = ?"
+    )
+    .get(normalizeWordKey(input), contextHashKey(context), targetLanguage) as
+    | StoredContextNormalizationRow
+    | undefined;
+}
+
+export interface StoredContextNormalizationInput {
+  input: string;
+  context: string;
+  targetLanguage: string;
+  lemma: string;
+  status: string;
+  reason: string | null;
+  model: string;
+}
+
+const upsertStoredContextNormalizationStmt = db.prepare(`
+  INSERT INTO word_context_normalizations (
+    input, context_hash, context, target_language, lemma, status, reason, model,
+    created_at, updated_at, generation_count
+  ) VALUES (
+    @input, @contextHash, @context, @targetLanguage, @lemma, @status, @reason, @model,
+    @now, @now, 1
+  )
+  ON CONFLICT(input, context_hash, target_language) DO UPDATE SET
+    context = excluded.context,
+    lemma = excluded.lemma,
+    status = excluded.status,
+    reason = excluded.reason,
+    model = excluded.model,
+    updated_at = excluded.updated_at,
+    generation_count = generation_count + 1
+`);
+
+/// 文脈付き正規化結果を保存する。同一キーが既にあれば内容を更新して generation_count を加算する（後勝ち）。
+export function upsertStoredContextNormalization(input: StoredContextNormalizationInput): void {
+  upsertStoredContextNormalizationStmt.run({
+    input: normalizeWordKey(input.input),
+    contextHash: contextHashKey(input.context),
+    context: input.context,
+    targetLanguage: input.targetLanguage,
+    lemma: input.lemma,
+    status: input.status,
+    reason: input.reason,
+    model: input.model,
+    now: new Date().toISOString(),
+  });
 }
 
 export interface TtsAudioRow {

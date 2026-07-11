@@ -4,18 +4,21 @@ import Foundation
 /// 実装差し替え（テストのフェイク）を可能にするためプロトコルにしておく。
 @MainActor
 protocol WordNormalizeService {
-    /// - Parameter regenerate: true でサーバ側キャッシュを無視して作りなおす。
+    /// - Parameters:
+    ///   - context: タップ語を含む文（本文タップ登録の熟語自動判定用。手動入力では nil）。
+    ///   - regenerate: true でサーバ側キャッシュを無視して作りなおす。
     func normalize(
         word: String,
         targetLanguage: String,
+        context: String?,
         regenerate: Bool
     ) async throws -> WordNormalization
 }
 
 extension WordNormalizeService {
     /// 通常はサーバのキャッシュを利用（regenerate=false）して呼ぶための簡易版。
-    func normalize(word: String, targetLanguage: String) async throws -> WordNormalization {
-        try await normalize(word: word, targetLanguage: targetLanguage, regenerate: false)
+    func normalize(word: String, targetLanguage: String, context: String? = nil) async throws -> WordNormalization {
+        try await normalize(word: word, targetLanguage: targetLanguage, context: context, regenerate: false)
     }
 }
 
@@ -26,12 +29,15 @@ final class RemoteWordNormalizeService: WordNormalizeService {
     private struct RequestBody: Encodable {
         let word: String
         let targetLanguage: String
+        /// nil は synthesized Codable の encodeIfPresent で省略される（従来リクエストと同一形）
+        let context: String?
         let regenerate: Bool
     }
 
     func normalize(
         word: String,
         targetLanguage: String,
+        context: String?,
         regenerate: Bool
     ) async throws -> WordNormalization {
         // UIテスト用スタブが設定されていれば実ネットワークを介さず決定的な結果を返す
@@ -41,7 +47,7 @@ final class RemoteWordNormalizeService: WordNormalizeService {
         }
         let data = try await BackendAPI.post(
             path: "api/word-normalize",
-            body: RequestBody(word: word, targetLanguage: targetLanguage, regenerate: regenerate)
+            body: RequestBody(word: word, targetLanguage: targetLanguage, context: context, regenerate: regenerate)
         )
         // レスポンスは { input, lemma, status, reason, cached }。cached はデバッグ用で使わないため
         // Decodable が無視する。将来 status が増えても WordNormalizeStatus が .unknown に倒す。

@@ -7,23 +7,24 @@ import SwiftUI
 /// 英文中の単語がタップされたときに呼ばれるアクション。SwiftUI の `OpenURLAction` に倣い、
 /// 環境値としてビュー階層へ配布する。これにより深い階層（`WordAIInfoSections` など）へ
 /// `onWordTap` をバケツリレーせずに済む。`WordRegistrationModifier` が実体を注入する。
+/// `context` はタップ語を含む文（熟語自動判定のヒント。取得できない場合は nil）。
 // クロージャは SwiftUI のビュー（MainActor）からのみ生成・呼び出しされるため unchecked Sendable でよい。
 // 環境キーの defaultValue が Sendable を要求するための宣言。
 struct WordTapAction: @unchecked Sendable {
-    private let action: (String) -> Void
+    private let action: (String, String?) -> Void
 
-    init(_ action: @escaping (String) -> Void) {
+    init(_ action: @escaping (String, String?) -> Void) {
         self.action = action
     }
 
-    func callAsFunction(_ word: String) {
-        action(word)
+    func callAsFunction(_ word: String, context: String? = nil) {
+        action(word, context)
     }
 }
 
 private struct WordTapActionKey: EnvironmentKey {
     // 既定は何もしない（登録モディファイアが無い画面ではタップしても無反応）
-    static let defaultValue = WordTapAction { _ in }
+    static let defaultValue = WordTapAction { _, _ in }
 }
 
 extension EnvironmentValues {
@@ -49,18 +50,23 @@ struct TappableEnglishText: View {
     var body: some View {
         Text(attributed)
             .environment(\.openURL, OpenURLAction { url in
-                guard let word = EnglishWordLink.word(from: url) else { return .discarded }
-                wordTapAction(word)
+                guard let tap = EnglishWordLink.tapPayload(from: url) else { return .discarded }
+                // タップ語を含む文を切り出して熟語自動判定のヒントに渡す（オフセット無しリンクは文脈なし）
+                let context = tap.offset.flatMap {
+                    EnglishWordLink.sentenceContext(in: text, around: $0, wordLength: tap.word.count)
+                }
+                wordTapAction(tap.word, context: context)
                 return .handled
             })
     }
 
     private var attributed: AttributedString {
         var result = AttributedString()
+        var offset = 0
         for token in EnglishWordLink.tokenize(text) {
             if token.isWord,
                let core = EnglishWordLink.core(of: token.text),
-               let url = EnglishWordLink.linkURL(for: core) {
+               let url = EnglishWordLink.linkURL(for: core, offset: offset) {
                 var run = AttributedString(token.text)
                 run.link = url
                 run.foregroundColor = color
@@ -68,6 +74,7 @@ struct TappableEnglishText: View {
             } else {
                 result.append(AttributedString(token.text))
             }
+            offset += token.text.count
         }
         return result
     }
@@ -96,40 +103,54 @@ struct TappableMarkdown: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             ForEach(blocks.indices, id: \.self) { index in
-                blockView(blocks[index])
+                blockView(blocks[index], blockIndex: index)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .environment(\.openURL, OpenURLAction { url in
             guard url.scheme == EnglishWordLink.scheme else { return .systemAction }
-            guard let word = EnglishWordLink.word(from: url) else { return .discarded }
-            wordTapAction(word)
+            guard let tap = EnglishWordLink.tapPayload(from: url) else { return .discarded }
+            wordTapAction(tap.word, context: sentenceContext(for: tap))
             return .handled
         })
     }
 
+    /// タップ語を含む文をブロックの素文から切り出す（熟語自動判定のヒント）。
+    /// 素文は spans の text 連結で、`attributedString(from:blockIndex:)` が数えたオフセットと
+    /// 厳密に一致する。位置情報が無い・ブロック番号が範囲外なら nil（文脈なしで登録に進む）。
+    private func sentenceContext(for tap: EnglishWordLink.TapPayload) -> String? {
+        guard let blockIndex = tap.blockIndex, let offset = tap.offset else { return nil }
+        let blocks = self.blocks
+        guard blocks.indices.contains(blockIndex) else { return nil }
+        let spans: [MarkdownLite.Span] = switch blocks[blockIndex] {
+        case .heading(_, let spans), .bullet(let spans), .paragraph(let spans): spans
+        }
+        let blockText = spans.map(\.text).joined()
+        return EnglishWordLink.sentenceContext(in: blockText, around: offset, wordLength: tap.word.count)
+    }
+
     @ViewBuilder
-    private func blockView(_ block: MarkdownLite.Block) -> some View {
+    private func blockView(_ block: MarkdownLite.Block, blockIndex: Int) -> some View {
         switch block {
         case .heading(let level, let spans):
-            headingView(level: level, spans: spans)
+            headingView(level: level, spans: spans, blockIndex: blockIndex)
         case .bullet(let spans):
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("•").foregroundStyle(.secondary)
-                Text(attributedString(from: spans))
+                Text(attributedString(from: spans, blockIndex: blockIndex))
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         case .paragraph(let spans):
-            Text(attributedString(from: spans))
+            Text(attributedString(from: spans, blockIndex: blockIndex))
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
     /// 見出しブロック。地の文と区別できるよう大きめ太字＋背景色（旧 `markdownHeadingHighlight` の見た目を踏襲）。
-    private func headingView(level: Int, spans: [MarkdownLite.Span]) -> some View {
+    private func headingView(level: Int, spans: [MarkdownLite.Span], blockIndex: Int) -> some View {
         let font: Font = level == 1 ? .title2 : (level == 2 ? .title3 : .headline)
         let opacity: Double = level == 1 ? 0.18 : (level == 2 ? 0.14 : 0.10)
-        return Text(attributedString(from: spans))
+        return Text(attributedString(from: spans, blockIndex: blockIndex))
             .font(font)
             .fontWeight(.bold)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -141,8 +162,10 @@ struct TappableMarkdown: View {
 
     /// スパン列を1つの `AttributedString` にする（全単語を `eslword://` リンク化＋強調フォント）。
     /// `Text + Text` の連結を使わないため、段落の語数に依らず `Text.resolve` の再帰でスタックを溢れさせない。
-    private func attributedString(from spans: [MarkdownLite.Span]) -> AttributedString {
+    /// リンクにはブロック番号とブロック素文内のオフセットを載せ、タップ時に文脈（文）を切り出す。
+    private func attributedString(from spans: [MarkdownLite.Span], blockIndex: Int) -> AttributedString {
         var result = AttributedString()
+        var offset = 0
         for span in spans {
             let spanFont = swiftUIFont(for: span.style)
             for token in EnglishWordLink.tokenize(span.text) {
@@ -150,11 +173,12 @@ struct TappableMarkdown: View {
                 if let spanFont { run.font = spanFont }
                 if token.isWord,
                    let core = EnglishWordLink.core(of: token.text),
-                   let url = EnglishWordLink.linkURL(for: core) {
+                   let url = EnglishWordLink.linkURL(for: core, offset: offset, blockIndex: blockIndex) {
                     run.link = url
                     run.foregroundColor = wordColor
                 }
                 result.append(run)
+                offset += token.text.count
             }
         }
         return result
@@ -256,11 +280,16 @@ struct WordRegistrationModifier: ViewModifier {
     }
 
     /// タップされた単語の振り分け。
-    /// 1. 入力語そのものが登録済み → 即詳細へ（正規化不要の最速パス・オフラインでも動く）。
-    /// 2. 未登録語 → 正規化（原形化・綴り訂正）を挟み、`WordNormalizationFlow.decide` の結果で分岐する。
+    /// 1. 入力語そのものが登録済み → 即詳細へ（正規化不要の最速パス・オフラインでも動く。
+    ///    このパスでは熟語判定はしない）。
+    /// 2. 未登録語 → 正規化（原形化・綴り訂正・文脈からの熟語判定）を挟み、
+    ///    `WordNormalizationFlow.decide` の結果で分岐する。
     ///    - 訂正なし（canonical/固有名詞/連語/判定不能/失敗フォールバック）→ そのまま登録。
-    ///    - 訂正あり → 正規化形が既存語なら重複としてその詳細へ集約、無ければ確認ダイアログ。
-    private func handleTap(_ rawText: String) {
+    ///    - 訂正あり（原形・正しい綴り・熟語 “look up” の提案）→ 正規化形が既存語なら重複として
+    ///      その詳細へ集約、無ければ確認ダイアログ。
+    /// - Parameter context: タップ語を含む文（`TappableEnglishText`/`TappableMarkdown` が切り出す）。
+    ///   熟語自動判定のヒントとして正規化 API へ渡す。
+    private func handleTap(_ rawText: String, context: String?) {
         let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         // 正規化待ち中の追加タップは無視（二重登録・多重ダイアログを防ぐ）
@@ -277,6 +306,7 @@ struct WordRegistrationModifier: ViewModifier {
             let decision = await WordNormalizationFlow.decide(
                 input: text,
                 targetLanguage: WordNormalizationFlow.targetLanguage,
+                context: context,
                 using: service
             )
             isNormalizing = false

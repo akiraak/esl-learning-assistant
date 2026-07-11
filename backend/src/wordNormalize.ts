@@ -12,6 +12,8 @@ import { callStructured } from "./ocrTranslate";
 //                フレーズ内の綴り間違いもここに含める
 //   proper_noun  固有名詞（人名等）→ 訂正しない（lemma は入力と同じ）
 //   phrase       既に辞書見出しの基本形である複数語の連語（句動詞・イディオム等）→ lemma は入力と同じ
+//   phrase_part  文脈付き呼び出しで、タップ語が文中の複数語表現（句動詞・イディオム）の一部
+//                → lemma は表現全体の辞書基本形（例: "up" in "I looked it up." → "look up"）/ 確認UIを出す
 //   unknown      判定不能・英語でない・明らかな文 → lemma は入力と同じ
 export const WORD_NORMALIZE_STATUSES = [
   "canonical",
@@ -19,6 +21,7 @@ export const WORD_NORMALIZE_STATUSES = [
   "misspelled",
   "proper_noun",
   "phrase",
+  "phrase_part",
   "unknown",
 ] as const;
 
@@ -40,6 +43,8 @@ const WORD_NORMALIZE_SCHEMA = {
         "proper_noun=固有名詞（人名・地名・商品名など。訂正しない）。" +
         "phrase=空白を含む複数語の連語（句動詞・イディオム・コロケーション）で、既に辞書見出しの基本形のもの。" +
         "変化形や綴り間違いを含むフレーズは phrase ではなく inflected / misspelled とする。" +
+        "phrase_part=文脈の文が与えられ、かつ入力語がその文中で複数語表現（句動詞・イディオム）の" +
+        "一部として使われている場合。文脈が無い呼び出しでは使わない。" +
         "unknown=英単語として判定できない・英語でない・明らかな文。" +
         "inflected / misspelled は lemma が入力と異なる（＝訂正がある）場合のみ使う。" +
         "入力が既に基本形なら、単語は canonical、フレーズは phrase とする。",
@@ -55,6 +60,8 @@ const WORD_NORMALIZE_SCHEMA = {
         "例:『looked up』→『look up』、『takes care of』→『take care of』）。" +
         "フレーズの見出しに目的語プレースホルダ（sth / sb など）は付けない。" +
         "『one's』が不可欠な定型（例: make up one's mind）のみ one's を残す。" +
+        "phrase_part では、入力語を含む表現全体の辞書基本形にする（分離した目的語・代名詞は除き、" +
+        "中心動詞は原形化。例: 文『I looked it up yesterday.』の『up』→『look up』）。" +
         "canonical/proper_noun/phrase/unknown では入力語をそのまま（トリムのみ）返す。小文字化はしない。",
     },
     reason: {
@@ -62,6 +69,8 @@ const WORD_NORMALIZE_SCHEMA = {
       description:
         "なぜその lemma に直したかを『母語』（指定された言語コードの言語）で1文で説明する。" +
         "例（inflected）:「『ran』は動詞『run』の過去形です」。" +
+        "phrase_part では必ず空でない説明を返す（確認UIの説明文になる。" +
+        "例:「文中の『up』は句動詞『look up』の一部です」）。" +
         "canonical/proper_noun/phrase/unknown の場合は空文字列 \"\" を返す（確認UIを出さないため）。",
     },
   },
@@ -84,10 +93,22 @@ export interface WordNormalizeResult {
 
 export async function normalizeWord(
   word: string,
-  targetLanguage: string
+  targetLanguage: string,
+  context?: string
 ): Promise<WordNormalizeResult> {
+  // 文脈付き（本文タップ登録）のときだけ熟語判定の指示を足す。文脈なしのプロンプトは従来と同一
+  // （手動入力の回帰リスクを避ける。docs/plans/word-phrase-support.md Phase 4）。
+  const contextLines = context
+    ? [
+        `この語は、次の英文の中でタップされました: "${context}"`,
+        `まず、タップされた語がこの文の中で複数語表現（句動詞・イディオム・定型コロケーション）の一部として使われているかを判定してください。`,
+        `一部として使われている場合は status=phrase_part とし、lemma はその表現全体の辞書基本形にします（分離した目的語・代名詞は除き、中心動詞は原形化。例: 文「I looked it up yesterday.」の「up」→ lemma="look up"、文「She takes care of her brother.」の「care」→ lemma="take care of"）。reason には母語でその説明を必ず書きます（例:「文中の『up』は句動詞『look up』の一部です」）。`,
+        `複数語表現の一部ではない場合は、文脈は語義のヒントに留め、タップされた語そのものに以降の通常ルール（canonical / inflected / misspelled 等）を適用してください。`,
+      ]
+    : [];
   const prompt = [
     `英語学習アプリの語彙リスト登録の前処理として、入力された語 "${word}" を辞書見出し語（lemma）へ正規化してください。`,
+    ...contextLines,
     `目的は、過去形・複数形などの語形変化を原形に、綴り間違いを正しい綴りに直して、正しい見出し語で登録することです。`,
     `lemma は常に辞書の原形（基本形）にしてください。綴り間違いを直した結果が変化形になる場合は、そこで止めずにさらに原形へ戻します（例:「writed」は過去形 wrote の綴り間違いですが、登録するのは原形「write」。この場合 status は misspelled）。`,
     `入力は "look up" のような複数語のフレーズ（句動詞・イディオム・コロケーション）の場合があります。フレーズも単語と同じルールで、lemma は辞書見出しの基本形にしてください（中心となる動詞を原形化。例:「looked up」→「look up」（status は inflected）、「takes care of」→「take care of」（status は inflected））。`,
