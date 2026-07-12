@@ -2241,12 +2241,11 @@ adminRouter.post("/quiz-questions/regenerate", async (req, res) => {
 
 // data/ 配下でファイルを保存しているディレクトリのホワイトリスト。
 // 配信エンドポイントの dir 検証を兼ねるため、ここに無いディレクトリには一切触れない。
+// TTS音声・単語イラストは専用ページ（/admin/tts・/admin/illustrations）があるため載せない。
 const CONTENT_DIRS: Array<{ key: string; label: string; dir: string }> = [
   { key: "images", label: "画像", dir: config.imagesDir },
   { key: "audio", label: "取り込み音声", dir: config.audioDir },
   { key: "documents", label: "ドキュメント", dir: config.documentsDir },
-  { key: "tts", label: "TTS音声", dir: config.ttsDir },
-  { key: "illustrations", label: "単語イラスト", dir: config.illustrationsDir },
 ];
 
 const AUDIO_FILE_EXTENSIONS = new Set([".wav", ".mp3", ".m4a", ".aac", ".caf", ".ogg", ".flac"]);

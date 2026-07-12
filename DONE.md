@@ -1,5 +1,10 @@
 # DONE
 
+- [x] 2026-07-12 管理画面コンテンツファイル一覧から TTS音声・単語イラストのタブを削除
+      [plan](docs/plans/archive/admin-content-files-remove-tts-illustrations.md)
+      専用ページ（/admin/tts・/admin/illustrations）と重複するため CONTENT_DIRS から
+      2エントリを除去。配列は配信の dir ホワイトリスト兼用のため ?dir=tts /
+      ?dir=illustrations は 400 になる（curl 確認済み）。残る3タブと専用ページは 200。
 - [x] 2026-07-12 ContentsのAudioの英文文字起こしを段落ごとに空行区切りで表示
       [plan](docs/plans/archive/audio-transcript-readability.md)
       iOS の MarkdownLite は空行（\n\n）だけを段落境界と見なすため、Gemini 出力に
