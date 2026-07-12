@@ -1,5 +1,15 @@
 # DONE
 
+- [x] 2026-07-11 クイズ生成: 音声不要形式の保存データへの audioText 混入を修正
+      [plan](docs/plans/archive/quiz-audiotext-strip-non-audio-formats.md)
+      needsAudioText=false の形式（tc2〜tc7・tt1）に AI が余計に返した audioText
+      （displayText のコピー等）が validateAndConvert で素通しされ保存されていた。
+      TTS プリ合成の無駄コストと、iOS 側の不要な Play Audio ボタン表示・音声 DL の原因。
+      生成側は validateAndConvert で needsAudioText=false なら audioText を必ず null 化。
+      保存済みデータは db.ts の起動時クリーンアップ（冪等な json_set UPDATE）で null 化
+      （ローカル DB 実測: 混入44件→0件、音声形式134件は無傷）。ユニットテスト4件追加、
+      backend 全31テスト green。混入分の合成済み TTS キャッシュはキーが正規用途と
+      共有されうるため個別削除せず既存の保持ポリシーに任せる。
 - [x] 2026-07-11 UIテスト `testClassLessonCaptureFlow` を現行環境に合わせて修正
       [plan](docs/plans/archive/fix-capture-flow-uitest.md)
       iOS 26 の PHPicker 変更（確定がナビバー「追加/Add」→右上 ✓、label は 完了/Done で

@@ -348,6 +348,15 @@ db.exec(
     "('tc1','tc8','tc9','tc10','tc11','tt3','vc5','vc6','vc7','vc8','vtc1','vt2')"
 );
 
+// 音声不要形式（needsAudioText=false）に AI が余計に返した audioText が素通しで保存されていた
+// 混入データを null 化する（docs/plans/archive/quiz-audiotext-strip-non-audio-formats.md。
+// 冪等なので毎起動で実行してよい。生成側は validateAndConvert で捨てるよう修正済み）。
+db.exec(
+  "UPDATE quiz_questions SET question_json = json_set(question_json, '$.audioText', null) " +
+    "WHERE format IN ('tc2','tc3','tc4','tc5','tc6','tc7','tt1') " +
+    "AND json_extract(question_json, '$.audioText') IS NOT NULL"
+);
+
 export interface RequestLogInput {
   imageFilename: string | null;
   targetLanguage: string;

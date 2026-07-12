@@ -404,11 +404,15 @@ function normalizeKey(text: string): string {
 }
 
 /// AI 出力1件を検証して QuizQuestion に変換する。不正なら null（その variant は捨てる）
-function validateAndConvert(raw: RawQuestion, word: string, spec: FormatSpec): QuizQuestion | null {
+export function validateAndConvert(raw: RawQuestion, word: string, spec: FormatSpec): QuizQuestion | null {
   if (!raw.instruction?.trim()) return null;
   if (raw.answerType !== spec.answerType) return null;
   if (spec.needsDisplayText && !raw.displayText?.trim()) return null;
   if (spec.needsAudioText && !raw.audioText?.trim()) return null;
+  // 音声不要形式にも AI が audioText を返すことがある（displayText のコピー等）。素通しすると
+  // TTS プリ合成の無駄コストと iOS 側の不要な音声ボタン表示になるため、ここで必ず捨てる
+  // （docs/plans/archive/quiz-audiotext-strip-non-audio-formats.md）。
+  const audioText = spec.needsAudioText ? raw.audioText?.trim() || null : null;
 
   if (spec.answerType === "choices") {
     const options = raw.options ?? [];
@@ -426,7 +430,7 @@ function validateAndConvert(raw: RawQuestion, word: string, spec: FormatSpec): Q
       format: spec.id,
       instruction: raw.instruction.trim(),
       displayText: raw.displayText?.trim() || null,
-      audioText: raw.audioText?.trim() || null,
+      audioText,
       promptIllustrationWord: null,
       answer: {
         type: "choices",
@@ -445,7 +449,7 @@ function validateAndConvert(raw: RawQuestion, word: string, spec: FormatSpec): Q
     format: spec.id,
     instruction: raw.instruction.trim(),
     displayText: raw.displayText?.trim() || null,
-    audioText: raw.audioText?.trim() || null,
+    audioText,
     promptIllustrationWord: null,
     answer: {
       type: "typing",
