@@ -194,7 +194,7 @@ function renderMarkdown(value: string | null): string {
   return marked.parse(escaped, { async: false, breaks: true }) as string;
 }
 
-type NavSection = "ocr" | "transcriptions" | "documents" | "word-info" | "word-normalize" | "word-normalizations" | "writing-feedback" | "words" | "quiz-questions" | "tts" | "illustrations" | "usage" | "pricing" | "logs";
+type NavSection = "ocr" | "transcriptions" | "documents" | "word-info" | "word-normalize" | "word-normalizations" | "writing-feedback" | "words" | "quiz-questions" | "tts" | "illustrations" | "content-files" | "usage" | "pricing" | "logs";
 
 const NAV_ITEMS: Array<[NavSection, string, string]> = [
   ["ocr", "/admin", "OCR・翻訳ログ"],
@@ -208,6 +208,7 @@ const NAV_ITEMS: Array<[NavSection, string, string]> = [
   ["quiz-questions", "/admin/quiz-questions", "単語クイズ"],
   ["tts", "/admin/tts", "TTS一覧"],
   ["illustrations", "/admin/illustrations", "単語イラスト"],
+  ["content-files", "/admin/content-files", "コンテンツファイル"],
   ["usage", "/admin/usage", "利用料金"],
   ["pricing", "/admin/pricing", "AI料金（単価）"],
   ["logs", "/admin/system-logs", "システムログ"],
@@ -2233,5 +2234,136 @@ adminRouter.post("/quiz-questions/regenerate", async (req, res) => {
         `<p>${escapeHtml(errorMessage)}</p><p><a href="/admin/quiz-questions">← 一覧に戻る</a></p>`
       )
     );
+  }
+});
+
+// ---- コンテンツファイル一覧（docs/plans/admin-content-files-page.md）----
+
+// data/ 配下でファイルを保存しているディレクトリのホワイトリスト。
+// 配信エンドポイントの dir 検証を兼ねるため、ここに無いディレクトリには一切触れない。
+const CONTENT_DIRS: Array<{ key: string; label: string; dir: string }> = [
+  { key: "images", label: "画像", dir: config.imagesDir },
+  { key: "audio", label: "取り込み音声", dir: config.audioDir },
+  { key: "documents", label: "ドキュメント", dir: config.documentsDir },
+  { key: "tts", label: "TTS音声", dir: config.ttsDir },
+  { key: "illustrations", label: "単語イラスト", dir: config.illustrationsDir },
+];
+
+const AUDIO_FILE_EXTENSIONS = new Set([".wav", ".mp3", ".m4a", ".aac", ".caf", ".ogg", ".flac"]);
+
+// クエリ由来のファイル名で data/ 外へ出られないよう、区切り文字を含む名前は拒否する
+function isSafeContentFilename(name: string): boolean {
+  return name.length > 0 && !name.includes("/") && !name.includes("\\") && !name.includes("..") && name === path.basename(name);
+}
+
+function listContentFiles(dir: string): Array<{ name: string; size: number; mtimeIso: string }> {
+  if (!fs.existsSync(dir)) return [];
+  return fs
+    .readdirSync(dir, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && !entry.name.startsWith("."))
+    .map((entry) => {
+      const stat = fs.statSync(path.join(dir, entry.name));
+      return { name: entry.name, size: stat.size, mtimeIso: stat.mtime.toISOString() };
+    })
+    .sort((a, b) => (a.mtimeIso < b.mtimeIso ? 1 : -1));
+}
+
+function contentFileUrl(dirKey: string, name: string, download: boolean): string {
+  return `/admin/content-files/file?dir=${encodeURIComponent(dirKey)}&name=${encodeURIComponent(name)}${download ? "&download=1" : ""}`;
+}
+
+const CONTENT_FILES_STYLE = `
+  .dir-tabs { display: flex; gap: 8px; margin: 0 0 16px; flex-wrap: wrap; }
+  .dir-tab { font-size: 12.5px; font-weight: 600; padding: 6px 14px; border-radius: 6px; border: 1px solid #1F2A35; color: #8B98A5; background: #111820; }
+  .dir-tab:hover { color: #E6EDF3; text-decoration: none; }
+  .dir-tab.active { color: #fff; background: rgba(56,189,248,0.12); border-color: #38BDF8; }
+  .dir-tab .cnt { color: #66737F; font-weight: 400; margin-left: 4px; font-variant-numeric: tabular-nums; }
+  .dir-tab.active .cnt { color: #8B98A5; }
+`;
+
+adminRouter.get("/content-files", (req, res) => {
+  const dirKey = typeof req.query.dir === "string" ? req.query.dir : CONTENT_DIRS[0].key;
+  const active = CONTENT_DIRS.find((entry) => entry.key === dirKey);
+  if (!active) {
+    res.status(400).type("html").send(
+      renderPage(
+        "不正なディレクトリ",
+        "",
+        '<p>指定されたディレクトリは存在しません。</p><p><a href="/admin/content-files">← コンテンツファイルに戻る</a></p>'
+      )
+    );
+    return;
+  }
+
+  const filesByKey = new Map(CONTENT_DIRS.map((entry) => [entry.key, listContentFiles(entry.dir)]));
+  const files = filesByKey.get(active.key) ?? [];
+  const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
+
+  const tabs = CONTENT_DIRS.map((entry) => {
+    const count = filesByKey.get(entry.key)?.length ?? 0;
+    return `<a class="dir-tab${entry.key === active.key ? " active" : ""}" href="/admin/content-files?dir=${entry.key}">${entry.label} <span class="cnt">${count}</span></a>`;
+  }).join("\n");
+
+  const tableRows = files
+    .map((file) => {
+      const player = AUDIO_FILE_EXTENSIONS.has(path.extname(file.name).toLowerCase())
+        ? `<audio controls preload="none" src="${contentFileUrl(active.key, file.name, false)}" style="width:220px;height:32px;"></audio>`
+        : `<span class="faint">—</span>`;
+      return `
+        <tr class="log-row">
+          <td class="mono">${escapeHtml(file.name)}</td>
+          <td class="mono dim">${(file.size / 1024).toFixed(0)} KB</td>
+          <td class="mono dim">${escapeHtml(formatSeattleTime(file.mtimeIso))}</td>
+          <td>${player}</td>
+          <td><a href="${contentFileUrl(active.key, file.name, true)}">DL</a></td>
+        </tr>
+      `;
+    })
+    .join("\n");
+
+  res.type("html").send(
+    renderPage(
+      "ESL Assistant - コンテンツファイル",
+      CONTENT_FILES_STYLE,
+      `
+        <h1>コンテンツファイル</h1>
+        <p class="page-sub">${escapeHtml(active.dir)}</p>
+        <div class="dir-tabs">${tabs}</div>
+        <div class="stats">
+          <div class="stat"><div class="lbl">ファイル数</div><div class="val">${files.length}<small>件</small></div></div>
+          <div class="stat"><div class="lbl">合計サイズ</div><div class="val">${(totalBytes / 1024 / 1024).toFixed(1)}<small>MB</small></div></div>
+        </div>
+        <div class="card">
+          <table>
+            <thead>
+              <tr><th>ファイル名</th><th>サイズ</th><th>更新日時</th><th>再生</th><th>DL</th></tr>
+            </thead>
+            <tbody>${tableRows || '<tr><td colspan="5" class="faint" style="text-align:center;padding:24px;">（ファイルなし）</td></tr>'}</tbody>
+          </table>
+        </div>
+      `,
+      "content-files"
+    )
+  );
+});
+
+adminRouter.get("/content-files/file", (req, res) => {
+  const dirKey = req.query.dir;
+  const name = req.query.name;
+  const entry = typeof dirKey === "string" ? CONTENT_DIRS.find((candidate) => candidate.key === dirKey) : undefined;
+  if (!entry || typeof name !== "string" || !isSafeContentFilename(name)) {
+    res.status(400).end();
+    return;
+  }
+  const filePath = path.join(entry.dir, name);
+  if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+    res.status(404).end();
+    return;
+  }
+  if (req.query.download === "1") {
+    res.download(filePath, name);
+  } else {
+    // <audio> のシークに必要な Range 対応・Content-Type 判定は sendFile に任せる
+    res.sendFile(filePath);
   }
 });

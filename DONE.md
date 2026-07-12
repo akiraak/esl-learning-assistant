@@ -1,5 +1,14 @@
 # DONE
 
+- [x] 2026-07-12 管理画面にコンテンツファイル一覧ページを追加
+      [plan](docs/plans/archive/admin-content-files-page.md)
+      `/admin/content-files` を新設。data/ 配下の5ディレクトリ（images / audio /
+      documents / tts / illustrations）をタブで切替し、ファイル名・サイズ・更新日時
+      （シアトル時刻）を一覧表示。各ファイルは DL リンク（Content-Disposition:
+      attachment）で取得でき、音声拡張子（wav/mp3/m4a/aac/caf/ogg/flac）の行は
+      既存 TTS 一覧と同じ `<audio controls>` でインライン再生（sendFile の Range
+      対応でシーク可）。配信は dir ホワイトリスト＋ファイル名検証でパストラバーサル
+      を拒否（curl で 400/404 確認済み）。admin.ts のみの変更、tsc・全31テスト green。
 - [x] 2026-07-11 クイズ生成: 音声不要形式の保存データへの audioText 混入を修正
       [plan](docs/plans/archive/quiz-audiotext-strip-non-audio-formats.md)
       needsAudioText=false の形式（tc2〜tc7・tt1）に AI が余計に返した audioText
