@@ -1,7 +1,7 @@
 import AVFoundation
 
 /// 生成済みTTS音声（TTSAudioStoreのローカルファイル、またはサーバから取得したWAVデータ）を再生する。
-/// 一時停止・シーク・±5秒スキップ・再生速度の変更に対応し、操作パネル（TTSPlayerBar）の状態源になる。
+/// 一時停止・シーク・±5秒スキップ・再生速度・ループ再生に対応し、操作パネル（TTSPlayerBar）の状態源になる。
 /// 1画面に複数の再生ボタンが並ぶため、どのファイルを再生中かを currentURL で公開する。
 @MainActor
 final class TTSPlaybackService: NSObject, ObservableObject {
@@ -14,6 +14,8 @@ final class TTSPlaybackService: NSObject, ObservableObject {
     @Published private(set) var duration: TimeInterval = 0
     /// 再生速度。音源をまたいで維持する（学習者が聞き取りやすい速度を選び直さなくて済むように）
     @Published private(set) var rate: Float = 1.0
+    /// ループ再生。ON の間は終端で止まらず先頭から繰り返す。rate と同様に音源をまたいで維持する
+    @Published private(set) var isLoopEnabled = false
 
     private var player: AVAudioPlayer?
     private var progressTimer: Timer?
@@ -63,6 +65,7 @@ final class TTSPlaybackService: NSObject, ObservableObject {
         player.delegate = self
         player.enableRate = true
         player.rate = rate
+        player.numberOfLoops = isLoopEnabled ? -1 : 0
         self.player = player
         currentURL = url
         isActive = true
@@ -113,6 +116,13 @@ final class TTSPlaybackService: NSObject, ObservableObject {
     func setRate(_ newRate: Float) {
         rate = newRate
         player?.rate = newRate
+    }
+
+    /// ループのON/OFFを切り替える。再生中でも即時反映される
+    /// （AVAudioPlayerの無限ループ機能を使うので、ループ中は終端で delegate が呼ばれず途切れない）
+    func toggleLoop() {
+        isLoopEnabled.toggle()
+        player?.numberOfLoops = isLoopEnabled ? -1 : 0
     }
 
     func stop() {

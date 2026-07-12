@@ -1,5 +1,11 @@
 # DONE
 
+- [x] 2026-07-11 Audio再生にループ機能
+      [plan](docs/plans/archive/audio-playback-loop.md)
+      `TTSPlaybackService` に `isLoopEnabled`（AVAudioPlayer.numberOfLoops = -1/0、再生中も即時反映、
+      rate と同様に音源をまたいで維持）を追加し、`TTSPlayerBar` の速度メニュー横に repeat トグルを設置。
+      共有プレイヤーなので Audio/単語/写真/ドキュメント各詳細で利用可能。
+      検証: シミュレータ実機操作で ON 時に終端(0:09)を跨いで再生継続、再生中 OFF で当該周回の終端停止を確認。
 - [x] 2026-07-11 熟語（２単語以上）を単語に入れる（全 Phase 完了）
       [plan](docs/plans/archive/word-phrase-support.md)
       句動詞・イディオム（look up / take care of / by heart 等）を既存 `Word` の第一級市民として

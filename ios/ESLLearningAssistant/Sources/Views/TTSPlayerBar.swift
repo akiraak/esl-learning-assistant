@@ -2,7 +2,7 @@ import SwiftUI
 
 /// 生成音声の操作パネル。ホスト画面の `.safeAreaInset(edge: .bottom)` に置き、
 /// 再生中だけ画面下部に現れる（コンテンツを隠さず下に挿入されるので画面を見ながら聞ける）。
-/// 一時停止・±5秒スキップ・シークバー・再生速度・閉じる（停止）を提供する。
+/// 一時停止・±5秒スキップ・シークバー・再生速度・ループ・閉じる（停止）を提供する。
 struct TTSPlayerBar: View {
     @ObservedObject var playback: TTSPlaybackService
 
@@ -36,8 +36,11 @@ struct TTSPlayerBar: View {
             .foregroundStyle(.secondary)
 
             HStack(spacing: 0) {
-                rateMenu
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                HStack(spacing: 12) {
+                    rateMenu
+                    loopButton
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 HStack(spacing: 28) {
                     Button {
@@ -82,6 +85,19 @@ struct TTSPlayerBar: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .padding(.horizontal, 12)
         .padding(.bottom, 4)
+    }
+
+    /// ループ再生のトグル。ONはアクセント色、OFFはsecondaryで状態を示す
+    private var loopButton: some View {
+        Button {
+            playback.toggleLoop()
+        } label: {
+            Image(systemName: "repeat")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(playback.isLoopEnabled ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+        }
+        .accessibilityLabel("Repeat")
+        .accessibilityValue(playback.isLoopEnabled ? "On" : "Off")
     }
 
     private var rateMenu: some View {
