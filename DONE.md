@@ -1,5 +1,14 @@
 # DONE
 
+- [x] 2026-07-12 ContentsのAudioの英文文字起こしを段落ごとに空行区切りで表示
+      [plan](docs/plans/archive/audio-transcript-readability.md)
+      iOS の MarkdownLite は空行（\n\n）だけを段落境界と見なすため、Gemini 出力に
+      空行が無いとベタ表示になっていた。backend のみ変更: プロンプトで「2〜4文ごと・
+      話題/話者の切れ目で段落、空行区切り」を明示＋ formatTranscriptParagraphs で
+      決定的に正規化（単一改行→空行、6文以上の段落は約3文ごとに再分割、Mr. 等の
+      敬称は文境界扱いしない）。翻訳前に整形するので英文と訳の段落構造が揃う。
+      単体テスト7件追加（全38 green）。say 生成音声の E2E で英/日とも話題ごとの
+      3段落になることを確認。既存クリップは Transcribe 再実行で新フォーマットになる。
 - [x] 2026-07-12 管理画面にコンテンツファイル一覧ページを追加
       [plan](docs/plans/archive/admin-content-files-page.md)
       `/admin/content-files` を新設。data/ 配下の5ディレクトリ（images / audio /

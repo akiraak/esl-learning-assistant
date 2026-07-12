@@ -42,8 +42,60 @@ const MAX_OUTPUT_TOKENS = 65536;
 
 const TRANSCRIBE_PROMPT =
   "Transcribe the spoken English in this audio verbatim. " +
-  "Output only the transcription as plain text, with natural sentence punctuation and " +
-  "paragraph breaks. Do not add any commentary, labels, speaker names, or timestamps.";
+  "Output only the transcription as plain text with natural sentence punctuation. " +
+  "Break the transcription into short paragraphs of roughly 2-4 sentences, " +
+  "starting a new paragraph whenever the topic or speaker changes, " +
+  "and separate paragraphs with a blank line. " +
+  "Do not add any commentary, labels, speaker names, or timestamps.";
+
+// プロンプトは 2〜4 文/段落を指示するが、モデルが長い塊を返した場合の保険として
+// これを超える段落は SENTENCES_PER_CHUNK 文ごとに再分割する。
+const MAX_SENTENCES_PER_PARAGRAPH = 5;
+const SENTENCES_PER_CHUNK = 3;
+
+// 直後に大文字の固有名詞が続くため文境界と誤判定しやすい敬称等の略語
+const NON_BOUNDARY_ABBREVIATIONS = new Set(["Mr", "Mrs", "Ms", "Dr", "Prof", "St", "Jr", "Sr", "vs", "etc"]);
+
+/// `.!?`（+閉じ引用符）の後に空白と大文字/数字が続く位置を文境界と見なすヒューリスティック
+function splitSentences(paragraph: string): string[] {
+  const sentences: string[] = [];
+  let start = 0;
+  const boundary = /[.!?]+["'”’)]*\s+(?=["'“‘(]*[A-Z0-9])/g;
+  let match: RegExpExecArray | null;
+  while ((match = boundary.exec(paragraph)) !== null) {
+    const candidate = paragraph.slice(start, match.index + match[0].length).trim();
+    const lastWord = candidate.match(/([A-Za-z]+)\.["'”’)]*$/)?.[1];
+    if (lastWord && NON_BOUNDARY_ABBREVIATIONS.has(lastWord)) continue;
+    sentences.push(candidate);
+    start = match.index + match[0].length;
+  }
+  const rest = paragraph.slice(start).trim();
+  if (rest) sentences.push(rest);
+  return sentences;
+}
+
+/// Gemini 出力の段落構造を「空行 = 段落境界」に正規化する。iOS の MarkdownLite は
+/// 空行だけを段落境界と見なす（単一改行はスペース連結で1段落に潰す）ため、
+/// 単一改行のみの出力や改行ゼロの長文をそのまま返すとベタ表示になる。
+export function formatTranscriptParagraphs(text: string): string {
+  const paragraphs = text
+    .replace(/\r\n?/g, "\n")
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+
+  const chunked = paragraphs.flatMap((paragraph) => {
+    const sentences = splitSentences(paragraph);
+    if (sentences.length <= MAX_SENTENCES_PER_PARAGRAPH) return [paragraph];
+    const chunks: string[] = [];
+    for (let i = 0; i < sentences.length; i += SENTENCES_PER_CHUNK) {
+      chunks.push(sentences.slice(i, i + SENTENCES_PER_CHUNK).join(" "));
+    }
+    return chunks;
+  });
+
+  return chunked.join("\n\n");
+}
 
 /// 音声（base64）を Gemini に投げて英文文字起こしを得る。tts.ts の synthesizeChunk を
 /// 「音声出力」から「音声入力＋テキスト出力」に反転したもの。fetch/リトライ/timeout/
@@ -104,7 +156,7 @@ export async function transcribeAudio(audioBase64: string, mimeType: string): Pr
         continue;
       }
       return {
-        englishText: text,
+        englishText: formatTranscriptParagraphs(text),
         inputTokens: json.usageMetadata?.promptTokenCount ?? 0,
         outputTokens: json.usageMetadata?.candidatesTokenCount ?? 0,
       };
