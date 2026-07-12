@@ -1,5 +1,16 @@
 # DONE
 
+- [x] 2026-07-11 UIテスト `testClassLessonCaptureFlow` を現行環境に合わせて修正
+      [plan](docs/plans/archive/fix-capture-flow-uitest.md)
+      iOS 26 の PHPicker 変更（確定がナビバー「追加/Add」→右上 ✓、label は 完了/Done で
+      identifier 無し・選択まで Disabled）と、写真追加後に詳細へ自動遷移しない現行フローに追随。
+      調査で iOS 26 はピッカーの写真セルが identifier "PXGGridLayout-Info" の Image として
+      クエリ可能と判明し、従来の座標タップ（プライバシーバナー高さ変動でずれて空振り）を廃止。
+      リモート要素は hit point 計算不能で element.tap() が Not hittable になるため
+      frame 中心の座標タップで操作。確定は「完了/Done/追加/Add かつ enabled」の predicate 待ち。
+      確定後はレッスン画面の写真行（LessonsView に lessonPhotoRow 識別子を追加）をタップして
+      写真詳細を開き、OCR Result (English) を実バックエンド完了まで待って検証（timeout 90s）。
+      検証: 単体で green ×2、ESLLearningAssistantUITests 全8件＋ContentPhotoLibraryUITests 2件通過。
 - [x] 2026-07-11 本文タップ登録でタップ語と無関係な正規化提案が出る問題の対策
       [plan](docs/plans/archive/word-tap-normalize-wrong-word.md)
       報告事象（「form」を追加しようとしたら「heard→hear」の確認が出た）を調査。ダイアログの

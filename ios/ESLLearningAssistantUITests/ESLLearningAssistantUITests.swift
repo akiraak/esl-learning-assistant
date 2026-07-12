@@ -65,27 +65,50 @@ final class ESLLearningAssistantUITests: XCTestCase {
         XCTAssertTrue(pickPhotoButton.waitForExistence(timeout: 5))
         pickPhotoButton.tap()
 
-        // PHPicker is hosted out-of-process: its cells aren't queryable via `app`'s
-        // accessibility tree, so tap by screen coordinate instead of element lookup.
-        // dy はプライベートアクセス告知バナーの有無どちらでも写真グリッドの行に当たる位置にする
-        // （バナー表示時は先頭行、非表示時は2行目付近。0.6 はバナー表示時にグリッド下の余白を叩いて失敗する）
-        Thread.sleep(forTimeInterval: 3)
+        // PHPicker はプロセス外ホストだが、iOS 26 からは写真グリッドのセルが
+        // identifier "PXGGridLayout-Info" の Image 要素としてクエリできる
+        // （座標タップはプライバシー告知バナーの高さ変動でグリッド位置がずれ、空振りする）
+        let photoCell = app.images.matching(identifier: "PXGGridLayout-Info").element(boundBy: 2)
+        XCTAssertTrue(photoCell.waitForExistence(timeout: 10))
         attach(app, "06-photos-picker")
-        let photoCellCoordinate = app.windows.firstMatch.coordinate(
-            withNormalizedOffset: CGVector(dx: 0.5, dy: 0.33)
-        )
-        photoCellCoordinate.tap()
+        // リモート要素は hit point が計算できず element.tap() が Not hittable になるため、
+        // 要素 frame の中心を座標タップする
+        photoCell.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
 
-        // PHPickerはOS側UIのため、シミュレータのロケール依存のボタン（日本語/英語）を両方許容する
-        if app.navigationBars.buttons["追加"].waitForExistence(timeout: 3) {
-            app.navigationBars.buttons["追加"].tap()
-        } else if app.navigationBars.buttons["Add"].waitForExistence(timeout: 1) {
-            app.navigationBars.buttons["Add"].tap()
-        }
+        attach(app, "06b-picker-after-select")
+        confirmPhotoPickerSelection(app)
 
+        // 現行フローは追加後に詳細へ自動遷移せず、レッスン画面のコンテンツ一覧に写真行が載る
+        // （OCR/翻訳はバックグラウンド実行）。行をタップして写真詳細を開く
+        let photoRow = app.buttons["lessonPhotoRow"].firstMatch
+        XCTAssertTrue(photoRow.waitForExistence(timeout: 10))
+        attach(app, "07-lesson-content-with-photo")
+        photoRow.tap()
+
+        // OCR・翻訳は実バックエンド呼び出しのため完了までのタイムアウトは長めに取る
         let ocrHeading = app.staticTexts["OCR Result (English)"]
-        XCTAssertTrue(ocrHeading.waitForExistence(timeout: 10))
-        attach(app, "07-photo-detail")
+        XCTAssertTrue(ocrHeading.waitForExistence(timeout: 90))
+        attach(app, "08-photo-detail")
+    }
+
+    /// PHPicker の選択確定。iOS 26 では確定がナビバーの「追加/Add」ではなく右上の ✓ ボタン
+    /// （identifier 無し、label はロケール依存で 完了/Done）に変わった。✓ は写真を選択するまで
+    /// Disabled のため、「既知ラベルかつ enabled」のボタンが現れるのを待ってタップする。
+    /// 現れない場合はセル選択が効いていないので、調査用に accessibility ツリーを添付して失敗させる
+    private func confirmPhotoPickerSelection(_ app: XCUIApplication) {
+        let confirmButton = app.buttons.matching(
+            NSPredicate(format: "label IN %@ AND enabled == YES", ["完了", "Done", "追加", "Add"])
+        ).firstMatch
+        guard confirmButton.waitForExistence(timeout: 10) else {
+            let tree = XCTAttachment(string: app.debugDescription)
+            tree.name = "photo-picker-accessibility-tree"
+            tree.lifetime = .keepAlways
+            add(tree)
+            XCTFail("PHPicker の確定ボタン（完了/Done）が有効にならない（写真選択が登録されていない）")
+            return
+        }
+        // リモート要素の hit point 計算失敗（Not hittable）を避け、frame 中心を座標タップする
+        confirmButton.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
     }
 
     func testSameDayLessonOpensExistingInsteadOfCreating() throws {

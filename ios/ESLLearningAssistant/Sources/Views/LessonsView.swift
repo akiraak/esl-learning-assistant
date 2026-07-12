@@ -258,6 +258,8 @@ struct LessonsView: View {
                 PhotoRow(photo: photo)
             }
             .buttonStyle(.plain)
+            // 行タイトルはOCR完了で変わるため、UIテストはこの識別子で写真行を特定する
+            .accessibilityIdentifier("lessonPhotoRow")
             .swipeActions(edge: .trailing) {
                 Button(role: .destructive) {
                     photoPendingDeletion = photo
