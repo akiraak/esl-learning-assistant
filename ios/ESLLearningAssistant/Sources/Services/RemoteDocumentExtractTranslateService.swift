@@ -9,6 +9,8 @@ final class RemoteDocumentExtractTranslateService: DocumentExtractTranslateServi
         let fileBase64: String
         let mediaType: String
         let targetLanguage: String
+        /// アプリ表示名。管理画面のコンテンツファイル一覧での突き合わせ用（サーバはログに記録するのみ）
+        let title: String
     }
 
     private struct ResponseBody: Decodable {
@@ -50,7 +52,8 @@ final class RemoteDocumentExtractTranslateService: DocumentExtractTranslateServi
                 body: RequestBody(
                     fileBase64: fileData.base64EncodedString(),
                     mediaType: document.fileKind.mediaType,
-                    targetLanguage: targetLanguage
+                    targetLanguage: targetLanguage,
+                    title: document.title
                 ),
                 timeout: 180
             )

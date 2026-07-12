@@ -1,5 +1,15 @@
 # DONE
 
+- [x] 2026-07-12 管理画面コンテンツファイル一覧: Audio/Docs のタイトル表示＋画像サムネ
+      [plan](docs/plans/archive/admin-content-files-titles-and-thumbnails.md)
+      iOS が transcribe-translate / document-extract-translate に任意フィールド title
+      （AudioClip.title / Document.title）を送信し、backend が transcription_requests /
+      document_requests の title 列（起動時 ALTER TABLE で後付け）に記録。コンテンツ
+      ファイル一覧の audio / documents タブはファイル名で突き合わせてタイトル列を表示
+      （無い行は —）、images タブは再生列の代わりにサムネ列（lazy `<img>`、クリックで
+      原寸）。title は任意のため新旧アプリ/サーバのどの組合せでも互換。E2E で
+      タイトル表示・旧ファイルの —・サムネ 17 件・title 型エラー 400 を確認、
+      単体テスト追加（全39 green）、iOS はシミュレータビルド成功。
 - [x] 2026-07-12 管理画面コンテンツファイル一覧から TTS音声・単語イラストのタブを削除
       [plan](docs/plans/archive/admin-content-files-remove-tts-illustrations.md)
       専用ページ（/admin/tts・/admin/illustrations）と重複するため CONTENT_DIRS から

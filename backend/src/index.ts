@@ -204,7 +204,7 @@ const MAX_AUDIO_BYTES = 14 * 1024 * 1024;
 // 写真OCR（/api/ocr-translate）と同型: サーバキャッシュは持たず結果は iOS 側 AudioClip に保存、
 // ここでは料金・履歴を transcription_requests に記録する（管理画面表示は Phase 5）。
 app.post("/api/transcribe-translate", async (req, res) => {
-  const { audioBase64, mediaType, targetLanguage } = req.body ?? {};
+  const { audioBase64, mediaType, targetLanguage, title } = req.body ?? {};
 
   if (typeof audioBase64 !== "string" || !audioBase64) {
     logger.warn("transcribe-translate: rejected (audioBase64 is required)");
@@ -223,6 +223,13 @@ app.post("/api/transcribe-translate", async (req, res) => {
     res.status(400).json({ error: "targetLanguage is required" });
     return;
   }
+  if (title !== undefined && typeof title !== "string") {
+    logger.warn("transcribe-translate: rejected (title must be a string)");
+    res.status(400).json({ error: "title must be a string" });
+    return;
+  }
+  // アプリ側の表示名（AudioClip.title）。管理画面のコンテンツファイル一覧での突き合わせ用
+  const clipTitle = typeof title === "string" && title.trim() ? title.trim().slice(0, 200) : null;
 
   const audioBuffer = Buffer.from(audioBase64, "base64");
   if (audioBuffer.length === 0) {
@@ -266,6 +273,7 @@ app.post("/api/transcribe-translate", async (req, res) => {
 
     insertTranscriptionLog({
       audioFilename,
+      title: clipTitle,
       mediaType,
       targetLanguage,
       byteSize: audioBuffer.length,
@@ -302,6 +310,7 @@ app.post("/api/transcribe-translate", async (req, res) => {
 
     insertTranscriptionLog({
       audioFilename,
+      title: clipTitle,
       mediaType,
       targetLanguage,
       byteSize: audioBuffer.length,
@@ -338,7 +347,7 @@ app.post("/api/document-extract-translate", async (req, res) => {
     res.status(400).json({ error: validation.error });
     return;
   }
-  const { fileBuffer, mediaType, fileKind, targetLanguage } = validation.value;
+  const { fileBuffer, mediaType, fileKind, targetLanguage, title } = validation.value;
 
   const documentFilename = `${Date.now()}-${crypto.randomUUID()}.${fileKind}`;
   fs.writeFileSync(path.join(config.documentsDir, documentFilename), fileBuffer);
@@ -364,6 +373,7 @@ app.post("/api/document-extract-translate", async (req, res) => {
 
     insertDocumentLog({
       documentFilename,
+      title,
       mediaType,
       fileKind,
       targetLanguage,
@@ -403,6 +413,7 @@ app.post("/api/document-extract-translate", async (req, res) => {
 
     insertDocumentLog({
       documentFilename,
+      title,
       mediaType,
       fileKind,
       targetLanguage,

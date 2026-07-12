@@ -9,6 +9,8 @@ final class RemoteTranscriptionTranslationService: TranscriptionTranslationServi
         let audioBase64: String
         let mediaType: String
         let targetLanguage: String
+        /// アプリ表示名。管理画面のコンテンツファイル一覧での突き合わせ用（サーバはログに記録するのみ）
+        let title: String
     }
 
     private struct ResponseBody: Decodable {
@@ -75,7 +77,8 @@ final class RemoteTranscriptionTranslationService: TranscriptionTranslationServi
                 body: RequestBody(
                     audioBase64: audioData.base64EncodedString(),
                     mediaType: mediaType,
-                    targetLanguage: targetLanguage
+                    targetLanguage: targetLanguage,
+                    title: clip.title
                 ),
                 timeout: 180
             )

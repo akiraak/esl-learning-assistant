@@ -187,6 +187,7 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     created_at TEXT NOT NULL,
     audio_filename TEXT,
+    title TEXT,
     media_type TEXT NOT NULL,
     target_language TEXT NOT NULL,
     byte_size INTEGER NOT NULL DEFAULT 0,
@@ -215,6 +216,7 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     created_at TEXT NOT NULL,
     document_filename TEXT,
+    title TEXT,
     media_type TEXT NOT NULL,
     file_kind TEXT NOT NULL,
     target_language TEXT NOT NULL,
@@ -236,6 +238,17 @@ db.exec(`
     latency_ms INTEGER NOT NULL DEFAULT 0
   )
 `);
+
+// アプリ表示名の title 列は後付け（docs/plans/admin-content-files-titles-and-thumbnails.md）。
+// 既存 DB には無いため起動時にカラム有無を確認して補う（requests テーブルと同じ作法）。
+for (const tableWithTitle of ["transcription_requests", "document_requests"]) {
+  const columns = new Set(
+    (db.prepare(`PRAGMA table_info(${tableWithTitle})`).all() as { name: string }[]).map((c) => c.name)
+  );
+  if (!columns.has("title")) {
+    db.exec(`ALTER TABLE ${tableWithTitle} ADD COLUMN title TEXT`);
+  }
+}
 
 // 汎用のシステムイベントログ。料金チェック以外のイベントも今後ここに記録する。
 db.exec(`
@@ -670,6 +683,7 @@ export function getWritingFeedbackLog(id: number): WritingFeedbackLogRow | undef
 
 export interface TranscriptionLogInput {
   audioFilename: string | null;
+  title: string | null;
   mediaType: string;
   targetLanguage: string;
   byteSize: number;
@@ -691,13 +705,13 @@ export interface TranscriptionLogInput {
 
 const insertTranscriptionStmt = db.prepare(`
   INSERT INTO transcription_requests (
-    created_at, audio_filename, media_type, target_language, byte_size,
+    created_at, audio_filename, title, media_type, target_language, byte_size,
     english_text, translated_text,
     transcription_model, transcription_input_tokens, transcription_output_tokens,
     translate_model, translate_input_tokens, translate_output_tokens,
     transcription_cost_usd, translate_cost_usd, cost_usd, status, error_message, latency_ms
   ) VALUES (
-    @createdAt, @audioFilename, @mediaType, @targetLanguage, @byteSize,
+    @createdAt, @audioFilename, @title, @mediaType, @targetLanguage, @byteSize,
     @englishText, @translatedText,
     @transcriptionModel, @transcriptionInputTokens, @transcriptionOutputTokens,
     @translateModel, @translateInputTokens, @translateOutputTokens,
@@ -709,6 +723,7 @@ export function insertTranscriptionLog(input: TranscriptionLogInput): void {
   insertTranscriptionStmt.run({
     createdAt: new Date().toISOString(),
     audioFilename: input.audioFilename,
+    title: input.title,
     mediaType: input.mediaType,
     targetLanguage: input.targetLanguage,
     byteSize: input.byteSize,
@@ -733,6 +748,7 @@ export interface TranscriptionLogRow {
   id: number;
   created_at: string;
   audio_filename: string | null;
+  title: string | null;
   media_type: string;
   target_language: string;
   byte_size: number;
@@ -768,8 +784,19 @@ export function deleteTranscriptionLog(id: number): void {
   db.prepare("DELETE FROM transcription_requests WHERE id = ?").run(id);
 }
 
+/// 管理画面コンテンツファイル一覧用: 保存ファイル名 → アプリ側タイトル（title 未記録の行は除外）
+export function getAudioTitlesByFilename(): Map<string, string> {
+  const rows = db
+    .prepare(
+      "SELECT audio_filename AS filename, title FROM transcription_requests WHERE audio_filename IS NOT NULL AND title IS NOT NULL AND title != ''"
+    )
+    .all() as Array<{ filename: string; title: string }>;
+  return new Map(rows.map((row) => [row.filename, row.title]));
+}
+
 export interface DocumentLogInput {
   documentFilename: string | null;
+  title: string | null;
   mediaType: string;
   fileKind: string;
   targetLanguage: string;
@@ -793,13 +820,13 @@ export interface DocumentLogInput {
 
 const insertDocumentStmt = db.prepare(`
   INSERT INTO document_requests (
-    created_at, document_filename, media_type, file_kind, target_language, byte_size,
+    created_at, document_filename, title, media_type, file_kind, target_language, byte_size,
     extraction_method, extracted_text, translated_text,
     extract_model, extract_input_tokens, extract_output_tokens,
     translate_model, translate_input_tokens, translate_output_tokens,
     extract_cost_usd, translate_cost_usd, cost_usd, status, error_message, latency_ms
   ) VALUES (
-    @createdAt, @documentFilename, @mediaType, @fileKind, @targetLanguage, @byteSize,
+    @createdAt, @documentFilename, @title, @mediaType, @fileKind, @targetLanguage, @byteSize,
     @extractionMethod, @extractedText, @translatedText,
     @extractModel, @extractInputTokens, @extractOutputTokens,
     @translateModel, @translateInputTokens, @translateOutputTokens,
@@ -811,6 +838,7 @@ export function insertDocumentLog(input: DocumentLogInput): void {
   insertDocumentStmt.run({
     createdAt: new Date().toISOString(),
     documentFilename: input.documentFilename,
+    title: input.title,
     mediaType: input.mediaType,
     fileKind: input.fileKind,
     targetLanguage: input.targetLanguage,
@@ -837,6 +865,7 @@ export interface DocumentLogRow {
   id: number;
   created_at: string;
   document_filename: string | null;
+  title: string | null;
   media_type: string;
   file_kind: string;
   target_language: string;
@@ -872,6 +901,16 @@ export function getDocumentLog(id: number): DocumentLogRow | undefined {
 
 export function deleteDocumentLog(id: number): void {
   db.prepare("DELETE FROM document_requests WHERE id = ?").run(id);
+}
+
+/// 管理画面コンテンツファイル一覧用: 保存ファイル名 → アプリ側タイトル（title 未記録の行は除外）
+export function getDocumentTitlesByFilename(): Map<string, string> {
+  const rows = db
+    .prepare(
+      "SELECT document_filename AS filename, title FROM document_requests WHERE document_filename IS NOT NULL AND title IS NOT NULL AND title != ''"
+    )
+    .all() as Array<{ filename: string; title: string }>;
+  return new Map(rows.map((row) => [row.filename, row.title]));
 }
 
 export interface StoredWordRow {

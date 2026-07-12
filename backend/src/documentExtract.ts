@@ -198,6 +198,8 @@ export interface DocumentExtractRequestFields {
   mediaType: string;
   fileKind: string;
   targetLanguage: string;
+  /// アプリ側の表示名（Document.title）。任意。管理画面のコンテンツファイル一覧での突き合わせ用
+  title: string | null;
 }
 
 export type DocumentExtractRequestValidation =
@@ -205,10 +207,11 @@ export type DocumentExtractRequestValidation =
   | { ok: false; error: string };
 
 export function validateDocumentExtractRequest(body: unknown): DocumentExtractRequestValidation {
-  const { fileBase64, mediaType, targetLanguage } = (body ?? {}) as {
+  const { fileBase64, mediaType, targetLanguage, title } = (body ?? {}) as {
     fileBase64?: unknown;
     mediaType?: unknown;
     targetLanguage?: unknown;
+    title?: unknown;
   };
 
   if (typeof fileBase64 !== "string" || !fileBase64) {
@@ -222,6 +225,9 @@ export function validateDocumentExtractRequest(body: unknown): DocumentExtractRe
   }
   if (typeof targetLanguage !== "string" || !targetLanguage) {
     return { ok: false, error: "targetLanguage is required" };
+  }
+  if (title !== undefined && typeof title !== "string") {
+    return { ok: false, error: "title must be a string" };
   }
 
   const fileBuffer = Buffer.from(fileBase64, "base64");
@@ -242,6 +248,7 @@ export function validateDocumentExtractRequest(body: unknown): DocumentExtractRe
       mediaType,
       fileKind: SUPPORTED_DOCUMENT_MIME_EXTENSIONS[mediaType],
       targetLanguage,
+      title: typeof title === "string" && title.trim() ? title.trim().slice(0, 200) : null,
     },
   };
 }

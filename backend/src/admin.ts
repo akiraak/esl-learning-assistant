@@ -14,7 +14,9 @@ import {
   deleteTtsAudio,
   deleteWordIllustration,
   DocumentLogRow,
+  getAudioTitlesByFilename,
   getDocumentLog,
+  getDocumentTitlesByFilename,
   getPricingState,
   getRequestLog,
   getStoredNormalizationById,
@@ -2303,22 +2305,43 @@ adminRouter.get("/content-files", (req, res) => {
     return `<a class="dir-tab${entry.key === active.key ? " active" : ""}" href="/admin/content-files?dir=${entry.key}">${entry.label} <span class="cnt">${count}</span></a>`;
   }).join("\n");
 
+  // audio / documents はアプリ側タイトル（リクエスト時に受信しログに記録）をファイル名で突き合わせて表示。
+  // 旧アプリからの送信や title 追加前のファイルはログに無いため — 表示になる。
+  const titlesByFilename =
+    active.key === "audio" ? getAudioTitlesByFilename() : active.key === "documents" ? getDocumentTitlesByFilename() : null;
+
   const tableRows = files
     .map((file) => {
-      const player = AUDIO_FILE_EXTENSIONS.has(path.extname(file.name).toLowerCase())
-        ? `<audio controls preload="none" src="${contentFileUrl(active.key, file.name, false)}" style="width:220px;height:32px;"></audio>`
-        : `<span class="faint">—</span>`;
+      const title = titlesByFilename?.get(file.name);
+      const titleCell = titlesByFilename ? `<td>${title ? escapeHtml(title) : '<span class="faint">—</span>'}</td>` : "";
+      const inlineUrl = contentFileUrl(active.key, file.name, false);
+      const preview =
+        active.key === "images"
+          ? `<a href="${inlineUrl}" target="_blank"><img src="${inlineUrl}" alt="${escapeHtml(file.name)}" style="max-width:96px;max-height:64px;border-radius:4px;display:block;" loading="lazy"></a>`
+          : AUDIO_FILE_EXTENSIONS.has(path.extname(file.name).toLowerCase())
+            ? `<audio controls preload="none" src="${inlineUrl}" style="width:220px;height:32px;"></audio>`
+            : `<span class="faint">—</span>`;
       return `
         <tr class="log-row">
+          ${titleCell}
           <td class="mono">${escapeHtml(file.name)}</td>
           <td class="mono dim">${(file.size / 1024).toFixed(0)} KB</td>
           <td class="mono dim">${escapeHtml(formatSeattleTime(file.mtimeIso))}</td>
-          <td>${player}</td>
+          <td>${preview}</td>
           <td><a href="${contentFileUrl(active.key, file.name, true)}">DL</a></td>
         </tr>
       `;
     })
     .join("\n");
+
+  const headerCells = [
+    ...(titlesByFilename ? ["タイトル"] : []),
+    "ファイル名",
+    "サイズ",
+    "更新日時",
+    active.key === "images" ? "サムネ" : "再生",
+    "DL",
+  ];
 
   res.type("html").send(
     renderPage(
@@ -2335,9 +2358,9 @@ adminRouter.get("/content-files", (req, res) => {
         <div class="card">
           <table>
             <thead>
-              <tr><th>ファイル名</th><th>サイズ</th><th>更新日時</th><th>再生</th><th>DL</th></tr>
+              <tr>${headerCells.map((label) => `<th>${label}</th>`).join("")}</tr>
             </thead>
-            <tbody>${tableRows || '<tr><td colspan="5" class="faint" style="text-align:center;padding:24px;">（ファイルなし）</td></tr>'}</tbody>
+            <tbody>${tableRows || `<tr><td colspan="${headerCells.length}" class="faint" style="text-align:center;padding:24px;">（ファイルなし）</td></tr>`}</tbody>
           </table>
         </div>
       `,

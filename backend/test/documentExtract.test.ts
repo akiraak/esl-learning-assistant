@@ -130,7 +130,32 @@ test("validateDocumentExtractRequest: 正常系は後続処理に必要な値を
     assert.equal(r.value.fileKind, "pdf");
     assert.equal(r.value.targetLanguage, "ja");
     assert.deepEqual(r.value.fileBuffer, buf);
+    assert.equal(r.value.title, null);
   }
+});
+
+test("validateDocumentExtractRequest: title は任意（trim して受理、空や未指定は null、string 以外は拒否）", () => {
+  const base = {
+    fileBase64: Buffer.from("%PDF-1.4 hello").toString("base64"),
+    mediaType: PDF_MEDIA_TYPE,
+    targetLanguage: "ja",
+  };
+
+  const withTitle = validateDocumentExtractRequest({ ...base, title: "  英語教材.pdf  " });
+  assert.equal(withTitle.ok, true);
+  if (withTitle.ok) assert.equal(withTitle.value.title, "英語教材.pdf");
+
+  const emptyTitle = validateDocumentExtractRequest({ ...base, title: "   " });
+  assert.equal(emptyTitle.ok, true);
+  if (emptyTitle.ok) assert.equal(emptyTitle.value.title, null);
+
+  const longTitle = validateDocumentExtractRequest({ ...base, title: "a".repeat(300) });
+  assert.equal(longTitle.ok, true);
+  if (longTitle.ok) assert.equal(longTitle.value.title?.length, 200);
+
+  const badTitle = validateDocumentExtractRequest({ ...base, title: 123 });
+  assert.equal(badTitle.ok, false);
+  if (!badTitle.ok) assert.match(badTitle.error, /title/);
 });
 
 // --- 抽出（ライブラリ経路・AI 不使用） ---------------------------------------
