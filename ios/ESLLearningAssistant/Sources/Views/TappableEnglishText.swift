@@ -223,8 +223,9 @@ struct WordRegistrationModifier: ViewModifier {
 
     /// 訂正候補（原形/正しい綴り）が出たときの確認ダイアログ用。nil でダイアログ非表示。
     @State private var pendingConfirmation: WordNormalization?
-    /// 正規化の非同期待ちフラグ。true の間は追加タップを無視して二重登録・多重ダイアログを防ぐ。
-    @State private var isNormalizing = false
+    /// 正規化待ち中の語。非 nil の間は追加タップで登録処理を重ねない（二重登録・多重ダイアログ防止）。
+    /// どの語のリクエストか（誤タップ・遅延ダイアログの誤帰属）をトーストで示すため語そのものを持つ。
+    @State private var normalizingWord: String?
     @State private var navigateToWord: WordRoute?
     @State private var feedback: String?
 
@@ -292,15 +293,22 @@ struct WordRegistrationModifier: ViewModifier {
     private func handleTap(_ rawText: String, context: String?) {
         let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
-        // 正規化待ち中の追加タップは無視（二重登録・多重ダイアログを防ぐ）
-        guard !isNormalizing else { return }
+        // 正規化待ち中の追加タップは登録処理を重ねない（二重登録・多重ダイアログを防ぐ）。
+        // 黙殺すると、後から出る確認ダイアログが「いま触った語への応答」に見えてしまうため、
+        // 処理中の語をトーストで知らせて誤帰属を防ぐ。
+        if let normalizingWord {
+            feedback = "Checking “\(normalizingWord)”…"
+            return
+        }
         // 入力語そのものが既に登録済みなら正規化せず即詳細へ
         if let existing = existingWord(matching: text) {
             navigate(to: existing)
             return
         }
 
-        isNormalizing = true
+        // どの語のリクエストかを即時に可視化する（誤タップにもすぐ気づける）
+        normalizingWord = text
+        feedback = "Checking “\(text)”…"
         let service = RemoteWordNormalizeService()
         Task {
             let decision = await WordNormalizationFlow.decide(
@@ -309,7 +317,7 @@ struct WordRegistrationModifier: ViewModifier {
                 context: context,
                 using: service
             )
-            isNormalizing = false
+            normalizingWord = nil
             switch decision {
             case .registerImmediately(let resolved):
                 register(resolved)
@@ -318,6 +326,8 @@ struct WordRegistrationModifier: ViewModifier {
                 if let existing = existingWord(matching: normalization.effectiveLemma) {
                     navigate(to: existing)
                 } else {
+                    // 「Checking…」トーストは片付けてからダイアログを出す（下端で重なるため）
+                    feedback = nil
                     pendingConfirmation = normalization
                 }
             }

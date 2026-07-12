@@ -1,5 +1,21 @@
 # DONE
 
+- [x] 2026-07-11 本文タップ登録でタップ語と無関係な正規化提案が出る問題の対策
+      [plan](docs/plans/archive/word-tap-normalize-wrong-word.md)
+      報告事象（「form」を追加しようとしたら「heard→hear」の確認が出た）を調査。ダイアログの
+      Keep はサーバが受け取った入力語のエコーであることから、アプリは実際には “Heard” を
+      リクエストしていたと特定（誤タップ or 正規化待ち中のタップ黙殺による遅延ダイアログの誤帰属。
+      lemma “Hear” の大文字も文頭大文字入力に整合）。あわせて、文脈付き正規化がタップ語と
+      無関係な提案を返す実バグを再現（「form」タップ→目的語なのに phrase_part で「fill out」提案）。
+      Phase 1 (backend): プロンプト強化（対象はタップ語のみ・phrase_part は構成語限定・
+      inflected/misspelled/phrase_part の lemma は固有名詞以外小文字・reason に入力語を引用）＋
+      文脈付き結果の検証 `isContextNormalizationConsistent`（phrase_part=lemma にタップ語を含む /
+      inflected・misspelled=reason にタップ語を含む）。違反時は文脈なしで1回だけ再正規化して採用。
+      Phase 2 (iOS): タップ時に「Checking “語”…」トーストを即表示し、正規化待ち中の追加タップも
+      黙殺せず処理中の語をトーストで再表示（どの語へのダイアログかの誤帰属を防ぐ）。
+      検証: backend 単体27件・iOS 単体120件・実モデルで再現ケース修正と正常系
+      （up→look up / care→take care of / Heard→hear 小文字）を確認、シミュレータ E2E で
+      トースト表示（未キャッシュ語）と確認ダイアログ（キャッシュ語）を実機操作で確認。
 - [x] 2026-07-11 Audio再生にループ機能
       [plan](docs/plans/archive/audio-playback-loop.md)
       `TTSPlaybackService` に `isLoopEnabled`（AVAudioPlayer.numberOfLoops = -1/0、再生中も即時反映、
