@@ -23,11 +23,18 @@ struct WordsView: View {
                             todayReviewCard
                         }
                         // 単語本体の削除は詳細画面の Delete Word ボタンに集約する（スワイプ削除なし）
-                        ForEach(filteredWords) { word in
-                            NavigationLink {
-                                WordDetailView(word: word)
-                            } label: {
-                                WordRow(word: word)
+                        Section {
+                            ForEach(filteredWords) { word in
+                                NavigationLink {
+                                    WordDetailView(word: word)
+                                } label: {
+                                    WordRow(word: word)
+                                }
+                            }
+                        } header: {
+                            // 登録総数の見出し。検索中は絞り込み結果の件数と誤読されるため出さない
+                            if searchText.isEmpty {
+                                TappableEnglishText(text: "Words (\(words.count))")
                             }
                         }
                     }

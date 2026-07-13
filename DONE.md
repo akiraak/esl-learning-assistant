@@ -1,5 +1,11 @@
 # DONE
 
+- [x] 2026-07-13 Words タブに登録単語数を表示
+      [plan](docs/plans/archive/words-tab-word-count.md)
+      WordsView の単語一覧を Section で包み、見出しに登録総数「Words (N)」を表示
+      （レッスン詳細の単語セクションと同じ TappableEnglishText パターン）。検索中は
+      絞り込み結果の件数と誤読されるため見出しを出さない（復習カードと同じ扱い）。
+      UIテスト WordsCountUITests（追加ごとに Words (1)→(2) と更新）を追加し green。
 - [x] 2026-07-13 Lesson画面からのコンテンツ追加でAudioをタップしても反応しない不具合を修正
       [plan](docs/plans/archive/lesson-add-content-audio-importer-fix.md)
       原因は AddContentTypeView で同一 View に `.fileImporter` を2つ（Audio/Document）
