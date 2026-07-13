@@ -1,6 +1,6 @@
 import path from "path";
 import crypto from "crypto";
-import { Router } from "express";
+import { Router, type Response } from "express";
 import { marked } from "marked";
 import fs from "fs";
 import {
@@ -66,7 +66,7 @@ import { generateIllustration, ILLUSTRATION_MODEL } from "./illustration";
 import { DEFAULT_IMAGE_PRICING, DEFAULT_PRICING, DEFAULT_TTS_PRICING, estimateCostUsd, getCurrentPricing, providerLabel, type Provider } from "./pricing";
 import { fetchAndApplyPricing, fetchAndApplyTtsPricing } from "./pricingSync";
 import { logger } from "./logger";
-import { transcriptParagraphsHtml } from "./transcriptPrint";
+import { renderPrintPageHtml, transcriptParagraphsHtml } from "./printView";
 import {
   pregenerateQuizAudio,
   QUIZ_TTS_MODEL,
@@ -368,9 +368,9 @@ adminRouter.get("/logs/:id", (req, res) => {
         ${imageBlock}
       </div>
       <div class="detail-text-col">
-        <h2>OCR結果</h2>
+        <h2>OCR結果 ${log.ocr_text ? `<a class="print-link" href="/admin/logs/${log.id}/text" target="_blank">印刷用表示</a>` : ""}</h2>
         <div class="markdown-block">${renderMarkdown(log.ocr_text)}</div>
-        <h2>翻訳結果（${escapeHtml(log.target_language)}）</h2>
+        <h2>翻訳結果（${escapeHtml(log.target_language)}） ${log.translated_text ? `<a class="print-link" href="/admin/logs/${log.id}/translation" target="_blank">印刷用表示</a>` : ""}</h2>
         <div class="markdown-block">${renderMarkdown(log.translated_text)}</div>
       </div>
     </div>
@@ -391,11 +391,44 @@ adminRouter.get("/logs/:id", (req, res) => {
         .detail-image { max-width: 480px; max-height: 640px; border: 1px solid #2A3644; border-radius: 4px; }
         .detail-text-col { flex: 1 1 480px; min-width: 320px; }
         .detail-text-col .markdown-block { font-size: 16px; }
+        .print-link { font-size: 12px; font-weight: 400; margin-left: 6px; }
       `,
       body,
       "ocr"
     )
   );
+});
+
+// 写真OCRの英文・訳文の印刷用表示（docs/plans/admin-print-views-photo-document-translation.md）。
+// OCR結果は Markdown（詳細ページと同じ renderMarkdown）で組む。
+function sendPhotoPrintPage(res: Response, id: number, kind: "text" | "translation"): void {
+  const log = getRequestLog(id);
+  if (!log) {
+    res.status(404).type("html").send(
+      renderPage("ログが見つかりません", "", '<p>指定されたログは存在しません。</p><p><a href="/admin">← 一覧に戻る</a></p>')
+    );
+    return;
+  }
+  const isTranslation = kind === "translation";
+  const text = isTranslation ? log.translated_text : log.ocr_text;
+  res.type("html").send(
+    renderPrintPageHtml({
+      lang: isTranslation ? log.target_language : "en",
+      title: `Photo OCR #${log.id}`,
+      meta: `#${log.id} ・ ${formatSeattleTime(log.created_at)}${isTranslation ? ` ・ 訳 (${log.target_language})` : ""}`,
+      bodyHtml: text ? renderMarkdown(text) : `<p class="no-text">(このログには${isTranslation ? "訳文" : "英文"}がありません)</p>`,
+      backHref: `/admin/logs/${log.id}`,
+      backLabel: "← 詳細に戻る",
+    })
+  );
+}
+
+adminRouter.get("/logs/:id/text", (req, res) => {
+  sendPhotoPrintPage(res, Number(req.params.id), "text");
+});
+
+adminRouter.get("/logs/:id/translation", (req, res) => {
+  sendPhotoPrintPage(res, Number(req.params.id), "translation");
 });
 
 adminRouter.get("/logs/:id/image", (req, res) => {
@@ -1798,7 +1831,10 @@ adminRouter.get("/transcriptions", (_req, res) => {
             ${transcriptPreview(log.english_text)}
             ${log.english_text ? `<div style="margin-top:4px;"><a href="/admin/transcriptions/${log.id}/text" target="_blank">印刷用表示</a></div>` : ""}
           </td>
-          <td style="min-width:180px;max-width:280px;">${transcriptPreview(log.translated_text)}</td>
+          <td style="min-width:180px;max-width:280px;">
+            ${transcriptPreview(log.translated_text)}
+            ${log.translated_text ? `<div style="margin-top:4px;"><a href="/admin/transcriptions/${log.id}/translation" target="_blank">印刷用表示</a></div>` : ""}
+          </td>
           <td>
             文字起こし: <strong>${escapeHtml(log.transcription_model)}</strong> <span class="dim">(in:${log.transcription_input_tokens} / out:${log.transcription_output_tokens})</span><br>
             翻訳: ${log.translate_model ? `${escapeHtml(log.translate_model)} <span class="dim">(in:${log.translate_input_tokens} / out:${log.translate_output_tokens})</span>` : "(なし)"}
@@ -1860,11 +1896,10 @@ adminRouter.get("/transcriptions/:id/audio", (req, res) => {
   res.sendFile(path.join(config.audioDir, row.audio_filename));
 });
 
-// 文字起こし英文の印刷用表示（docs/plans/admin-transcription-print-view.md）。
-// 紙に印刷して読む用途のため、管理画面のダークテーマ・サイドバー（renderPage）は使わず
-// 白地・serif・広め行間の単独ページとして描画する。ツールバーは @media print で消える。
-adminRouter.get("/transcriptions/:id/text", (req, res) => {
-  const id = Number(req.params.id);
+// 文字起こし英文・訳文の印刷用表示（docs/plans/admin-transcription-print-view.md /
+// admin-print-views-photo-document-translation.md）。本文は空行区切りの平文なので
+// transcriptParagraphsHtml で段落化する。
+function sendTranscriptionPrintPage(res: Response, id: number, kind: "text" | "translation"): void {
   const row = getTranscriptionLog(id);
   if (!row) {
     res.status(404).type("html").send(
@@ -1872,64 +1907,25 @@ adminRouter.get("/transcriptions/:id/text", (req, res) => {
     );
     return;
   }
+  const isTranslation = kind === "translation";
+  const text = isTranslation ? row.translated_text : row.english_text;
+  res.type("html").send(
+    renderPrintPageHtml({
+      lang: isTranslation ? row.target_language : "en",
+      title: row.title?.trim() || `Transcription #${row.id}`,
+      meta: `#${row.id} ・ ${formatSeattleTime(row.created_at)}${isTranslation ? ` ・ 訳 (${row.target_language})` : ""}`,
+      bodyHtml: text ? transcriptParagraphsHtml(text) : `<p class="no-text">(このログには${isTranslation ? "訳文" : "英文"}がありません)</p>`,
+      backHref: "/admin/transcriptions",
+    })
+  );
+}
 
-  const title = row.title?.trim() || `Transcription #${row.id}`;
-  const body = row.english_text
-    ? transcriptParagraphsHtml(row.english_text)
-    : '<p class="no-text">(このログには英文がありません)</p>';
+adminRouter.get("/transcriptions/:id/text", (req, res) => {
+  sendTranscriptionPrintPage(res, Number(req.params.id), "text");
+});
 
-  res.type("html").send(`<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${escapeHtml(title)}</title>
-  <style>
-    :root { color-scheme: light; }
-    body { margin: 0; background: #fff; color: #111; }
-    .toolbar {
-      display: flex; align-items: center; gap: 16px; padding: 10px 24px;
-      background: #F3F4F6; border-bottom: 1px solid #D1D5DB;
-      font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Segoe UI", sans-serif; font-size: 13px;
-    }
-    .toolbar a { color: #1F6FEB; text-decoration: none; }
-    .toolbar a:hover { text-decoration: underline; }
-    .toolbar button {
-      font: inherit; font-weight: 600; padding: 5px 16px; border-radius: 6px; cursor: pointer;
-      background: #1F6FEB; color: #fff; border: none;
-    }
-    article {
-      max-width: 42em; margin: 0 auto; padding: 32px 32px 64px;
-      font-family: Georgia, "Times New Roman", serif;
-    }
-    h1 { font-size: 22px; font-weight: 700; margin: 0 0 4px; }
-    .meta {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      font-size: 12px; color: #6B7280; margin: 0 0 28px;
-    }
-    article p { font-size: 16px; line-height: 1.9; margin: 0 0 1.1em; text-align: justify; }
-    .no-text { color: #6B7280; }
-    @page { margin: 20mm; }
-    @media print {
-      .toolbar { display: none; }
-      article { max-width: none; padding: 0; }
-      h1 { font-size: 16pt; }
-      article p { font-size: 12pt; }
-    }
-  </style>
-</head>
-<body>
-  <div class="toolbar">
-    <a href="/admin/transcriptions">← 一覧に戻る</a>
-    <button type="button" onclick="window.print()">印刷</button>
-  </div>
-  <article>
-    <h1>${escapeHtml(title)}</h1>
-    <div class="meta">#${row.id} ・ ${escapeHtml(formatSeattleTime(row.created_at))}</div>
-    ${body}
-  </article>
-</body>
-</html>`);
+adminRouter.get("/transcriptions/:id/translation", (req, res) => {
+  sendTranscriptionPrintPage(res, Number(req.params.id), "translation");
 });
 
 adminRouter.post("/transcriptions/:id/delete", (req, res) => {
@@ -2006,8 +2002,14 @@ adminRouter.get("/documents", (_req, res) => {
             ${fileCell}
             <div class="faint" style="margin-top:4px;">${(log.byte_size / 1024).toFixed(0)} KB${method ? ` / ${escapeHtml(method)}` : ""}</div>
           </td>
-          <td style="max-width:280px;">${transcriptPreview(log.extracted_text)}</td>
-          <td style="max-width:280px;">${transcriptPreview(log.translated_text)}</td>
+          <td style="min-width:180px;max-width:280px;">
+            ${transcriptPreview(log.extracted_text)}
+            ${log.extracted_text ? `<div style="margin-top:4px;"><a href="/admin/documents/${log.id}/text" target="_blank">印刷用表示</a></div>` : ""}
+          </td>
+          <td style="min-width:180px;max-width:280px;">
+            ${transcriptPreview(log.translated_text)}
+            ${log.translated_text ? `<div style="margin-top:4px;"><a href="/admin/documents/${log.id}/translation" target="_blank">印刷用表示</a></div>` : ""}
+          </td>
           <td>
             抽出: ${documentExtractSummary(log)}<br>
             翻訳: ${documentTranslateSummary(log)}
@@ -2067,6 +2069,38 @@ adminRouter.get("/documents/:id/file", (req, res) => {
     return;
   }
   res.sendFile(path.join(config.documentsDir, row.document_filename));
+});
+
+// ドキュメント英文・訳文の印刷用表示（docs/plans/admin-print-views-photo-document-translation.md）。
+// 抽出結果はスキャンOCR時に Markdown を含むため renderMarkdown で組む
+// （テキスト層PDF・DOCX の平文もそのまま段落として描画される）。
+function sendDocumentPrintPage(res: Response, id: number, kind: "text" | "translation"): void {
+  const row = getDocumentLog(id);
+  if (!row) {
+    res.status(404).type("html").send(
+      renderPage("ドキュメントログが見つかりません", "", '<p>指定されたドキュメントログは存在しません。</p><p><a href="/admin/documents">← 一覧に戻る</a></p>')
+    );
+    return;
+  }
+  const isTranslation = kind === "translation";
+  const text = isTranslation ? row.translated_text : row.extracted_text;
+  res.type("html").send(
+    renderPrintPageHtml({
+      lang: isTranslation ? row.target_language : "en",
+      title: row.title?.trim() || `Document #${row.id}`,
+      meta: `#${row.id} ・ ${formatSeattleTime(row.created_at)}${isTranslation ? ` ・ 訳 (${row.target_language})` : ""}`,
+      bodyHtml: text ? renderMarkdown(text) : `<p class="no-text">(このログには${isTranslation ? "訳文" : "英文"}がありません)</p>`,
+      backHref: "/admin/documents",
+    })
+  );
+}
+
+adminRouter.get("/documents/:id/text", (req, res) => {
+  sendDocumentPrintPage(res, Number(req.params.id), "text");
+});
+
+adminRouter.get("/documents/:id/translation", (req, res) => {
+  sendDocumentPrintPage(res, Number(req.params.id), "translation");
 });
 
 adminRouter.post("/documents/:id/delete", (req, res) => {

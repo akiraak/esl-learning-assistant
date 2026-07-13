@@ -1,5 +1,17 @@
 # DONE
 
+- [x] 2026-07-13 Photo の文字起こし英文と Photo / Audio / Document の翻訳も見やすく印刷できるように
+      [plan](docs/plans/archive/admin-print-views-photo-document-translation.md)
+      transcriptPrint.ts を printView.ts にリネームし、印刷ページ全体を組む純関数
+      renderPrintPageHtml に共通化（lang・タイトル・meta・本文・戻りリンク可変、
+      Markdown 由来本文用の見出し/箇条書きスタイルと和文明朝の serif スタックを追加）。
+      ルート追加: /admin/logs/:id/text・/translation（Photo、renderMarkdown）、
+      /admin/transcriptions/:id/translation（平文段落化）、/admin/documents/:id/text・
+      /translation（renderMarkdown）。対称性のため Document 英文も追加。導線は
+      Photo 詳細の見出し脇＋Audio/Document 一覧のセル内リンク。翻訳ページは meta に
+      「訳 (ja)」を付記し html lang も切替。単体テスト2件追加（全45 green）、
+      E2E で5ルート＋404＋リンクを確認、Document 訳の print-to-pdf で
+      Markdown 見出し・リストの印刷組版を確認。
 - [x] 2026-07-13 管理画面コンテンツファイルの音声に表示しているタイトルを文字起こしログ一覧にも表示
       [plan](docs/plans/archive/admin-transcriptions-title-column.md)
       /admin/transcriptions の一覧に「タイトル」列を追加（日時の次）。行自体が
