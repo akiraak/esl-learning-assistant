@@ -48,6 +48,8 @@ test("renderPrintPageHtml: lang・タイトル・meta・本文・戻りリンク
   assert.match(html, /<a href="\/admin\/transcriptions">← 一覧に戻る<\/a>/);
   // 印刷時にツールバーを消すスタイルが入っていること
   assert.match(html, /@media print[\s\S]*\.toolbar \{ display: none; \}/);
+  // 印刷時のみのページ番号（@page マージンボックス）が入っていること
+  assert.match(html, /@bottom-center[\s\S]*counter\(page\) " \/ " counter\(pages\)/);
 });
 
 test("renderPrintPageHtml: タイトル・meta はエスケープし、本文HTMLはそのまま通す", () => {

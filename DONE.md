@@ -1,5 +1,13 @@
 # DONE
 
+- [x] 2026-07-13 印刷用のページに印刷時だけページ番号が表示されるようにする
+      [plan](docs/plans/archive/print-view-page-numbers.md)
+      printView.ts の @page ルールにマージンボックス @bottom-center を追加し、
+      各ページ下部中央に「n / 総ページ数」（counter(page) / counter(pages)）を表示。
+      @page はページドメディアにのみ適用されるため画面には出ない。マージンボックスは
+      Chrome 131+ 対応（未対応ブラウザは番号が出ないだけで本文に影響なし）。
+      単体テストにCSS存在の検証を追加（全45 green）、print-to-pdf で5ページ全てに
+      番号表示・画面スクリーンショットで非表示を確認。
 - [x] 2026-07-13 Photo の文字起こし英文と Photo / Audio / Document の翻訳も見やすく印刷できるように
       [plan](docs/plans/archive/admin-print-views-photo-document-translation.md)
       transcriptPrint.ts を printView.ts にリネームし、印刷ページ全体を組む純関数

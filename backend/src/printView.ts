@@ -82,7 +82,17 @@ export function renderPrintPageHtml(page: PrintPage): string {
     .body hr { border: none; border-top: 1px solid #D1D5DB; margin: 1.5em 0; }
     .body code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.9em; }
     .no-text { color: #6B7280; }
-    @page { margin: 20mm; }
+    /* ページ番号はページドメディア（印刷/PDF）にのみ描画され、画面には出ない。
+       マージンボックスは Chrome 131+ 対応。未対応ブラウザでは番号が出ないだけ。 */
+    @page {
+      margin: 20mm;
+      @bottom-center {
+        content: counter(page) " / " counter(pages);
+        font-family: Georgia, "Hiragino Mincho ProN", "Yu Mincho", "Times New Roman", serif;
+        font-size: 10pt;
+        color: #6B7280;
+      }
+    }
     @media print {
       .toolbar { display: none; }
       article { max-width: none; padding: 0; }
