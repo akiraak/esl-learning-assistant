@@ -66,6 +66,7 @@ import { generateIllustration, ILLUSTRATION_MODEL } from "./illustration";
 import { DEFAULT_IMAGE_PRICING, DEFAULT_PRICING, DEFAULT_TTS_PRICING, estimateCostUsd, getCurrentPricing, providerLabel, type Provider } from "./pricing";
 import { fetchAndApplyPricing, fetchAndApplyTtsPricing } from "./pricingSync";
 import { logger } from "./logger";
+import { transcriptParagraphsHtml } from "./transcriptPrint";
 import {
   pregenerateQuizAudio,
   QUIZ_TTS_MODEL,
@@ -1792,7 +1793,10 @@ adminRouter.get("/transcriptions", (_req, res) => {
             ${player}
             <div class="faint" style="margin-top:4px;">${escapeHtml(log.media_type)} / ${(log.byte_size / 1024).toFixed(0)} KB</div>
           </td>
-          <td style="max-width:280px;">${transcriptPreview(log.english_text)}</td>
+          <td style="max-width:280px;">
+            ${transcriptPreview(log.english_text)}
+            ${log.english_text ? `<div style="margin-top:4px;"><a href="/admin/transcriptions/${log.id}/text" target="_blank">印刷用表示</a></div>` : ""}
+          </td>
           <td style="max-width:280px;">${transcriptPreview(log.translated_text)}</td>
           <td>
             文字起こし: <strong>${escapeHtml(log.transcription_model)}</strong> <span class="dim">(in:${log.transcription_input_tokens} / out:${log.transcription_output_tokens})</span><br>
@@ -1853,6 +1857,78 @@ adminRouter.get("/transcriptions/:id/audio", (req, res) => {
     return;
   }
   res.sendFile(path.join(config.audioDir, row.audio_filename));
+});
+
+// 文字起こし英文の印刷用表示（docs/plans/admin-transcription-print-view.md）。
+// 紙に印刷して読む用途のため、管理画面のダークテーマ・サイドバー（renderPage）は使わず
+// 白地・serif・広め行間の単独ページとして描画する。ツールバーは @media print で消える。
+adminRouter.get("/transcriptions/:id/text", (req, res) => {
+  const id = Number(req.params.id);
+  const row = getTranscriptionLog(id);
+  if (!row) {
+    res.status(404).type("html").send(
+      renderPage("文字起こしログが見つかりません", "", '<p>指定された文字起こしログは存在しません。</p><p><a href="/admin/transcriptions">← 一覧に戻る</a></p>')
+    );
+    return;
+  }
+
+  const title = row.title?.trim() || `Transcription #${row.id}`;
+  const body = row.english_text
+    ? transcriptParagraphsHtml(row.english_text)
+    : '<p class="no-text">(このログには英文がありません)</p>';
+
+  res.type("html").send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapeHtml(title)}</title>
+  <style>
+    :root { color-scheme: light; }
+    body { margin: 0; background: #fff; color: #111; }
+    .toolbar {
+      display: flex; align-items: center; gap: 16px; padding: 10px 24px;
+      background: #F3F4F6; border-bottom: 1px solid #D1D5DB;
+      font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Segoe UI", sans-serif; font-size: 13px;
+    }
+    .toolbar a { color: #1F6FEB; text-decoration: none; }
+    .toolbar a:hover { text-decoration: underline; }
+    .toolbar button {
+      font: inherit; font-weight: 600; padding: 5px 16px; border-radius: 6px; cursor: pointer;
+      background: #1F6FEB; color: #fff; border: none;
+    }
+    article {
+      max-width: 42em; margin: 0 auto; padding: 32px 32px 64px;
+      font-family: Georgia, "Times New Roman", serif;
+    }
+    h1 { font-size: 22px; font-weight: 700; margin: 0 0 4px; }
+    .meta {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 12px; color: #6B7280; margin: 0 0 28px;
+    }
+    article p { font-size: 16px; line-height: 1.9; margin: 0 0 1.1em; text-align: justify; }
+    .no-text { color: #6B7280; }
+    @page { margin: 20mm; }
+    @media print {
+      .toolbar { display: none; }
+      article { max-width: none; padding: 0; }
+      h1 { font-size: 16pt; }
+      article p { font-size: 12pt; }
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <a href="/admin/transcriptions">← 一覧に戻る</a>
+    <button type="button" onclick="window.print()">印刷</button>
+  </div>
+  <article>
+    <h1>${escapeHtml(title)}</h1>
+    <div class="meta">#${row.id} ・ ${escapeHtml(formatSeattleTime(row.created_at))}</div>
+    ${body}
+  </article>
+</body>
+</html>`);
 });
 
 adminRouter.post("/transcriptions/:id/delete", (req, res) => {

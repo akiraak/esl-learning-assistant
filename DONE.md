@@ -1,5 +1,15 @@
 # DONE
 
+- [x] 2026-07-13 音声読み上げの文字起こし英文を読みやすい形式にして管理画面に表示できるように（印刷に使用する）
+      [plan](docs/plans/archive/admin-transcription-print-view.md)
+      `GET /admin/transcriptions/:id/text` を追加。白地・serif・広め行間の印刷向け
+      単独ページ（ダークテーマ・サイドバー不使用）で英文を段落表示し、画面時のみの
+      ツールバー（一覧に戻る・印刷ボタン）は @media print で非表示。見出しはアプリ側
+      title（無ければ Transcription #id）。段落整形導入前の旧レコードにも対応するため
+      formatTranscriptParagraphs を再適用（純関数 transcriptPrint.ts に切り出し）。
+      一覧の英文セルに「印刷用表示」リンクを追加。単体テスト4件追加（全43 green）、
+      E2E で表示・404・一覧リンクを確認し、headless Chrome の print-to-pdf で
+      印刷レンダリング（ツールバー非表示・段落組版）を確認。
 - [x] 2026-07-13 Words タブに登録単語数を表示
       [plan](docs/plans/archive/words-tab-word-count.md)
       WordsView の単語一覧を Section で包み、見出しに登録総数「Words (N)」を表示
