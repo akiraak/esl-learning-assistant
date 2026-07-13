@@ -19,9 +19,17 @@ struct AddContentTypeView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
 
+    /// fileImporter で取り込むファイルの種別。
+    /// 同一 View に `.fileImporter` を2つ付けると後勝ちで片方が無効になるため、
+    /// 単一の fileImporter を種別 state で切り替えて共用する。
+    private enum FileImporterKind {
+        case audio
+        case document
+    }
+
     @State private var isShowingCapture = false
-    @State private var isShowingAudioImporter = false
-    @State private var isShowingDocumentImporter = false
+    @State private var isShowingFileImporter = false
+    @State private var importerKind: FileImporterKind = .audio
     @State private var isShowingYouTubeAdd = false
     /// 内側フローが「追加完了」で閉じたか。true なら内側の `onDismiss` で外側シートも閉じる。
     @State private var didComplete = false
@@ -57,7 +65,10 @@ struct AddContentTypeView: View {
                         systemImage: "waveform",
                         tint: .orange,
                         identifier: "addContentAudioButton"
-                    ) { isShowingAudioImporter = true }
+                    ) {
+                        importerKind = .audio
+                        isShowingFileImporter = true
+                    }
 
                     typeRow(
                         title: "Document",
@@ -65,7 +76,10 @@ struct AddContentTypeView: View {
                         systemImage: "doc.text",
                         tint: .green,
                         identifier: "addContentDocumentButton"
-                    ) { isShowingDocumentImporter = true }
+                    ) {
+                        importerKind = .document
+                        isShowingFileImporter = true
+                    }
 
                     typeRow(
                         title: "YouTube",
@@ -96,18 +110,14 @@ struct AddContentTypeView: View {
                 }
             }
             .fileImporter(
-                isPresented: $isShowingAudioImporter,
-                allowedContentTypes: [.audio],
+                isPresented: $isShowingFileImporter,
+                allowedContentTypes: importerKind == .audio ? [.audio] : Self.documentContentTypes,
                 allowsMultipleSelection: true
             ) { result in
-                handleAudioImport(result)
-            }
-            .fileImporter(
-                isPresented: $isShowingDocumentImporter,
-                allowedContentTypes: Self.documentContentTypes,
-                allowsMultipleSelection: true
-            ) { result in
-                handleDocumentImport(result)
+                switch importerKind {
+                case .audio: handleAudioImport(result)
+                case .document: handleDocumentImport(result)
+                }
             }
             .alert("Import Failed", isPresented: audioImportErrorBinding) {
                 Button("OK", role: .cancel) { audioImportError = nil }

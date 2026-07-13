@@ -1,5 +1,13 @@
 # DONE
 
+- [x] 2026-07-13 Lesson画面からのコンテンツ追加でAudioをタップしても反応しない不具合を修正
+      [plan](docs/plans/archive/lesson-add-content-audio-importer-fix.md)
+      原因は AddContentTypeView で同一 View に `.fileImporter` を2つ（Audio/Document）
+      チェーンしていたこと。SwiftUI では同種プレゼンテーション修飾子は後勝ちで
+      Document 側のみ有効になり、Audio 側の提示が無視されていた。単一の fileImporter に
+      統合し importerKind state で許可タイプと completion の振り分けを切替。
+      UIテスト LessonAudioAddUITests（Audio/Document タップ→Files ピッカー提示）を追加、
+      両テスト green＋スクリーンショットでピッカー表示を確認。
 - [x] 2026-07-12 管理画面コンテンツファイル一覧: Audio/Docs のタイトル表示＋画像サムネ
       [plan](docs/plans/archive/admin-content-files-titles-and-thumbnails.md)
       iOS が transcribe-translate / document-extract-translate に任意フィールド title
