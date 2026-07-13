@@ -1,5 +1,11 @@
 # DONE
 
+- [x] 2026-07-13 管理画面コンテンツファイルの音声に表示しているタイトルを文字起こしログ一覧にも表示
+      [plan](docs/plans/archive/admin-transcriptions-title-column.md)
+      /admin/transcriptions の一覧に「タイトル」列を追加（日時の次）。行自体が
+      transcription_requests.title を持つため表示のみの変更。title 未記録の行は
+      コンテンツファイル一覧と同じ faint「—」。列追加で訳セルが潰れたため
+      英文・訳セルに min-width を追加。E2E＋スクリーンショットで確認。
 - [x] 2026-07-13 音声読み上げの文字起こし英文を読みやすい形式にして管理画面に表示できるように（印刷に使用する）
       [plan](docs/plans/archive/admin-transcription-print-view.md)
       `GET /admin/transcriptions/:id/text` を追加。白地・serif・広め行間の印刷向け

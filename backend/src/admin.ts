@@ -1789,15 +1789,16 @@ adminRouter.get("/transcriptions", (_req, res) => {
         <tr class="log-row">
           <td class="mono dim">#${log.id}</td>
           <td class="mono dim">${escapeHtml(formatSeattleTime(log.created_at))}</td>
+          <td style="min-width:120px;">${log.title ? escapeHtml(log.title) : '<span class="faint">—</span>'}</td>
           <td>
             ${player}
             <div class="faint" style="margin-top:4px;">${escapeHtml(log.media_type)} / ${(log.byte_size / 1024).toFixed(0)} KB</div>
           </td>
-          <td style="max-width:280px;">
+          <td style="min-width:180px;max-width:280px;">
             ${transcriptPreview(log.english_text)}
             ${log.english_text ? `<div style="margin-top:4px;"><a href="/admin/transcriptions/${log.id}/text" target="_blank">印刷用表示</a></div>` : ""}
           </td>
-          <td style="max-width:280px;">${transcriptPreview(log.translated_text)}</td>
+          <td style="min-width:180px;max-width:280px;">${transcriptPreview(log.translated_text)}</td>
           <td>
             文字起こし: <strong>${escapeHtml(log.transcription_model)}</strong> <span class="dim">(in:${log.transcription_input_tokens} / out:${log.transcription_output_tokens})</span><br>
             翻訳: ${log.translate_model ? `${escapeHtml(log.translate_model)} <span class="dim">(in:${log.translate_input_tokens} / out:${log.translate_output_tokens})</span>` : "(なし)"}
@@ -1836,7 +1837,7 @@ adminRouter.get("/transcriptions", (_req, res) => {
           <table>
             <thead>
               <tr>
-                <th>ID</th><th>日時</th><th>音声</th><th>英文</th><th>訳</th>
+                <th>ID</th><th>日時</th><th>タイトル</th><th>音声</th><th>英文</th><th>訳</th>
                 <th>モデル / トークン</th><th>コスト</th><th>状態</th><th>処理時間</th><th></th>
               </tr>
             </thead>
