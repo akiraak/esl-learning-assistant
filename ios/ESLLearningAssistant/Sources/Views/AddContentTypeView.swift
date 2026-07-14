@@ -2,10 +2,17 @@ import SwiftUI
 import SwiftData
 import UniformTypeIdentifiers
 
+/// `.fileImporter` で選ばれたURL群を、取り込み確認シート（`AudioImportLessonView`）へ
+/// 渡すための識別可能ラッパ。`.sheet(item:)` で扱えるようにする。
+private struct PendingAudioImport: Identifiable {
+    let id = UUID()
+    let urls: [URL]
+}
+
 /// コンテンツ追加の入口。「＋」タップで最初に出るタイプ選択シート。
 /// 写真 / Audio / YouTube の3択を並べ、選択に応じて既存の追加 UI を提示する。
 /// - 写真: 既存 `CaptureView`（撮影・ライブラリ選択）
-/// - Audio: 既存 `.fileImporter`
+/// - Audio: 既存 `.fileImporter` → 確認シート（レッスン固定・ノーマライズ ON/OFF）
 /// - YouTube: 新規 `YouTubeAddView`（動画ID / URL 入力）
 ///
 /// いずれかの追加が完了したら、このシート全体を閉じてレッスン画面へ戻す
@@ -33,6 +40,10 @@ struct AddContentTypeView: View {
     @State private var isShowingYouTubeAdd = false
     /// 内側フローが「追加完了」で閉じたか。true なら内側の `onDismiss` で外側シートも閉じる。
     @State private var didComplete = false
+    /// ファイル選択後、取り込み確認シート（レッスン固定）へ渡す取り込み待ちURL群
+    @State private var pendingAudioImport: PendingAudioImport?
+    /// 音声取り込み（正規化含む）実行中。インジケータ表示＋操作無効化に使う
+    @State private var isImportingAudio = false
     @State private var audioImportError: String?
     @State private var documentImportError: String?
 
@@ -95,6 +106,13 @@ struct AddContentTypeView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .disabled(isImportingAudio)
+                }
+            }
+            .disabled(isImportingAudio)
+            .overlay {
+                if isImportingAudio {
+                    ImportingAudioOverlay()
                 }
             }
             .sheet(isPresented: $isShowingCapture, onDismiss: dismissIfCompleted) {
@@ -107,6 +125,13 @@ struct AddContentTypeView: View {
             .sheet(isPresented: $isShowingYouTubeAdd, onDismiss: dismissIfCompleted) {
                 YouTubeAddView(lesson: lesson) {
                     didComplete = true
+                }
+            }
+            // ファイル選択後に確認シート（レッスンは確定済みなので固定表示）で
+            // ノーマライズ ON/OFF を選んでから取り込む
+            .sheet(item: $pendingAudioImport) { pending in
+                AudioImportLessonView(urls: pending.urls, fixedLesson: lesson) { _, normalize in
+                    importAudio(pending.urls, normalize: normalize)
                 }
             }
             .fileImporter(
@@ -174,18 +199,32 @@ struct AddContentTypeView: View {
         Binding(get: { audioImportError != nil }, set: { if !$0 { audioImportError = nil } })
     }
 
+    /// ファイル選択の結果を受け取る。成功時は即取り込まず、取り込み確認シートへ回す。
     private func handleAudioImport(_ result: Result<[URL], Error>) {
         switch result {
         case .success(let urls):
-            let count = AudioFileImporter.importFiles(urls, into: lesson, context: modelContext)
+            guard !urls.isEmpty else { return }
+            pendingAudioImport = PendingAudioImport(urls: urls)
+        case .failure(let error):
+            audioImportError = error.localizedDescription
+        }
+    }
+
+    /// 確認シートで確定した後に、実際の取り込みを行う。
+    /// 正規化はバックグラウンドで数秒かかり得るため async で実行し、間はインジケータを出す。
+    private func importAudio(_ urls: [URL], normalize: Bool) {
+        isImportingAudio = true
+        Task {
+            let count = await AudioFileImporter.importFiles(
+                urls, into: lesson, context: modelContext, normalize: normalize
+            )
+            isImportingAudio = false
             if count == 0 && !urls.isEmpty {
                 audioImportError = "Could not read the selected audio file(s)."
             } else if count > 0 {
                 // 取り込めたらフロー全体を閉じてレッスンへ戻す
                 dismiss()
             }
-        case .failure(let error):
-            audioImportError = error.localizedDescription
         }
     }
 

@@ -1,5 +1,21 @@
 # DONE
 
+- [x] 2026-07-13 音声ファイルを読み込むときに音量のノーマライズを行う
+      [plan](docs/plans/archive/audio-import-volume-normalization.md)
+      新規 AudioNormalizer（AVAudioFile の2パス・チャンク処理）で取り込み音源の音量を
+      正規化して .aac 保存。1パス目で全体の RMS/ピークを集計し、2パス目で
+      gain = min(目標RMS -16dBFS − rms, ピーク上限 -1dBFS − peak, 最大増幅 +20dB) を掛ける
+      （リミッター無しでクリップしない・大音量は負ゲインで下げる）。無音はスキップ、
+      デコード/エンコード不能時は元データにフォールバック。AudioFileImporter を async 化し
+      normalize: パラメータを追加、読み込み＋正規化はバックグラウンド Task で実行し
+      取り込み中はオーバーレイ表示。取り込み確認シート（AudioImportLessonView）に
+      「Normalize volume」Toggle（@AppStorage で既定ON・前回選択を引き継ぎ）を追加、
+      AddContentTypeView もファイル選択後に確認シート（レッスン固定）経由に統一。
+      副次効果として文字起こし非対応の m4a/mp4 も取り込み後は .aac になり対応形式化。
+      新規 AudioNormalizerTests / AudioImportTests（合成WAVで RMS/ピーク/フォールバック検証）
+      追加で全75テスト green。シミュレータ実機確認: 小音量 m4a を ON 取り込み→保存 .aac が
+      RMS -29→-16dBFS へ増幅・m4a が対応形式化、wav を OFF 取り込み→元データとバイト一致で
+      拡張子・サイズ不変、Toggle 選択が次回シートに引き継がれることを確認。
 - [x] 2026-07-13 印刷用のページに印刷時だけページ番号が表示されるようにする
       [plan](docs/plans/archive/print-view-page-numbers.md)
       printView.ts の @page ルールにマージンボックス @bottom-center を追加し、

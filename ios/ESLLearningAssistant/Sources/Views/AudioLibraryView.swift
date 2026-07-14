@@ -23,6 +23,8 @@ struct AudioLibraryView: View {
     @State private var isShowingFileImporter = false
     /// ファイル選択後、レッスン選択シートへ渡す取り込み待ちURL群
     @State private var pendingImport: PendingAudioImport?
+    /// 取り込み（正規化含む）実行中。インジケータ表示＋取り込みボタン無効化に使う
+    @State private var isImporting = false
     @State private var importError: String?
     /// 詳細へ push 中のクリップ（行タップで設定 → navigationDestination で遷移）
     @State private var selectedClip: AudioClip?
@@ -60,6 +62,12 @@ struct AudioLibraryView: View {
                     Image(systemName: "plus")
                 }
                 .accessibilityLabel("Import Audio")
+                .disabled(isImporting)
+            }
+        }
+        .overlay {
+            if isImporting {
+                ImportingAudioOverlay()
             }
         }
         .fileImporter(
@@ -69,10 +77,10 @@ struct AudioLibraryView: View {
         ) { result in
             handleFileSelection(result)
         }
-        // ファイル選択後にレッスンを選んでから取り込む
+        // ファイル選択後にレッスンとノーマライズ ON/OFF を選んでから取り込む
         .sheet(item: $pendingImport) { pending in
-            AudioImportLessonView(urls: pending.urls) { lesson in
-                importFiles(pending.urls, into: lesson)
+            AudioImportLessonView(urls: pending.urls) { lesson, normalize in
+                importFiles(pending.urls, into: lesson, normalize: normalize)
             }
         }
         .alert("Import Failed", isPresented: importErrorBinding) {
@@ -90,6 +98,7 @@ struct AudioLibraryView: View {
         } actions: {
             Button("Import Audio") { isShowingFileImporter = true }
                 .buttonStyle(.borderedProminent)
+                .disabled(isImporting)
         }
     }
 
@@ -105,10 +114,17 @@ struct AudioLibraryView: View {
     }
 
     /// レッスン選択シートで確定した後に、実際の取り込みを行う。
-    private func importFiles(_ urls: [URL], into lesson: Lesson?) {
-        let count = AudioFileImporter.importFiles(urls, into: lesson, context: modelContext)
-        if count == 0 && !urls.isEmpty {
-            importError = "Could not read the selected audio file(s)."
+    /// 正規化はバックグラウンドで数秒かかり得るため async で実行し、間はインジケータを出す。
+    private func importFiles(_ urls: [URL], into lesson: Lesson?, normalize: Bool) {
+        isImporting = true
+        Task {
+            let count = await AudioFileImporter.importFiles(
+                urls, into: lesson, context: modelContext, normalize: normalize
+            )
+            isImporting = false
+            if count == 0 && !urls.isEmpty {
+                importError = "Could not read the selected audio file(s)."
+            }
         }
     }
 

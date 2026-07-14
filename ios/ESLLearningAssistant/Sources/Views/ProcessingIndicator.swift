@@ -63,6 +63,25 @@ struct ShimmerSkeletonLine: View {
     }
 }
 
+/// 音声取り込み（音量ノーマライズ含む）実行中に画面全体へ重ねるオーバーレイ。
+/// 下の UI への操作を防ぎつつ、スピナーで処理中であることを伝える。
+/// AudioLibraryView / AddContentTypeView で共有する。
+struct ImportingAudioOverlay: View {
+    var body: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+            Text("Importing audio…")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .pulse()
+        }
+        .padding(24)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.black.opacity(0.08))
+    }
+}
+
 /// コンテンツ詳細画面の「処理中」表示。スピナー + 明滅ラベル + シマーのスケルトン段落。
 /// ラベルは呼び出し側で差し替える（写真=OCR&翻訳、音声=文字起こし&翻訳）。
 struct ProcessingIndicatorView: View {

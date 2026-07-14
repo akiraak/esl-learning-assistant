@@ -5,6 +5,9 @@ enum AppSettingsKeys {
     static let apiSecret = "apiSecret"
     static let targetLanguageCode = "targetLanguageCode"
     static let ttsModel = "ttsModel"
+    /// 音声取り込み時の音量ノーマライズ ON/OFF（既定 ON）。取り込み確認シートの Toggle で
+    /// 切り替え、前回の選択を次回の初期値として引き継ぐ。
+    static let audioImportNormalizeEnabled = "audioImportNormalizeEnabled"
 
     /// ビルド時にInfo.plistへ埋め込まれた値（実機ビルドはrun-ios-device.shがMacのIPで上書きする）。
     /// 未設定・空なら本番URLにフォールバックする（ローカル開発時はSettings画面で切り替える）。
