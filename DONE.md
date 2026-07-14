@@ -1,5 +1,16 @@
 # DONE
 
+- [x] 2026-07-14 復習クイズ vtt1（例文リスニング穴埋め）で空欄が無く答えが露出する不良を修正
+      [plan](docs/plans/archive/vtt1-blank-validation.md)
+      症状: 単語 "consolidate" の vtt1 で `displayText` が音声（audioText）と同じ完全文になり、
+      空欄 `_____` が無いまま出題され答えが露出。根本原因は AI 出力の検証漏れ
+      （`_____` はプロンプト指示のみ、validateAndConvert は displayText の空でないかしか見ていない）。
+      対応: (1) `FormatSpec` に `needsBlank` を追加し tc3/tc6/vtt1 を true に。validateAndConvert で
+      空欄（`/_{3,}/`）が無ければ捨てる再発防止ガードを追加。(2) db.ts 起動時クリーンアップに、
+      tc3/tc6/vtt1 で displayText に空欄が無い既存不良を DELETE する処理を追加（GLOB '*___*'、冪等）。
+      backend テスト48件パス（空欄なし vtt1/tc3 棄却・空欄あり受理の3件追加）、tsc build 通過、
+      ローカル DB のクリーンアップ dry-run は該当0件（正常データ非破壊）を確認。iOS 側は変更なし。
+
 - [x] 2026-07-14 単語出題のバグを調査するために出題時に識別できるIDを表示する
       [plan](docs/plans/archive/review-question-debug-id.md)
       復習クイズの出題画面（ReviewSessionView.questionView）で出題文の上に、

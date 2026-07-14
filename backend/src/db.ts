@@ -370,6 +370,17 @@ db.exec(
     "AND json_extract(question_json, '$.audioText') IS NOT NULL"
 );
 
+// 穴埋め形式（tc3/tc6/vtt1）で AI が空欄化に失敗し、displayText に空欄が無い
+// （＝答えが本文に露出する）不良問題を一掃する（docs/plans/vtt1-blank-validation.md）。
+// GLOB では '_' は文字リテラルなので '*___*' は「3文字以上連続の _」の有無を見る
+// （生成側は validateAndConvert の needsBlank で再発防止済み）。冪等なので毎起動で実行してよい。
+// 削除後、その単語に他形式が残っていれば自己修復トリガは走らないため、当該形式は
+// 次回の全再生成（管理画面 regenerate）まで欠けるが、壊れた出題は消える。
+db.exec(
+  "DELETE FROM quiz_questions WHERE format IN ('tc3','tc6','vtt1') " +
+    "AND json_extract(question_json, '$.displayText') NOT GLOB '*___*'"
+);
+
 export interface RequestLogInput {
   imageFilename: string | null;
   targetLanguage: string;

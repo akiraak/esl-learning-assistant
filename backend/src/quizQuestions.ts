@@ -107,6 +107,9 @@ interface FormatSpec {
   answerType: "choices" | "typing";
   needsDisplayText: boolean;
   needsAudioText: boolean;
+  /// displayText に空欄 "_____" が必須の穴埋め形式（tc3/tc6/vtt1）。true のとき
+  /// 空欄の無い displayText（＝答えが本文に露出）を validateAndConvert で捨てる。
+  needsBlank?: boolean;
   /// options[correctIndex]（または acceptedAnswers）が単語そのものであるべき形式の検証用
   correctMustBeWord: boolean;
   /// 見出し語が複数語のフレーズ（句動詞・熟語）でも出題可能か。省略時 true。
@@ -139,6 +142,7 @@ const AI_FORMAT_SPECS: FormatSpec[] = [
     answerType: "choices",
     needsDisplayText: true,
     needsAudioText: false,
+    needsBlank: true,
     correctMustBeWord: false,
     isAvailable: hasExamples,
     promptSpec: (word) =>
@@ -173,6 +177,7 @@ const AI_FORMAT_SPECS: FormatSpec[] = [
     answerType: "choices",
     needsDisplayText: true,
     needsAudioText: false,
+    needsBlank: true,
     correctMustBeWord: true,
     isAvailable: (info) => info.collocations.length > 0,
     promptSpec: (word, info) =>
@@ -262,6 +267,7 @@ const AI_FORMAT_SPECS: FormatSpec[] = [
     answerType: "typing",
     needsDisplayText: true,
     needsAudioText: true,
+    needsBlank: true,
     correctMustBeWord: false,
     isAvailable: hasExamples,
     // 生成指示は他形式を参照せず自己完結の文にする
@@ -408,6 +414,10 @@ export function validateAndConvert(raw: RawQuestion, word: string, spec: FormatS
   if (!raw.instruction?.trim()) return null;
   if (raw.answerType !== spec.answerType) return null;
   if (spec.needsDisplayText && !raw.displayText?.trim()) return null;
+  // 穴埋め形式（tc3/tc6/vtt1）は displayText に空欄が無いと答えが本文に露出する。
+  // AI がまれに空欄化に失敗した完全文（audioText と同一など）を返すため、ここで必ず捨てる。
+  // 空欄は "_____"（5文字）だが 3〜4 のブレも許容して「3文字以上連続の _」を空欄とみなす。
+  if (spec.needsBlank && !/_{3,}/.test(raw.displayText ?? "")) return null;
   if (spec.needsAudioText && !raw.audioText?.trim()) return null;
   // 音声不要形式にも AI が audioText を返すことがある（displayText のコピー等）。素通しすると
   // TTS プリ合成の無駄コストと iOS 側の不要な音声ボタン表示になるため、ここで必ず捨てる
