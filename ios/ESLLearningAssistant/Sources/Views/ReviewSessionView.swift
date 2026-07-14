@@ -173,6 +173,8 @@ struct ReviewSessionView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
+                    debugIdentityBadge(item)
+
                     TappableEnglishText(text: item.question.instruction)
                         .font(.headline)
 
@@ -214,6 +216,19 @@ struct ReviewSessionView: View {
                 nextButton
             }
         }
+    }
+
+    /// バグ調査用の識別キャプション。単語 text ＋ 出題形式コード（例: `run · tc7`）を出す。
+    /// この2つでサーバ保存問題（quiz_questions: 単語 text ＋ format キー）を直接引ける。
+    /// 単語タップ登録の対象にしないため plain Text を使う（誤登録・答えのリンク化を避ける）。
+    private func debugIdentityBadge(_ item: CurrentQuestion) -> some View {
+        Label("\(item.word.text) · \(item.question.format.rawValue)", systemImage: "ant.fill")
+            .font(.caption2.monospaced())
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Color(.secondarySystemBackground), in: Capsule())
+            .accessibilityIdentifier("reviewDebugIdentity")
     }
 
     private var progressHeader: some View {

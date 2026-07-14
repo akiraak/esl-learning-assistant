@@ -1,5 +1,15 @@
 # DONE
 
+- [x] 2026-07-14 単語出題のバグを調査するために出題時に識別できるIDを表示する
+      [plan](docs/plans/archive/review-question-debug-id.md)
+      復習クイズの出題画面（ReviewSessionView.questionView）で出題文の上に、
+      バグ調査用の識別キャプション（単語 text ＋ 出題形式コード。例: 🐞 run · tc7）を表示。
+      `item.word.text` ＋ `item.question.format.rawValue` の組み合わせで、サーバ保存問題
+      （quiz_questions: 単語 text ＋ format キー）を直接引ける識別子になる。単語タップ登録の
+      対象にしないよう plain Label で描画し、`accessibilityIdentifier("reviewDebugIdentity")`
+      を付与。表示のみの追加でモデル・スケジューリング・通信には非干渉。ビルド成功を確認。
+      出題画面自体の実機スクショはローカル backend 未接続（Couldn't Load Questions）で
+      未取得だが、Words→Today's Review→Start の遷移までは動作確認済み。
 - [x] 2026-07-13 音声ファイルを読み込むときに音量のノーマライズを行う
       [plan](docs/plans/archive/audio-import-volume-normalization.md)
       新規 AudioNormalizer（AVAudioFile の2パス・チャンク処理）で取り込み音源の音量を
