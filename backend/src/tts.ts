@@ -1,7 +1,7 @@
 import { config } from "./config";
 
 export type VoiceKey = "chobi" | "naruko";
-export type ModelKey = "flash" | "pro";
+export type ModelKey = "flash" | "pro" | "flash31";
 
 interface VoicePreset {
   voiceName: string;
@@ -21,10 +21,13 @@ export const VOICE_PRESETS: Record<VoiceKey, VoicePreset> = {
   },
 };
 
-// flash = 低レイテンシ、pro = より高音質（Google公式のGemini TTSモデル）
+// flash31 = 現行の既定（Gemini 3.1世代、全読み上げ箇所で使用）。
+// flash / pro は 2.5 世代の旧キー。旧iOSクライアントからのリクエスト受付と、
+// tts_audio の既存行（model 列に tier キーで保存）のモデルID読み替えのために残している。
 export const MODEL_PRESETS: Record<ModelKey, string> = {
   flash: "gemini-2.5-flash-preview-tts",
   pro: "gemini-2.5-pro-preview-tts",
+  flash31: "gemini-3.1-flash-tts-preview",
 };
 
 const SAMPLE_RATE = 24000;

@@ -1453,8 +1453,9 @@ function modelUsage(model: string): string {
   if (model === config.wordInfoModel) usages.push("単語情報");
   if (model === config.wordNormalizeModel) usages.push("単語正規化");
   if (model === config.writingFeedbackModel) usages.push("作文添削");
-  if (model === "gemini-2.5-flash-preview-tts") usages.push("TTS (flash)");
-  if (model === "gemini-2.5-pro-preview-tts") usages.push("TTS (pro)");
+  if (model === "gemini-2.5-flash-preview-tts") usages.push("TTS (flash・旧)");
+  if (model === "gemini-2.5-pro-preview-tts") usages.push("TTS (pro・旧)");
+  if (model === "gemini-3.1-flash-tts-preview") usages.push("TTS (flash31・全読み上げの既定)");
   if (model === ILLUSTRATION_MODEL) usages.push("単語イラスト");
   return usages.join(" / ");
 }

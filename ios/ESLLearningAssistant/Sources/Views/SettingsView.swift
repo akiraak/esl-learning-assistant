@@ -110,18 +110,16 @@ struct SettingsView: View {
                 Section {
                     Picker("TTS Model", selection: $ttsModel) {
                         Text("On-Device").tag("local")
-                        Text("Gemini 2.5 Flash TTS").tag("flash")
-                        Text("Gemini 2.5 Pro TTS").tag("pro")
+                        Text("Gemini 3.1 Flash TTS").tag("flash31")
                     }
                 } header: {
                     TappableEnglishText(text: "Text-to-Speech")
                 } footer: {
                     TappableEnglishText(
                         text: "Model used to read the OCR result (English) aloud. On-Device plays "
-                            + "instantly without network access. Gemini 2.5 Flash TTS is fast; "
-                            + "Gemini 2.5 Pro TTS sounds more natural but may take longer to "
-                            + "generate. The Gemini voice character is picked randomly for "
-                            + "each generation."
+                            + "instantly without network access. Gemini 3.1 Flash TTS sounds more "
+                            + "natural but needs the network to generate. The Gemini voice "
+                            + "character is picked randomly for each generation."
                     )
                 }
 

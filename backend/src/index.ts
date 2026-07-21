@@ -1029,7 +1029,7 @@ app.post("/api/tts", async (req, res) => {
     res.status(400).json({ error: `text must be ${TTS_TEXT_MAX_LENGTH} characters or fewer` });
     return;
   }
-  if (model !== "flash" && model !== "pro") {
+  if (typeof model !== "string" || !(model in MODEL_PRESETS)) {
     logger.warn(`tts: rejected (invalid model: ${String(model)})`);
     res.status(400).json({ error: `model must be one of: ${Object.keys(MODEL_PRESETS).join(", ")}` });
     return;

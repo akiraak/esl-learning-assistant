@@ -850,7 +850,7 @@ struct ReviewSessionView: View {
     /// 出題音声はセッション開始時に一括ダウンロード済みのため、通常はローカルWAVを再生する。
     /// フィードバック欄の単語読み上げなどDL対象外のテキストや、差し替え後に消えた
     /// ファイルに備えて、端末内蔵TTSフォールバックを最終安全網として残す。
-    /// モデルはサーバのプリ合成と揃えて flash 固定（ユーザー設定 ttsModel は使わない）。
+    /// モデルはサーバのプリ合成と揃えて flash31 固定（ユーザー設定 ttsModel は使わない）。
     private func playAudio(_ text: String) {
         if let url = TTSAudioStore.localURL(text: text, model: AppSettingsKeys.quizTTSModel) {
             ttsPlayback.play(url: url)

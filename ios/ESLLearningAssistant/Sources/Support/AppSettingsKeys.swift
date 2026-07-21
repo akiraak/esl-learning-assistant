@@ -31,24 +31,30 @@ enum AppSettingsKeys {
     }
     static let defaultTargetLanguageCode = "ja"
     /// "local"（端末内蔵AVSpeechSynthesizer）,
-    /// "flash"（gemini-2.5-flash-preview-tts）, "pro"（gemini-2.5-pro-preview-tts）
+    /// "flash31"（gemini-3.1-flash-tts-preview。サーバTTSはこれに一本化）
     static let defaultTTSModel = "local"
     /// サーバTTS（/api/tts）は "local" を受け付けないため、送信時はこのモデルに読み替える
-    static let fallbackServerTTSModel = "flash"
+    static let fallbackServerTTSModel = "flash31"
     /// クイズ音声のモデル。サーバがプリ合成に使う QUIZ_TTS_MODEL（backend/src/ttsStore.ts）と
     /// 一致させること。キャッシュキーが sha256("model|text") のため、ずれるとプリ合成が無駄になる。
-    static let quizTTSModel = "flash"
+    static let quizTTSModel = "flash31"
 
-    /// 廃止した "ttsEngine"（local/gemini）設定を ttsModel（local/flash/pro）へ一度だけ移行する。
+    /// 廃止した "ttsEngine"（local/gemini）設定を ttsModel へ一度だけ移行する。
     /// あわせて、廃止した "ttsVoice"（音声キャラ選択。サーバ側のランダム選択に移行）も掃除する。
+    /// 旧モデルキー "flash" / "pro"（Gemini 2.5 世代）は "flash31" へ読み替える
+    /// （選択肢からも廃止済み。残すと Picker のどの選択肢にも一致しなくなる）。
     static func migrateLegacyTTSEngineIfNeeded(defaults: UserDefaults = .standard) {
         defaults.removeObject(forKey: "ttsVoice")
-        guard let engine = defaults.string(forKey: "ttsEngine") else { return }
-        if engine == "local" {
-            defaults.set("local", forKey: ttsModel)
-        } else if defaults.string(forKey: ttsModel) == nil {
-            defaults.set("flash", forKey: ttsModel)
+        if let engine = defaults.string(forKey: "ttsEngine") {
+            if engine == "local" {
+                defaults.set("local", forKey: ttsModel)
+            } else if defaults.string(forKey: ttsModel) == nil {
+                defaults.set("flash31", forKey: ttsModel)
+            }
+            defaults.removeObject(forKey: "ttsEngine")
         }
-        defaults.removeObject(forKey: "ttsEngine")
+        if let model = defaults.string(forKey: ttsModel), model == "flash" || model == "pro" {
+            defaults.set("flash31", forKey: ttsModel)
+        }
     }
 }

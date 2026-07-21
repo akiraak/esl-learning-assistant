@@ -1,6 +1,14 @@
 # DONE
 
-- [x] 2026-07-14 復習クイズ vtt1（例文リスニング穴埋め）で空欄が無く答えが露出する不良を修正
+- [x] 2026-07-21 Gemini3.1 TTSの検証と全読み上げ箇所の3.1化
+      [plan](docs/plans/archive/gemini-3-1-tts-verification.md)
+      3.1 flash TTS（$1.00/$20.00 per 1M、2.5 pro と同額・2.5 flash の2倍）は現行の
+      generateContent + prebuiltVoiceConfig 形式・Leda/Aoede ボイス・24kHz PCM がそのまま通ることを
+      検証スクリプトで確認。履歴表示と旧クライアント互換のため新モデルキー "flash31" を追加し、
+      単語・語義・例文・Photo/Document 長文（ユーザー設定既定）とクイズ音声（QUIZ_TTS_MODEL）を
+      すべて 3.1 に切替。iOS は Picker を On-Device / Gemini 3.1 の2択にし、保存済み "flash"/"pro"
+      設定は起動時に "flash31" へ移行。料金ページ自動更新の 3.1 抽出成功・E2E で cost_usd 非$0・
+      backend テスト48件 / iOS ユニット9件パスを確認。
       [plan](docs/plans/archive/vtt1-blank-validation.md)
       症状: 単語 "consolidate" の vtt1 で `displayText` が音声（audioText）と同じ完全文になり、
       空欄 `_____` が無いまま出題され答えが露出。根本原因は AI 出力の検証漏れ

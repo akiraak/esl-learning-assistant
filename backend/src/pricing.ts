@@ -22,6 +22,7 @@ export const DEFAULT_PRICING: PricingTable = {
 export const DEFAULT_TTS_PRICING: PricingTable = {
   "gemini-2.5-flash-preview-tts": { input: 0.5, output: 10.0 },
   "gemini-2.5-pro-preview-tts": { input: 1.0, output: 20.0 },
+  "gemini-3.1-flash-tts-preview": { input: 1.0, output: 20.0 },
 };
 
 // Gemini 音声文字起こし（generateContent 音声入力）の100万トークンあたり単価（USD）。

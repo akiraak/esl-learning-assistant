@@ -61,8 +61,8 @@ export async function getOrSynthesizeTtsAudio(text: string, model: ModelKey): Pr
 }
 
 /// 単語の「単体読み上げ」に使うモデル候補（新しい順に走査）。
-/// flash はクイズ・既定の発音ボタン、pro は高音質設定のユーザー分。
-const WORD_READING_MODELS: ModelKey[] = ["flash", "pro"];
+/// flash31 が現行の既定。flash / pro は 2.5 世代の旧キャッシュ参照用。
+const WORD_READING_MODELS: ModelKey[] = ["flash31", "flash", "pro"];
 
 /// 単語の単体読み上げ音声（text == 単語）のキャッシュ行を返す（試聴用）。存在するモデルを優先順で探す。
 export function getWordReadingAudioRow(word: string): TtsAudioRow | undefined {
@@ -92,20 +92,23 @@ export async function regenerateTtsAudio(text: string, model: ModelKey): Promise
   return getOrSynthesizeTtsAudio(text, model);
 }
 
-/// 単語の単体読み上げ（text == 単語）を作り直す。キャッシュに存在するモデルを再生成し、
-/// どのモデルも未キャッシュなら flash を1件だけ生成する。再生成したモデル一覧を返す。
+/// 単語の単体読み上げ（text == 単語）を作り直す。現行世代の flash31 は常に（再）生成し、
+/// 旧世代（flash / pro）はキャッシュが残っているものだけ再生成する（旧クライアントの
+/// キャッシュ自己修復用。未キャッシュの旧世代をわざわざ新規生成はしない）。
+/// 再生成したモデル一覧を返す。
 export async function regenerateWordReadingAudio(word: string): Promise<ModelKey[]> {
-  const present = WORD_READING_MODELS.filter((model) => getTtsAudioByHash(ttsCacheHash(word, model)));
-  const targets = present.length > 0 ? present : (["flash"] as ModelKey[]);
+  const targets = WORD_READING_MODELS.filter(
+    (model) => model === "flash31" || getTtsAudioByHash(ttsCacheHash(word, model))
+  );
   for (const model of targets) {
     await regenerateTtsAudio(word, model);
   }
   return targets;
 }
 
-/// クイズ音声のモデルは flash 固定（iOS の AppSettingsKeys.quizTTSModel と一致させること）。
+/// クイズ音声のモデルは flash31 固定（iOS の AppSettingsKeys.quizTTSModel と一致させること）。
 /// キャッシュキーが sha256("model|text") のため、両者がずれるとプリ合成が無駄になる。
-export const QUIZ_TTS_MODEL: ModelKey = "flash";
+export const QUIZ_TTS_MODEL: ModelKey = "flash31";
 
 // tts.ts のチャンク合成（並列3）と同程度の控えめな並列度
 const PREGEN_CONCURRENCY = 2;
