@@ -10,7 +10,6 @@ import {
   getStoredNormalization,
   getStoredWord,
   getWordIllustrationByHash,
-  insertDocumentLog,
   insertRequestLog,
   insertTranscriptionLog,
   insertWordInfoLog,
@@ -34,9 +33,10 @@ import {
   SUPPORTED_AUDIO_MIME_EXTENSIONS,
 } from "./transcribe";
 import {
-  extractAndTranslateDocument,
   validateDocumentExtractRequest,
+  type DocumentExtractRequestFields,
 } from "./documentExtract";
+import { createDocumentJob, getDocumentJob, runDocumentExtractTranslate } from "./documentJobs";
 import { generateWordInfo, type WordInfo } from "./wordInfo";
 import { normalizeWord } from "./wordNormalize";
 import { generateWritingFeedback, type WritingFeedbackRound } from "./writingFeedback";
@@ -340,104 +340,67 @@ app.post("/api/transcribe-translate", async (req, res) => {
 // 結果は iOS 側 Document に保存、ここでは料金・履歴を document_requests に記録する（管理画面表示は Phase 5）。
 // 送信前バリデーション（必須項目・mediaType・サイズ上限）は documentExtract の
 // validateDocumentExtractRequest に集約し、単体テスト可能にしている。
-app.post("/api/document-extract-translate", async (req, res) => {
+// バリデーション＋ファイル保存＋開始ログの共通前処理。同期版とジョブ版の両エンドポイントで使う。
+// バリデーション失敗時は 400 応答まで済ませて null を返す。
+function prepareDocumentExtractRequest(
+  req: express.Request,
+  res: express.Response
+): { fields: DocumentExtractRequestFields; documentFilename: string } | null {
   const validation = validateDocumentExtractRequest(req.body);
   if (!validation.ok) {
     logger.warn(`document-extract-translate: rejected (${validation.error})`);
     res.status(400).json({ error: validation.error });
-    return;
+    return null;
   }
-  const { fileBuffer, mediaType, fileKind, targetLanguage, title } = validation.value;
+  const fields = validation.value;
 
-  const documentFilename = `${Date.now()}-${crypto.randomUUID()}.${fileKind}`;
-  fs.writeFileSync(path.join(config.documentsDir, documentFilename), fileBuffer);
+  const documentFilename = `${Date.now()}-${crypto.randomUUID()}.${fields.fileKind}`;
+  fs.writeFileSync(path.join(config.documentsDir, documentFilename), fields.fileBuffer);
 
-  const startedAt = Date.now();
   logger.info(
-    `document-extract-translate: start document=${documentFilename} bytes=${fileBuffer.length} ` +
-      `mediaType=${mediaType} targetLanguage=${targetLanguage} ` +
+    `document-extract-translate: start document=${documentFilename} bytes=${fields.fileBuffer.length} ` +
+      `mediaType=${fields.mediaType} targetLanguage=${fields.targetLanguage} ` +
       `ocrModel=${config.ocrModel} translateModel=${config.translateModel}`
   );
-  try {
-    const result = await extractAndTranslateDocument(fileBuffer, mediaType, targetLanguage);
-    const latencyMs = Date.now() - startedAt;
+  return { fields, documentFilename };
+}
 
-    const extractCostUsd = result.extractModel
-      ? estimateCostUsd(result.extractModel, result.extractInputTokens, result.extractOutputTokens)
-      : 0;
-    const translateCostUsd = estimateCostUsd(
-      result.translateModel,
-      result.translateInputTokens,
-      result.translateOutputTokens
-    );
-
-    insertDocumentLog({
-      documentFilename,
-      title,
-      mediaType,
-      fileKind,
-      targetLanguage,
-      byteSize: fileBuffer.length,
-      extractionMethod: result.extractionMethod,
-      extractedText: result.extractedText,
-      translatedText: result.translatedText,
-      extractModel: result.extractModel,
-      extractInputTokens: result.extractInputTokens,
-      extractOutputTokens: result.extractOutputTokens,
-      translateModel: result.translateModel,
-      translateInputTokens: result.translateInputTokens,
-      translateOutputTokens: result.translateOutputTokens,
-      extractCostUsd,
-      translateCostUsd,
-      costUsd: extractCostUsd + translateCostUsd,
-      status: "success",
-      errorMessage: null,
-      latencyMs,
-    });
-
-    logger.info(
-      `document-extract-translate: success document=${documentFilename} latencyMs=${latencyMs} ` +
-        `method=${result.extractionMethod} ` +
-        `tokens=extract:${result.extractInputTokens}/${result.extractOutputTokens} ` +
-        `translate:${result.translateInputTokens}/${result.translateOutputTokens} ` +
-        `cost=$${(extractCostUsd + translateCostUsd).toFixed(4)}`
-    );
-    res.json({
-      extractedText: result.extractedText,
-      translatedText: result.translatedText,
-      translationLanguage: targetLanguage,
-    });
-  } catch (error) {
-    const latencyMs = Date.now() - startedAt;
-    const errorMessage = error instanceof Error ? error.message : String(error);
-
-    insertDocumentLog({
-      documentFilename,
-      title,
-      mediaType,
-      fileKind,
-      targetLanguage,
-      byteSize: fileBuffer.length,
-      extractionMethod: null,
-      extractedText: null,
-      translatedText: null,
-      extractModel: null,
-      extractInputTokens: 0,
-      extractOutputTokens: 0,
-      translateModel: null,
-      translateInputTokens: 0,
-      translateOutputTokens: 0,
-      extractCostUsd: 0,
-      translateCostUsd: 0,
-      costUsd: 0,
-      status: "error",
-      errorMessage,
-      latencyMs,
-    });
-
-    logger.error(`document-extract-translate: failed document=${documentFilename} latencyMs=${latencyMs} error=${errorMessage}`);
-    res.status(500).json({ error: errorMessage });
+// 同期版（旧アプリ互換）。処理完了までレスポンスを返さないため、Cloudflare 経由では
+// 100 秒超の文書で HTTP 524 になる。新アプリは下のジョブ版を使う。
+app.post("/api/document-extract-translate", async (req, res) => {
+  const prepared = prepareDocumentExtractRequest(req, res);
+  if (!prepared) {
+    return;
   }
+  try {
+    const outcome = await runDocumentExtractTranslate(prepared.fields, prepared.documentFilename);
+    res.json(outcome);
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+// 非同期ジョブ版: 受付後すぐ 202 で jobId を返し、アプリは下の GET でポーリングする。
+// Cloudflare の 100 秒タイムアウト（HTTP 524）対策（docs/plans/pdf-extract-translate-524-timeout.md）。
+app.post("/api/document-extract-translate/jobs", (req, res) => {
+  const prepared = prepareDocumentExtractRequest(req, res);
+  if (!prepared) {
+    return;
+  }
+  const jobId = createDocumentJob(() =>
+    runDocumentExtractTranslate(prepared.fields, prepared.documentFilename)
+  );
+  logger.info(`document-extract-translate: job accepted jobId=${jobId} document=${prepared.documentFilename}`);
+  res.status(202).json({ jobId });
+});
+
+app.get("/api/document-extract-translate/jobs/:jobId", (req, res) => {
+  const state = getDocumentJob(req.params.jobId);
+  if (!state) {
+    res.status(404).json({ error: "job not found" });
+    return;
+  }
+  res.json(state);
 });
 
 const WORD_MAX_LENGTH = 100;

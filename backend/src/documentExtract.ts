@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { PDFParse } from "pdf-parse";
+import { PDFDocument } from "pdf-lib";
 import mammoth from "mammoth";
 import { config } from "./config";
 import { callStructured, translateText } from "./ocrTranslate";
@@ -39,16 +40,25 @@ export const MAX_DOCUMENT_BYTES = 14 * 1024 * 1024;
 // 収まる余裕を取る。これを超える長尺文書は末尾が切り詰められうる（将来: streaming＋分割。§9.1）。
 const DOCUMENT_MAX_TOKENS = 16384;
 
-// スキャンPDFを Claude にそのまま document ブロックで渡し、OCR＋翻訳を1回で行うスキーマ。
-// ocrTranslate.ts の COMBINED_SCHEMA を画像→PDF文書に読み替えたもの。
+// スキャンPDFのページ単位 OCR の出力上限。1ページぶんの原文＋訳は数千トークンに収まるため、
+// 余裕を持たせつつ全ページ一括時代の 16384 切断（Unterminated string in JSON）を構造的に防ぐ。
+const PDF_OCR_PAGE_MAX_TOKENS = 8192;
+
+// ページ単位 OCR の同時実行数。多ページPDFの合計処理時間を抑えつつ、Claude API のレート制限に
+// かかりにくい程度に留める（一時的な 429/overloaded は SDK 標準リトライに任せる）。
+export const PDF_OCR_CONCURRENCY = 4;
+
+// スキャンPDFの1ページを Claude に document ブロックで渡し、OCR＋翻訳を1回で行うスキーマ。
+// ocrTranslate.ts の COMBINED_SCHEMA を画像→PDF文書に読み替えたもの。多ページPDFはページ分割して
+// ページごとにこの呼び出しを行う（一括で送ると出力が max_tokens で切断され JSON が壊れるため）。
 const DOCUMENT_OCR_SCHEMA = {
   type: "object",
   properties: {
     ocrText: {
       type: "string",
       description:
-        "PDF文書から文字起こしした英語の原文。Markdown形式で、見出しは#、箇条書きは-、" +
-        "強調は**太字**/*斜体*など、原文のレイアウトが分かる記法を使うこと。複数ページはページ順に連結する。",
+        "PDFページから文字起こしした英語の原文。Markdown形式で、見出しは#、箇条書きは-、" +
+        "強調は**太字**/*斜体*など、原文のレイアウトが分かる記法を使うこと。本文が無いページは空文字列。",
     },
     translatedText: {
       type: "string",
@@ -99,12 +109,47 @@ export async function extractDocxText(fileBuffer: Buffer): Promise<string> {
   return value.trim();
 }
 
-// スキャンPDF（テキスト層なし）を Claude の document ブロックで OCR＋翻訳する。
+// PDF を 1 ページずつの単一ページ PDF に分割する。スキャンPDFのページ単位 OCR 用。
+// pdf-lib はテキスト層の有無に関係なくページ構造だけを複製するため、スキャン画像もそのまま保たれる。
+export async function splitPdfIntoPages(fileBuffer: Buffer): Promise<Buffer[]> {
+  // 取り込み PDF には印刷防止などの権限付き（暗号化扱い）のものがあるため ignoreEncryption で読む
+  const source = await PDFDocument.load(fileBuffer, { ignoreEncryption: true });
+  const pageCount = source.getPageCount();
+  const pages: Buffer[] = [];
+  for (let i = 0; i < pageCount; i++) {
+    const single = await PDFDocument.create();
+    const [page] = await single.copyPages(source, [i]);
+    single.addPage(page);
+    pages.push(Buffer.from(await single.save()));
+  }
+  return pages;
+}
+
+// items を最大 concurrency 並列で fn に通し、入力順のまま結果を返す。1件でも失敗すれば全体を reject
+// （呼び出し側でリクエスト失敗として扱う）。ページ単位 OCR の並列実行用の小さなヘルパー。
+export async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex++;
+      results[index] = await fn(items[index], index);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
+// スキャンPDFの1ページを Claude の document ブロックで OCR＋翻訳する。
 // 写真OCRの combinedOcrAndTranslate と同型で、image ブロックを document ブロックに置き換えたもの。
-async function ocrAndTranslatePdf(fileBase64: string, targetLanguageCode: string) {
+async function ocrAndTranslatePdfPage(pageBase64: string, targetLanguageCode: string) {
   const documentBlock: Anthropic.Messages.DocumentBlockParam = {
     type: "document",
-    source: { type: "base64", media_type: "application/pdf", data: fileBase64 },
+    source: { type: "base64", media_type: "application/pdf", data: pageBase64 },
   };
   const { json, inputTokens, outputTokens } = await callStructured<{
     ocrText: string;
@@ -117,21 +162,40 @@ async function ocrAndTranslatePdf(fileBase64: string, targetLanguageCode: string
       {
         type: "text",
         text:
-          `このPDF文書（テキスト層のないスキャン画像）から英語の本文をMarkdown形式で文字起こしし（ocrText）、` +
+          `このPDFページ（テキスト層のないスキャン画像）から英語の本文をMarkdown形式で文字起こしし（ocrText）、` +
           `その文章を言語コード "${targetLanguageCode}" にMarkdown形式のまま翻訳してください（translatedText）。` +
-          `複数ページある場合はページ順に本文を連結してください。` +
-          `見出し・箇条書き・強調（太字/斜体）など、原文のレイアウトが分かるようにMarkdown記法を使ってください。`,
+          `見出し・箇条書き・強調（太字/斜体）など、原文のレイアウトが分かるようにMarkdown記法を使ってください。` +
+          `本文の無いページは ocrText と translatedText を空文字列にしてください。`,
       },
     ],
-    DOCUMENT_MAX_TOKENS
+    PDF_OCR_PAGE_MAX_TOKENS
   );
   return { ocrText: json.ocrText, translatedText: json.translatedText, inputTokens, outputTokens };
+}
+
+// スキャンPDF全体をページ分割し、ページごとの OCR＋翻訳を並列実行して結合する。
+// 一括送信だと多ページで出力が max_tokens 切断され JSON が壊れる（本番で 13 ページ PDF が
+// 「Unterminated string in JSON」で失敗）ため、ページ単位に分けて上限内に収める。
+async function ocrAndTranslateScannedPdf(fileBuffer: Buffer, targetLanguageCode: string) {
+  const pageBuffers = await splitPdfIntoPages(fileBuffer);
+  const pageResults = await mapWithConcurrency(pageBuffers, PDF_OCR_CONCURRENCY, (pageBuffer) =>
+    ocrAndTranslatePdfPage(pageBuffer.toString("base64"), targetLanguageCode)
+  );
+
+  const joinNonEmpty = (texts: string[]) =>
+    texts.map((text) => text.trim()).filter((text) => text.length > 0).join("\n\n");
+  return {
+    ocrText: joinNonEmpty(pageResults.map((page) => page.ocrText)),
+    translatedText: joinNonEmpty(pageResults.map((page) => page.translatedText)),
+    inputTokens: pageResults.reduce((sum, page) => sum + page.inputTokens, 0),
+    outputTokens: pageResults.reduce((sum, page) => sum + page.outputTokens, 0),
+  };
 }
 
 /// 文書（PDF/DOCX）を抽出＋翻訳する。ハイブリッド:
 /// - DOCX: mammoth でテキスト抽出 → 既存 translateText で翻訳
 /// - PDF（テキスト層あり）: pdf-parse で抽出 → translateText
-/// - PDF（テキスト層なし＝スキャン）: Claude の document ブロックで OCR＋翻訳（1回の呼び出し）
+/// - PDF（テキスト層なし＝スキャン）: ページ分割し Claude の document ブロックでページ単位に OCR＋翻訳
 export async function extractAndTranslateDocument(
   fileBuffer: Buffer,
   mediaType: string,
@@ -174,8 +238,8 @@ export async function extractAndTranslateDocument(
     };
   }
 
-  // テキスト層なし（スキャン）: Claude に PDF をそのまま渡して OCR＋翻訳。
-  const ocr = await ocrAndTranslatePdf(fileBuffer.toString("base64"), targetLanguageCode);
+  // テキスト層なし（スキャン）: ページ分割して Claude でページ単位に OCR＋翻訳。
+  const ocr = await ocrAndTranslateScannedPdf(fileBuffer, targetLanguageCode);
   return {
     extractedText: ocr.ocrText,
     translatedText: ocr.translatedText,

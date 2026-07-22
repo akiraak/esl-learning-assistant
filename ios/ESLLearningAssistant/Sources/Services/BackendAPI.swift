@@ -62,7 +62,7 @@ enum BackendAPI {
         return request
     }
 
-    /// JSONボディをPOSTし、200ならレスポンスボディを返す。失敗はステータス・ボディをログに残して throw する。
+    /// JSONボディをPOSTし、2xxならレスポンスボディを返す。失敗はステータス・ボディをログに残して throw する。
     /// timeout はサーバ側の処理が URLRequest 既定の60秒を超えうるAPI（画像生成など）で指定する。
     static func post(path: String, body: some Encodable, timeout: TimeInterval? = nil) async throws -> Data {
         var request = try makeRequest(path: path, method: "POST")
@@ -71,6 +71,12 @@ enum BackendAPI {
         }
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(body)
+        return try await send(request, path: path)
+    }
+
+    /// GETで2xxならレスポンスボディを返す。ジョブ状態のポーリング（文書抽出）などに使う。
+    static func get(path: String) async throws -> Data {
+        let request = try makeRequest(path: path, method: "GET")
         return try await send(request, path: path)
     }
 
@@ -85,8 +91,9 @@ enum BackendAPI {
         }
 
         let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
-        if statusCode == 200 {
-            logger.info("\(path, privacy: .public): HTTP 200 (\(data.count) bytes)")
+        if (200...299).contains(statusCode) {
+            // 202 はジョブ受付（POST /api/document-extract-translate/jobs）
+            logger.info("\(path, privacy: .public): HTTP \(statusCode) (\(data.count) bytes)")
             return data
         }
 

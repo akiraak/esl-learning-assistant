@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import { PDFDocument, StandardFonts } from "pdf-lib";
 import {
   PDF_MEDIA_TYPE,
   DOCX_MEDIA_TYPE,
@@ -14,6 +15,9 @@ import {
   extractPdfText,
   extractDocxText,
   extractAndTranslateDocument,
+  splitPdfIntoPages,
+  mapWithConcurrency,
+  PDF_OCR_CONCURRENCY,
 } from "../src/documentExtract";
 
 // documentExtract の import はネットワーク/DB/ファイル書き込みの副作用を持たない
@@ -188,5 +192,68 @@ test("extractAndTranslateDocument: 抽出テキストが空の DOCX は翻訳前
   await assert.rejects(
     () => extractAndTranslateDocument(fixture("empty.docx"), DOCX_MEDIA_TYPE, "ja"),
     /no extractable text in document/
+  );
+});
+
+// --- スキャンPDFのページ分割（524/出力トークン上限対策のページ単位 OCR 用） ----
+
+test("splitPdfIntoPages: 複数ページ PDF を1ページずつの PDF に分割し内容を保持する", async () => {
+  // pdf-lib で 3 ページのテキスト付き PDF をメモリ上に作る
+  const source = await PDFDocument.create();
+  const font = await source.embedFont(StandardFonts.Helvetica);
+  for (let i = 1; i <= 3; i++) {
+    const page = source.addPage([300, 200]);
+    page.drawText(`This is fixture page number ${i} of three.`, { x: 20, y: 100, size: 12, font });
+  }
+  const multiPagePdf = Buffer.from(await source.save());
+
+  const pages = await splitPdfIntoPages(multiPagePdf);
+  assert.equal(pages.length, 3);
+  for (let i = 0; i < 3; i++) {
+    const single = await PDFDocument.load(pages[i]);
+    assert.equal(single.getPageCount(), 1);
+    // 各ページの本文がページ順のまま保たれている
+    const text = await extractPdfText(pages[i]);
+    assert.match(text, new RegExp(`fixture page number ${i + 1}`));
+  }
+});
+
+test("splitPdfIntoPages: 1ページ PDF は1要素で返る", async () => {
+  const pages = await splitPdfIntoPages(fixture("scanned.pdf"));
+  assert.equal(pages.length, 1);
+  const single = await PDFDocument.load(pages[0]);
+  assert.equal(single.getPageCount(), 1);
+});
+
+// --- ページ単位 OCR の並列実行ヘルパー ----------------------------------------
+
+test("mapWithConcurrency: 結果を入力順で返し、同時実行数を上限内に抑える", async () => {
+  assert.ok(PDF_OCR_CONCURRENCY >= 1);
+  const items = [50, 10, 30, 5, 20, 1];
+  let running = 0;
+  let peak = 0;
+  const results = await mapWithConcurrency(items, 2, async (delayMs, index) => {
+    running++;
+    peak = Math.max(peak, running);
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+    running--;
+    return `${index}:${delayMs}`;
+  });
+  // 完了順（遅延バラバラ）に関わらず入力順で返る
+  assert.deepEqual(results, ["0:50", "1:10", "2:30", "3:5", "4:20", "5:1"]);
+  assert.ok(peak <= 2, `peak concurrency ${peak} exceeded limit`);
+  assert.ok(peak >= 2, "should actually run in parallel");
+});
+
+test("mapWithConcurrency: 1件でも失敗したら全体が reject する", async () => {
+  await assert.rejects(
+    () =>
+      mapWithConcurrency([1, 2, 3], 2, async (n) => {
+        if (n === 2) {
+          throw new Error(`page ${n} failed`);
+        }
+        return n;
+      }),
+    /page 2 failed/
   );
 });
