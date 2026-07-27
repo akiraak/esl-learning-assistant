@@ -1,10 +1,7 @@
 # TODO
 
-- [ ] PDF文字起こし・翻訳で HTTP 524（Cloudflareタイムアウト）が発生する問題の調査・対策 [plan](docs/plans/pdf-extract-translate-524-timeout.md)
-  - [x] Phase 1: 原因確定（13ページスキャンPDFで159秒/152秒→524。加えて出力16384トークン上限でJSON切断しサーバー側でも失敗）
-  - [x] Phase 2 Step 1: スキャンPDFのページ分割OCR（pdf-lib分割＋並列OCR、backend）
-  - [x] Phase 2 Step 2: 非同期ジョブAPI（POST/GET /api/document-extract-translate/jobs、backend）
-  - [x] Phase 2 Step 3: iOSのポーリング対応（RemoteDocumentExtractTranslateService）
-  - [ ] Phase 2 Step 4: テスト・検証 — 単体テスト・ジョブAPI疎通・13ページ分割確認まで完了。
-        残り: Claude 込みの完走確認（ローカル backend/.env の ANTHROPIC_API_KEY が無効で保留。
-        キー更新 or 本番デプロイ後に実施）→ 完了したら本タスクを DONE.md へ、プランを archive へ
+- [ ] アプリで音声ファイルの文字起こしをすると400エラーが起きる [plan](docs/plans/audio-transcribe-400.md)
+  - 原因確定: 本番サーバー（esl.chobi.me）の `GEMINI_API_KEY` が無効。コード側のバグではない
+  - [ ] Sx360 の `g3plus-ops/esl-learning-assistant/.env` の `GEMINI_API_KEY` を差し替えて `up -d`
+  - [ ] 本番アプリで文字起こしが成功することを確認
+  - [ ] 同じキーを使う本番 `/api/tts`（Gemini TTS）も復旧しているか確認
