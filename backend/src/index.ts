@@ -19,6 +19,7 @@ import {
   listQuizQuestions,
   listStoredWordTexts,
   normalizeWordKey,
+  queryStoredWords,
   replaceQuizQuestions,
   upsertStoredContextNormalization,
   upsertStoredNormalization,
@@ -38,6 +39,7 @@ import {
 } from "./documentExtract";
 import { createDocumentJob, getDocumentJob, runDocumentExtractTranslate } from "./documentJobs";
 import { generateWordInfo, type WordInfo } from "./wordInfo";
+import { buildWordDetail, buildWordSummary, parseWordListQuery } from "./wordsApi";
 import { normalizeWord } from "./wordNormalize";
 import { generateWritingFeedback, type WritingFeedbackRound } from "./writingFeedback";
 import { generateQuizQuestions } from "./quizQuestions";
@@ -702,6 +704,69 @@ app.post("/api/word-normalize", async (req, res) => {
     logger.error(`word-normalize: failed word="${trimmedWord}" latencyMs=${latencyMs} error=${errorMessage}`);
     res.status(500).json({ error: errorMessage });
   }
+});
+
+// 保存済み単語情報の参照 API（docs/plans/word-info-reference-api.md）。
+// 他のアプリからの読み取り専用アクセス用で、AI 呼び出し・DB 書き込みは行わない
+// （生成したい場合は既存の POST /api/word-info を使う）。認証は他の /api/* と同じ X-API-Secret。
+app.get("/api/words", (req, res) => {
+  const parsed = parseWordListQuery(req.query as Record<string, unknown>);
+  if (!parsed.ok) {
+    logger.warn(`words: rejected (${parsed.error})`);
+    res.status(400).json({ error: parsed.error });
+    return;
+  }
+  const { includeInfo, ...query } = parsed.value;
+  const { total, rows } = queryStoredWords(query);
+  logger.info(
+    `words: list total=${total} returned=${rows.length} targetLanguage=${query.targetLanguage ?? "*"} ` +
+      `q=${query.q ? `"${query.q}"` : "-"} updatedSince=${query.updatedSince ?? "-"} ` +
+      `limit=${query.limit} offset=${query.offset} includeInfo=${includeInfo}`
+  );
+  res.json({
+    total,
+    limit: query.limit,
+    offset: query.offset,
+    words: rows.map((row) => buildWordSummary(row, includeInfo)),
+  });
+});
+
+// 1語の詳細。熟語は URL エンコードで指定する（例: /api/words/look%20up?targetLanguage=ja）。
+// キーは保存時と同じ normalizeWordKey（trim + 小文字化）で正規化して引く。
+app.get("/api/words/:word", (req, res) => {
+  const word = req.params.word;
+  const { targetLanguage } = req.query;
+
+  if (!word.trim()) {
+    logger.warn("words: rejected (word is required)");
+    res.status(400).json({ error: "word is required" });
+    return;
+  }
+  if (word.length > WORD_MAX_LENGTH) {
+    logger.warn(`words: rejected (word too long: ${word.length})`);
+    res.status(400).json({ error: `word must be ${WORD_MAX_LENGTH} characters or fewer` });
+    return;
+  }
+  if (typeof targetLanguage !== "string" || !targetLanguage) {
+    logger.warn("words: rejected (targetLanguage is required)");
+    res.status(400).json({ error: "targetLanguage is required" });
+    return;
+  }
+
+  const stored = getStoredWord(word, targetLanguage);
+  if (!stored) {
+    logger.info(`words: not found word="${word.trim()}" targetLanguage=${targetLanguage}`);
+    res.status(404).json({ error: "word not found" });
+    return;
+  }
+  const detail = buildWordDetail(stored);
+  if (!detail) {
+    logger.error(`words: broken word_info_json word="${stored.word}" targetLanguage=${targetLanguage}`);
+    res.status(500).json({ error: "stored word info is broken" });
+    return;
+  }
+  logger.info(`words: detail word="${stored.word}" targetLanguage=${targetLanguage}`);
+  res.json(detail);
 });
 
 const WRITING_TEXT_MAX_LENGTH = 5000;

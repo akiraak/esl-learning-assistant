@@ -956,6 +956,44 @@ export function listStoredWords(): StoredWordRow[] {
   return db.prepare("SELECT * FROM words ORDER BY updated_at DESC, id DESC").all() as StoredWordRow[];
 }
 
+// 参照 API（GET /api/words, docs/plans/word-info-reference-api.md）用の検索条件。
+// パラメータの検証・デフォルト値の適用は wordsApi.ts の parseWordListQuery で行う。
+export interface StoredWordQuery {
+  targetLanguage?: string;
+  q?: string;
+  updatedSince?: string;
+  limit: number;
+  offset: number;
+}
+
+/// 保存済み単語情報を検索する。q は normalizeWordKey と同じ trim+小文字化で部分一致
+/// （word 列は保存時に正規化済み。LIKE の特殊文字はエスケープ）。updatedSince は
+/// updated_at（UTC ISO 文字列）との辞書順比較。total はページング用の全件数。
+export function queryStoredWords(query: StoredWordQuery): { total: number; rows: StoredWordRow[] } {
+  const conditions: string[] = [];
+  const params: Record<string, unknown> = {};
+  if (query.targetLanguage) {
+    conditions.push("target_language = @targetLanguage");
+    params.targetLanguage = query.targetLanguage;
+  }
+  if (query.q) {
+    conditions.push("word LIKE @q ESCAPE '\\'");
+    params.q = `%${normalizeWordKey(query.q).replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+  }
+  if (query.updatedSince) {
+    conditions.push("updated_at >= @updatedSince");
+    params.updatedSince = query.updatedSince;
+  }
+  const where = conditions.length > 0 ? ` WHERE ${conditions.join(" AND ")}` : "";
+  const total = (
+    db.prepare(`SELECT COUNT(*) AS count FROM words${where}`).get(params) as { count: number }
+  ).count;
+  const rows = db
+    .prepare(`SELECT * FROM words${where} ORDER BY updated_at DESC, id DESC LIMIT @limit OFFSET @offset`)
+    .all({ ...params, limit: query.limit, offset: query.offset }) as StoredWordRow[];
+  return { total, rows };
+}
+
 export interface StoredWordInput {
   word: string;
   targetLanguage: string;

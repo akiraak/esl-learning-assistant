@@ -1,6 +1,16 @@
 # DONE
 
-- [x] 2026-07-21 Gemini3.1 TTSの検証と全読み上げ箇所の3.1化
+- [x] 2026-07-29 単語情報をAPIから参照できるようにする（他のアプリから使えるようにする）
+      [plan](docs/plans/archive/word-info-reference-api.md)
+      words テーブルの保存済み単語情報を読み取り専用で参照する API を追加（AI 呼び出し・
+      DB 書き込みなし。生成は従来どおり POST /api/word-info）。認証は既存 /api/* と同じ
+      X-API-Secret。`GET /api/words` は targetLanguage / q（部分一致）/ updatedSince（差分
+      同期用、UTC ISO へ正規化）/ limit（1〜500、既定100）/ offset / includeInfo に対応し、
+      第1義の meaning・partOfSpeech・cefrLevel のサマリを返す。`GET /api/words/:word` は
+      normalizeWordKey で正規化して1語の全 wordInfo を返す（熟語は look%20up のように URL
+      エンコード。未保存は 404）。検証・整形は wordsApi.ts に純粋関数で分離、DB 検索は
+      db.ts の queryStoredWords()（LIKE 特殊文字エスケープ済み）。backend テスト72件パス
+      （wordsApi 15件追加）、ローカルサーバへの curl で 401/400/404/一覧/検索/差分/熟語詳細を実地確認。
       [plan](docs/plans/archive/gemini-3-1-tts-verification.md)
       3.1 flash TTS（$1.00/$20.00 per 1M、2.5 pro と同額・2.5 flash の2倍）は現行の
       generateContent + prebuiltVoiceConfig 形式・Leda/Aoede ボイス・24kHz PCM がそのまま通ることを
