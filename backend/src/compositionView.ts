@@ -219,8 +219,14 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
       --chat-w: 420px;
       grid-template-columns: minmax(0, 1fr) 6px var(--chat-w);
     }
-    /* 紙の左右余白（--pad-x）は紙の外に置くタイトル行とも揃えたいので、ペイン側で持つ。 */
-    .paper-pane { min-width: 0; overflow-y: auto; --pad-x: 56px; }
+    /* 紙の左右余白（--pad-x）は紙の外に置くタイトル行とも揃えたいので、ペイン側で持つ。
+       縦は「タイトル → タブ → 紙」を積む列。紙（.paper-stack 以下）だけを伸ばして
+       ペインの余りをちょうど埋めるので、本文が短いうちはスクロールバーが出ない。
+       ツールバー・タイトル・タブの高さを数えた calc は当てにしない（作りを変えるたびに狂うため）。 */
+    .paper-pane {
+      min-width: 0; overflow-y: auto; --pad-x: 56px;
+      display: flex; flex-direction: column;
+    }
     /* 紙と AI 欄の間の細い仕切り。掴む余地を持たせるため見た目の線より当たり判定を広くする。 */
     .resizer {
       position: relative; cursor: col-resize; background: #E4DDCE;
@@ -268,6 +274,10 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
     .paper-stack {
       margin: 0 24px 64px;
       box-shadow: 0 1px 2px rgba(60,50,35,0.10), 0 10px 30px rgba(60,50,35,0.12);
+      /* ペインの余りを埋めるだけで、本文が伸びたら縮まずに押し出す（1 0 auto の 0 が縮まない指定）。
+         伸ばすのは紙（.sheet）まで。入力欄自身を伸ばすと autogrow が自分の伸びた丈を測ってしまい、
+         打つたびに紙が伸び続ける（罫線の余白をクリックしたときの書き始めはスクリプト側で入力欄へ送る）。 */
+      display: flex; flex-direction: column; flex: 1 0 auto;
     }
     /* ノートに貼った見出しインデックスの体裁。紙の左端から並べ、狭ければ横スクロールさせる。 */
     .tabs {
@@ -318,7 +328,7 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
        上下の padding を行送りの倍数にしてあるので、罫線と本文の行がぴったり重なる。
        縦の余白線はノートらしさのため、本文の左端から 12px 手前に引く。 */
     .sheet {
-      position: relative;
+      position: relative; flex: 1 0 auto;
       margin: 0; background-color: ${PAPER_SHEET};
       padding: ${lh}px var(--pad-x) ${lh * 2}px;
       background-image:
@@ -375,7 +385,7 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
       position: relative; z-index: 1;
       display: block; width: 100%; outline: none; resize: none; overflow: hidden;
       background: transparent; color: ${PAPER_INK};
-      min-height: calc(100vh - 260px); caret-color: ${PAPER_INK};
+      min-height: ${lh * 4}px; caret-color: ${PAPER_INK};
     }
     .paper::placeholder { color: #B8B0A0; }
     /* 本文と同じ字を透明で敷き直し、綴りの誤りにだけ赤い波線を引く層。
@@ -699,6 +709,14 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
       autogrow();
       // カーソルを末尾に置いて続きから書けるようにする
       input.setSelectionRange(input.value.length, input.value.length);
+
+      // 本文より下の罫線（入力欄の外）をクリックしても、続きから書き始められるようにする
+      document.querySelector('.sheet').addEventListener('mousedown', function (event) {
+        if (event.target === input || input.contains(event.target)) return;
+        event.preventDefault();
+        input.focus();
+        input.setSelectionRange(input.value.length, input.value.length);
+      });
 
       // --- 綴りの強調表示 ---------------------------------------------------
       var spellcheckUrl = ${jsonForScript(page.spellcheckUrl)};

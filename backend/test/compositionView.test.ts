@@ -371,6 +371,21 @@ test("執筆ページ: 本文の HTML 特殊文字をエスケープする", () 
   assert.match(html, /a &lt; b &amp; &quot;c&quot;/);
 });
 
+test("執筆ページ: 本文が短いうちは紙が余りを埋め、縦スクロールバーを出さない", () => {
+  const html = editorPage("Short.");
+
+  // ツールバー・タイトル・タブの高さを数えた calc（ズレるとバーが出る）は使わない
+  assert.doesNotMatch(html, /min-height: calc\(100vh/);
+  // ペインは縦の列で、紙のかたまりだけが余りを埋める
+  assert.match(html, /\.paper-pane \{[^}]*display: flex; flex-direction: column;/);
+  assert.match(html, /\.paper-stack \{[^}]*flex: 1 0 auto;/);
+  assert.match(html, /\.sheet \{[^}]*flex: 1 0 auto;/);
+  // 入力欄自身は伸ばさない（autogrow が自分の丈を測って伸び続けるため）
+  assert.doesNotMatch(html, /\.paper \{[^}]*flex: 1 0 auto;/);
+  // 代わりに、本文より下の罫線をクリックしたら入力欄へ送る
+  assert.match(html, /document\.querySelector\('\.sheet'\)\.addEventListener\('mousedown'/);
+});
+
 test("執筆ページ: 罫線の間隔と本文の行送りが一致する（ズレると字が罫線から浮く）", () => {
   const html = editorPage("text");
 
