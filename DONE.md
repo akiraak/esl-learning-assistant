@@ -1,5 +1,19 @@
 # DONE
 
+- [x] 2026-08-01 外部アプリから登録した単語がアプリに表示されない（サーバ→アプリの取り込み経路を新設）
+      [plan](docs/plans/archive/external-word-registration-sync.md)
+      アプリにはサーバから状態を引く経路が無かったため、既存の `GET /api/words` を使った
+      差分取り込みを追加（backend は変更なし）。`BackendAPI.get` に `URLComponents` 経由の
+      クエリパラメータ対応を追加（従来の appendingPathComponent では `?` がエンコードされ
+      呼べなかった）、`WordSyncService`（ページング取得）と `WordSyncImporter`（差分判定・
+      取り込み）を新設。取り込みは `WordRegistrar.register(lesson: nil)` に委譲するので
+      同綴り重複排除がそのまま効き、AI 情報生成はサーバキャッシュヒットで訳語が即埋まる。
+      AI 生成は逐次 await して一気に走らせない。取り込み済みキー（`word|targetLanguage`）を
+      UserDefaults の台帳に残し、アプリで削除した語が復活しないようにする（設定画面に
+      「Reset Imported Words」）。導線は起動時（ContentView）と Words タブの pull-to-refresh。
+      ユニットテスト7件追加（139件パス）、backend 72件パス。ローカルサーバ＋シミュレータで
+      16語の取り込み・訳語補完、外部保存した新語の取り込み、削除語が復活しないこと、
+      再起動で重複しないことを実地確認。
 - [x] 2026-07-29 単語情報をAPIから参照できるようにする（他のアプリから使えるようにする）
       [plan](docs/plans/archive/word-info-reference-api.md)
       words テーブルの保存済み単語情報を読み取り専用で参照する API を追加（AI 呼び出し・

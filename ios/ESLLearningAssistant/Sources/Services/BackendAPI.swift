@@ -47,8 +47,14 @@ enum BackendAPI {
         return (value, value.isEmpty ? "build default (EMPTY)" : "build default (\(value.count) chars)")
     }
 
-    private static func makeRequest(path: String, method: String) throws -> URLRequest {
-        guard let url = URL(string: baseURLString)?.appendingPathComponent(path) else {
+    /// クエリ文字列は `appendingPathComponent` に混ぜると `?`・`=` までパーセントエンコードされて
+    /// パスの一部になってしまうため、必ず `URLComponents` 経由で組み立てる。
+    private static func makeRequest(
+        path: String,
+        method: String,
+        queryItems: [URLQueryItem] = []
+    ) throws -> URLRequest {
+        guard let url = makeURL(path: path, queryItems: queryItems) else {
             logger.error("\(method, privacy: .public) \(path, privacy: .public): invalid base URL \"\(baseURLString, privacy: .public)\"")
             throw BackendAPIError.invalidBaseURL
         }
@@ -60,6 +66,16 @@ enum BackendAPI {
         }
         logger.info("\(method, privacy: .public) \(url.absoluteString, privacy: .public) [API Secret: \(secret.source, privacy: .public)]")
         return request
+    }
+
+    /// base URL + path（+ クエリ）から URL を組み立てる。組み立てに失敗したら nil。
+    /// `internal` にしてあるのはユニットテストからエンコード規則を検証するため。
+    static func makeURL(path: String, queryItems: [URLQueryItem] = []) -> URL? {
+        guard let url = URL(string: baseURLString)?.appendingPathComponent(path) else { return nil }
+        guard !queryItems.isEmpty else { return url }
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
+        components.queryItems = queryItems
+        return components.url
     }
 
     /// JSONボディをPOSTし、2xxならレスポンスボディを返す。失敗はステータス・ボディをログに残して throw する。
@@ -74,9 +90,10 @@ enum BackendAPI {
         return try await send(request, path: path)
     }
 
-    /// GETで2xxならレスポンスボディを返す。ジョブ状態のポーリング（文書抽出）などに使う。
-    static func get(path: String) async throws -> Data {
-        let request = try makeRequest(path: path, method: "GET")
+    /// GETで2xxならレスポンスボディを返す。ジョブ状態のポーリング（文書抽出）や
+    /// 単語一覧の取得（`GET /api/words?...`）などに使う。
+    static func get(path: String, queryItems: [URLQueryItem] = []) async throws -> Data {
+        let request = try makeRequest(path: path, method: "GET", queryItems: queryItems)
         return try await send(request, path: path)
     }
 

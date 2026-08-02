@@ -52,6 +52,14 @@ struct ContentView: View {
         .task {
             // レッスンのカレンダー化に伴う授業日バックフィル（未完了時のみ実行、冪等）
             LessonDateBackfill.runIfNeeded(modelContext: modelContext)
+            // 外部アプリが API 経由で保存した単語をローカルへ取り込む
+            // （失敗はサイレント。Words タブの pull-to-refresh でも実行できる）。
+            // ユニットテストはホストアプリとしてこの View も起動するため、テスト実行が
+            // backend へ通信・課金しないよう起動時同期は除外する（同期処理自体の検証は
+            // WordSyncImporterTests がスタブ経由で行う）
+            if NSClassFromString("XCTestCase") == nil {
+                await WordSyncImporter.sync(modelContext: modelContext)
+            }
         }
     }
 }

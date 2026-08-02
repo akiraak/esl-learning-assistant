@@ -8,6 +8,10 @@ enum AppSettingsKeys {
     /// 音声取り込み時の音量ノーマライズ ON/OFF（既定 ON）。取り込み確認シートの Toggle で
     /// 切り替え、前回の選択を次回の初期値として引き継ぐ。
     static let audioImportNormalizeEnabled = "audioImportNormalizeEnabled"
+    /// サーバから取り込み済みの単語キー（`小文字の word|targetLanguage`）の配列。
+    /// 一度取り込んだ語をアプリ側で削除しても次の同期で復活させないための台帳
+    /// （`WordSyncImporter`）。設定画面からリセットできる。
+    static let importedServerWordKeys = "importedServerWordKeys"
 
     /// ビルド時にInfo.plistへ埋め込まれた値（実機ビルドはrun-ios-device.shがMacのIPで上書きする）。
     /// 未設定・空なら本番URLにフォールバックする（ローカル開発時はSettings画面で切り替える）。

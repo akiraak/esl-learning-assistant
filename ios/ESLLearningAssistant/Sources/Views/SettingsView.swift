@@ -40,6 +40,8 @@ struct SettingsView: View {
 
     @State private var isTestingConnection = false
     @State private var connectionTestResult: BackendAPI.ConnectionTestResult?
+    /// 取り込み済み台帳の件数（表示・リセットボタンの有効判定用。画面表示時に読み込む）
+    @State private var importedWordCount = 0
 
     #if DEBUG
     @Environment(\.modelContext) private var modelContext
@@ -123,6 +125,23 @@ struct SettingsView: View {
                     )
                 }
 
+                Section {
+                    Button("Reset Imported Words") {
+                        WordSyncImporter.resetImportedKeys()
+                        importedWordCount = WordSyncImporter.importedKeys().count
+                    }
+                    .disabled(importedWordCount == 0)
+                } header: {
+                    TappableEnglishText(text: "Word Sync")
+                } footer: {
+                    TappableEnglishText(
+                        text: "Words saved on the server (including ones added by other apps) are "
+                            + "imported on launch and by pull-to-refresh on the Words tab. "
+                            + "Imported words are remembered (\(importedWordCount) so far) so that "
+                            + "deleting one here does not bring it back. Reset to import them all again."
+                    )
+                }
+
                 #if DEBUG
                 Section {
                     Button(DebugDeleteAction.allData.title, role: .destructive) {
@@ -147,6 +166,9 @@ struct SettingsView: View {
             }
             // 設定画面の英語ラベル・見出し・説明文の単語タップ→登録/詳細遷移
             .wordTapRegistration()
+            .onAppear {
+                importedWordCount = WordSyncImporter.importedKeys().count
+            }
             #if DEBUG
             .confirmationDialog(
                 pendingDeleteAction?.title ?? "",

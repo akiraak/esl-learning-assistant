@@ -38,6 +38,10 @@ struct WordsView: View {
                             }
                         }
                     }
+                    // 外部アプリが API 経由で保存した単語を手動で取り込む（起動時にも自動実行される）
+                    .refreshable {
+                        await WordSyncImporter.sync(modelContext: modelContext)
+                    }
                 }
             }
             .wordTapRegistration()
