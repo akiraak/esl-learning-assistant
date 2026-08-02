@@ -1,32 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  canReviewComposition,
   compositionListTitle,
   compositionParagraphsHtml,
   compositionPreview,
-  compositionStatus,
-  draftMatchesLastRound,
   renderCompositionEditorPageHtml,
-  renderCompositionReadPageHtml,
   type CompositionChatMessageView,
-  type CompositionStatusSource,
   type EditorMisspelling,
 } from "../src/compositionView";
 
 // compositionView（docs/plans/writing-web-interface.md）は db.ts を読み込まない純粋モジュールなので、
-// 状態判定・段落化・読書用ページの HTML をここで直接検証できる（printView.test.ts と同じ形）。
-
-function source(overrides: Partial<CompositionStatusSource> = {}): CompositionStatusSource {
-  return {
-    englishText: "I went to school.",
-    japaneseText: "学校へ行った。",
-    roundCount: 1,
-    lastRoundEnglishText: "I went to school.",
-    lastRoundJapaneseText: "学校へ行った。",
-    ...overrides,
-  };
-}
+// 見出しの整形と執筆画面の HTML をここで直接検証できる（printView.test.ts と同じ形）。
 
 test("compositionParagraphsHtml: 空行で段落を分け、段落内の改行は<br>で残す", () => {
   assert.equal(
@@ -45,37 +29,6 @@ test("compositionParagraphsHtml: HTML特殊文字をエスケープする", () =
 test("compositionParagraphsHtml: 空文字・空白のみは空文字を返す", () => {
   assert.equal(compositionParagraphsHtml(""), "");
   assert.equal(compositionParagraphsHtml("  \n \n "), "");
-});
-
-test("compositionStatus: ラウンドが無ければ未添削", () => {
-  const row = source({ roundCount: 0, lastRoundEnglishText: null, lastRoundJapaneseText: null });
-  assert.equal(compositionStatus(row), "draft");
-  assert.equal(draftMatchesLastRound(row), false);
-});
-
-test("compositionStatus: 下書きが最終ラウンドと同一なら添削済み", () => {
-  assert.equal(compositionStatus(source()), "reviewed");
-});
-
-test("compositionStatus: 前後の空白差は同一とみなす（iOS の判定と揃える）", () => {
-  assert.equal(compositionStatus(source({ englishText: "  I went to school.  " })), "reviewed");
-});
-
-test("compositionStatus: 下書きを直したら編集中", () => {
-  assert.equal(compositionStatus(source({ englishText: "I went to school today." })), "edited");
-  assert.equal(compositionStatus(source({ japaneseText: "今日学校へ行った。" })), "edited");
-});
-
-test("canReviewComposition: 英日とも非空で、最終ラウンドから変化しているときだけ送れる", () => {
-  assert.equal(canReviewComposition(source()), false);
-  assert.equal(canReviewComposition(source({ englishText: "I went to school today." })), true);
-  assert.equal(canReviewComposition(source({ englishText: "   " })), false);
-  assert.equal(canReviewComposition(source({ englishText: "New text.", japaneseText: "  " })), false);
-});
-
-test("canReviewComposition: 初回は下書きが揃っていれば送れる", () => {
-  const row = source({ roundCount: 0, lastRoundEnglishText: null, lastRoundJapaneseText: null });
-  assert.equal(canReviewComposition(row), true);
 });
 
 test("compositionPreview: 英文優先・空なら意図、超過分は…で切る", () => {
@@ -289,72 +242,4 @@ test("執筆ページ: 罫線の間隔と本文の行送りが一致する（ズ
   );
   // 自動リサイズも同じ行送りの倍数に丸める
   assert.match(html, new RegExp(`input\\.scrollHeight / ${lineHeight}`));
-});
-
-function readPage(rounds: Parameters<typeof renderCompositionReadPageHtml>[0]["rounds"]) {
-  return renderCompositionReadPageHtml({
-    id: 7,
-    title: "My composition",
-    meta: "#7 ・ 更新 2026-08-01 ・ 添削 1 回",
-    draft: { englishText: "I go to school.", japaneseText: "学校へ行く。" },
-    rounds,
-    backHref: "/admin/writing/7",
-  });
-}
-
-test("読書用ページ: 最終ラウンドの添削後英文を本文に置き、ラウンドを古い順に並べる", () => {
-  const html = readPage([
-    {
-      roundIndex: 1,
-      englishText: "I go to school yesterday.",
-      japaneseText: "昨日学校へ行った。",
-      correctedText: "I went to school yesterday.",
-      explanation: "- go を went に直しました。",
-      createdAt: "2026-08-01 10:00:00 PDT",
-    },
-    {
-      roundIndex: 2,
-      englishText: "I went to school yesterday and meet my friend.",
-      japaneseText: "昨日学校へ行って友達に会った。",
-      correctedText: "I went to school yesterday and met my friend.",
-      explanation: "- meet を met に直しました。",
-      createdAt: "2026-08-01 11:00:00 PDT",
-    },
-  ]);
-
-  assert.match(html, /<title>My composition<\/title>/);
-  assert.match(html, /#7 ・ 更新 2026-08-01 ・ 添削 1 回/);
-  // 本文（final）は最終ラウンドの添削後英文
-  assert.match(
-    html,
-    /<section class="final">\s*<p>I went to school yesterday and met my friend\.<\/p>/
-  );
-  assert.match(html, /Round 1[\s\S]*Round 2/);
-  assert.ok(html.indexOf("Round 1") < html.indexOf("Round 2"));
-  // 解説は Markdown としてレンダリングする
-  assert.match(html, /<li>go を went に直しました。<\/li>/);
-  assert.match(html, /href="\/admin\/writing\/7"/);
-});
-
-test("読書用ページ: 未添削なら下書きを本文に出し、その旨を添える", () => {
-  const html = readPage([]);
-
-  assert.match(html, /<section class="final">\s*<p>I go to school\.<\/p>/);
-  assert.match(html, /この作文はまだ添削されていません。/);
-});
-
-test("読書用ページ: 本文の HTML 特殊文字をエスケープする", () => {
-  const html = readPage([
-    {
-      roundIndex: 1,
-      englishText: "<script>alert(1)</script>",
-      japaneseText: "意図",
-      correctedText: "a < b & c",
-      explanation: "- `<b>` は書きません",
-      createdAt: "2026-08-01 10:00:00 PDT",
-    },
-  ]);
-
-  assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/);
-  assert.match(html, /a &lt; b &amp; c/);
 });

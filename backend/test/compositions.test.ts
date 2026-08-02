@@ -24,7 +24,6 @@ test("insertComposition: 空の下書きが作られ、作成/更新日時が入
   assert.equal(row.japanese_text, "");
   assert.equal(row.explanation_language, "ja");
   assert.equal(row.created_at, row.updated_at);
-  assert.equal(db.listCompositionRounds(id).length, 0);
 });
 
 test("updateCompositionDraft: 本文を上書きし updated_at を進める", () => {
@@ -63,78 +62,18 @@ test("updateCompositionTitle: 存在しない ID は false", () => {
   assert.equal(db.updateCompositionTitle(999999, "title"), false);
 });
 
-test("insertCompositionRound: round_index が 1 から採番され、古い順に取り出せる", () => {
-  const id = db.insertComposition("ja");
-
-  const first = db.insertCompositionRound({
-    compositionId: id,
-    englishText: "I go to school yesterday.",
-    japaneseText: "昨日学校へ行った。",
-    correctedText: "I went to school yesterday.",
-    explanation: "- go を過去形 went に直しました。",
-    model: "claude-test",
-  });
-  const second = db.insertCompositionRound({
-    compositionId: id,
-    englishText: "I went to school yesterday and meet my friend.",
-    japaneseText: "昨日学校へ行って友達に会った。",
-    correctedText: "I went to school yesterday and met my friend.",
-    explanation: "- meet を met に直しました。",
-    model: "claude-test",
-  });
-
-  assert.equal(first, 1);
-  assert.equal(second, 2);
-
-  const rounds = db.listCompositionRounds(id);
-  assert.deepEqual(
-    rounds.map((round) => round.round_index),
-    [1, 2]
-  );
-  assert.equal(rounds[0].corrected_text, "I went to school yesterday.");
-  assert.equal(rounds[1].model, "claude-test");
-});
-
-test("insertCompositionRound: 親の updated_at も進む（一覧の並び替えに使う）", () => {
-  const id = db.insertComposition("ja");
-  const before = db.getComposition(id)!;
-
-  db.insertCompositionRound({
-    compositionId: id,
-    englishText: "Hello.",
-    japaneseText: "こんにちは。",
-    correctedText: "Hello.",
-    explanation: "- 問題ありません。",
-    model: "claude-test",
-  });
-
-  assert.ok(db.getComposition(id)!.updated_at >= before.updated_at);
-});
-
-test("listCompositions: ラウンド数と最終ラウンドの本文を含み、更新日時の新しい順に並ぶ", () => {
+test("listCompositions: 更新日時の新しい順に並ぶ", () => {
   const older = db.insertComposition("ja");
   db.updateCompositionDraft(older, "Older draft.", "古い方。");
   const newer = db.insertComposition("ja");
   db.updateCompositionDraft(newer, "Newer draft.", "新しい方。");
-  db.insertCompositionRound({
-    compositionId: newer,
-    englishText: "Newer draft.",
-    japaneseText: "新しい方。",
-    correctedText: "A newer draft.",
-    explanation: "- 冠詞を足しました。",
-    model: "claude-test",
-  });
 
   const rows = db.listCompositions(100);
   const newerRow = rows.find((row) => row.id === newer)!;
   const olderRow = rows.find((row) => row.id === older)!;
 
   assert.ok(rows.indexOf(newerRow) < rows.indexOf(olderRow));
-  assert.equal(newerRow.round_count, 1);
-  assert.equal(newerRow.last_round_english_text, "Newer draft.");
-  assert.equal(newerRow.last_round_japanese_text, "新しい方。");
-  assert.equal(olderRow.round_count, 0);
-  assert.equal(olderRow.last_round_english_text, null);
+  assert.equal(newerRow.english_text, "Newer draft.");
 });
 
 test("listCompositions: limit / offset でページングできる", () => {
@@ -182,21 +121,12 @@ test("チャット: 作文ごとに独立したスレッドになる", () => {
   assert.equal(db.listCompositionChatMessages(second).length, 0);
 });
 
-test("deleteComposition: 子のラウンドとチャットも一緒に消える", () => {
+test("deleteComposition: 子のチャットも一緒に消える", () => {
   const id = db.insertComposition("ja");
-  db.insertCompositionRound({
-    compositionId: id,
-    englishText: "Delete me.",
-    japaneseText: "消される。",
-    correctedText: "Delete me.",
-    explanation: "-",
-    model: "claude-test",
-  });
   db.insertCompositionChatMessage({ compositionId: id, role: "user", content: "消える質問" });
 
   db.deleteComposition(id);
 
   assert.equal(db.getComposition(id), undefined);
-  assert.equal(db.listCompositionRounds(id).length, 0);
   assert.equal(db.listCompositionChatMessages(id).length, 0);
 });

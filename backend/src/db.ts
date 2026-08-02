@@ -108,29 +108,9 @@ db.exec(`
   )
 `);
 
-// 作文添削の通信・課金ログ（/api/writing-feedback と /admin/writing/:id/review の両方が1件ずつ残す）。
-// 添削結果そのものの保存先は下の composition_rounds で、ここは料金集計用の追記ログとして役割を分ける
-// （words と word_info_requests の関係と同じ）。
-db.exec(`
-  CREATE TABLE IF NOT EXISTS writing_feedback_requests (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    created_at TEXT NOT NULL,
-    english_text TEXT NOT NULL,
-    japanese_text TEXT NOT NULL,
-    explanation_language TEXT NOT NULL,
-    feedback_json TEXT,
-    model TEXT NOT NULL,
-    input_tokens INTEGER NOT NULL DEFAULT 0,
-    output_tokens INTEGER NOT NULL DEFAULT 0,
-    cost_usd REAL NOT NULL DEFAULT 0,
-    status TEXT NOT NULL,
-    error_message TEXT,
-    latency_ms INTEGER NOT NULL DEFAULT 0
-  )
-`);
-
 // 作文本体（docs/plans/writing-web-interface.md）。/admin/writing で書く作文の「正」がここにある。
-// 上の writing_feedback_requests は通信・課金ログとして役割を分ける（words と word_info_requests と同じ関係）。
+// 添削（Review）機能を廃止したため writing_feedback_requests / composition_rounds は読み書きしない
+// （過去データを消さないよう DROP はせず、定義だけコードから落としてある）。
 db.exec(`
   CREATE TABLE IF NOT EXISTS compositions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -153,7 +133,7 @@ if (!compositionColumns.has("title")) {
 
 // 本文からのタイトル生成（POST /admin/writing/:id/title）の通信・課金ログ。
 // タイトル本体の保存先は compositions.title で、ここは料金集計用の追記ログとして役割を分ける
-// （writing_feedback_requests と composition_rounds の関係と同じ）。
+// （words と word_info_requests の関係と同じ）。
 db.exec(`
   CREATE TABLE IF NOT EXISTS composition_title_requests (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -167,24 +147,6 @@ db.exec(`
     status TEXT NOT NULL,
     error_message TEXT,
     latency_ms INTEGER NOT NULL DEFAULT 0
-  )
-`);
-
-// 1作文あたりの添削ラウンド（古い順に積み上がる）。round_index は 1 始まり。
-// better-sqlite3 は既定で PRAGMA foreign_keys = OFF のため CASCADE は当てにせず、
-// deleteComposition 側でトランザクションを組んで子行を先に消す。
-db.exec(`
-  CREATE TABLE IF NOT EXISTS composition_rounds (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    composition_id INTEGER NOT NULL REFERENCES compositions(id) ON DELETE CASCADE,
-    round_index INTEGER NOT NULL,
-    english_text TEXT NOT NULL,
-    japanese_text TEXT NOT NULL,
-    corrected_text TEXT NOT NULL,
-    explanation TEXT NOT NULL,
-    model TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    UNIQUE(composition_id, round_index)
   )
 `);
 
@@ -749,78 +711,7 @@ export function insertCompositionTitleLog(input: CompositionTitleLogInput): void
   });
 }
 
-export interface WritingFeedbackLogInput {
-  englishText: string;
-  japaneseText: string;
-  explanationLanguage: string;
-  feedbackJson: string | null;
-  model: string;
-  inputTokens: number;
-  outputTokens: number;
-  costUsd: number;
-  status: "success" | "error";
-  errorMessage: string | null;
-  latencyMs: number;
-}
-
-const insertWritingFeedbackStmt = db.prepare(`
-  INSERT INTO writing_feedback_requests (
-    created_at, english_text, japanese_text, explanation_language,
-    feedback_json, model, input_tokens, output_tokens,
-    cost_usd, status, error_message, latency_ms
-  ) VALUES (
-    @createdAt, @englishText, @japaneseText, @explanationLanguage,
-    @feedbackJson, @model, @inputTokens, @outputTokens,
-    @costUsd, @status, @errorMessage, @latencyMs
-  )
-`);
-
-export function insertWritingFeedbackLog(input: WritingFeedbackLogInput): void {
-  insertWritingFeedbackStmt.run({
-    createdAt: new Date().toISOString(),
-    englishText: input.englishText,
-    japaneseText: input.japaneseText,
-    explanationLanguage: input.explanationLanguage,
-    feedbackJson: input.feedbackJson,
-    model: input.model,
-    inputTokens: input.inputTokens,
-    outputTokens: input.outputTokens,
-    costUsd: input.costUsd,
-    status: input.status,
-    errorMessage: input.errorMessage,
-    latencyMs: input.latencyMs,
-  });
-}
-
-export interface WritingFeedbackLogRow {
-  id: number;
-  created_at: string;
-  english_text: string;
-  japanese_text: string;
-  explanation_language: string;
-  feedback_json: string | null;
-  model: string;
-  input_tokens: number;
-  output_tokens: number;
-  cost_usd: number;
-  status: string;
-  error_message: string | null;
-  latency_ms: number;
-}
-
-export function listRecentWritingFeedbackLogs(limit: number): WritingFeedbackLogRow[] {
-  return db
-    .prepare("SELECT * FROM writing_feedback_requests ORDER BY id DESC LIMIT ?")
-    .all(limit) as WritingFeedbackLogRow[];
-}
-
-export function getWritingFeedbackLog(id: number): WritingFeedbackLogRow | undefined {
-  return db
-    .prepare("SELECT * FROM writing_feedback_requests WHERE id = ?")
-    .get(id) as WritingFeedbackLogRow | undefined;
-}
-
-// --- 作文本体（compositions / composition_rounds）--------------------------------
+// --- 作文本体（compositions）------------------------------------------------
 
 export interface CompositionRow {
   id: number;
@@ -833,40 +724,14 @@ export interface CompositionRow {
   updated_at: string;
 }
 
-/// 一覧行。状態バッジ（未添削 / 編集中 / 添削済み×N）の判定に必要な最終ラウンド情報を含む。
-export interface CompositionListRow extends CompositionRow {
-  round_count: number;
-  last_round_english_text: string | null;
-  last_round_japanese_text: string | null;
-}
-
-export interface CompositionRoundRow {
-  id: number;
-  composition_id: number;
-  round_index: number;
-  english_text: string;
-  japanese_text: string;
-  corrected_text: string;
-  explanation: string;
-  model: string;
-  created_at: string;
-}
-
 const listCompositionsStmt = db.prepare(`
-  SELECT
-    c.*,
-    (SELECT COUNT(*) FROM composition_rounds r WHERE r.composition_id = c.id) AS round_count,
-    (SELECT r.english_text FROM composition_rounds r
-      WHERE r.composition_id = c.id ORDER BY r.round_index DESC LIMIT 1) AS last_round_english_text,
-    (SELECT r.japanese_text FROM composition_rounds r
-      WHERE r.composition_id = c.id ORDER BY r.round_index DESC LIMIT 1) AS last_round_japanese_text
-  FROM compositions c
-  ORDER BY c.updated_at DESC, c.id DESC
+  SELECT * FROM compositions
+  ORDER BY updated_at DESC, id DESC
   LIMIT ? OFFSET ?
 `);
 
-export function listCompositions(limit: number, offset = 0): CompositionListRow[] {
-  return listCompositionsStmt.all(limit, offset) as CompositionListRow[];
+export function listCompositions(limit: number, offset = 0): CompositionRow[] {
+  return listCompositionsStmt.all(limit, offset) as CompositionRow[];
 }
 
 export function getComposition(id: number): CompositionRow | undefined {
@@ -903,59 +768,12 @@ export function updateCompositionTitle(id: number, title: string): boolean {
 }
 
 const deleteCompositionTx = db.transaction((id: number) => {
-  db.prepare("DELETE FROM composition_rounds WHERE composition_id = ?").run(id);
   db.prepare("DELETE FROM composition_chat_messages WHERE composition_id = ?").run(id);
   db.prepare("DELETE FROM compositions WHERE id = ?").run(id);
 });
 
 export function deleteComposition(id: number): void {
   deleteCompositionTx(id);
-}
-
-export function listCompositionRounds(compositionId: number): CompositionRoundRow[] {
-  return db
-    .prepare("SELECT * FROM composition_rounds WHERE composition_id = ? ORDER BY round_index ASC")
-    .all(compositionId) as CompositionRoundRow[];
-}
-
-export interface CompositionRoundInput {
-  compositionId: number;
-  englishText: string;
-  japaneseText: string;
-  correctedText: string;
-  explanation: string;
-  model: string;
-}
-
-/// ラウンドを末尾に追加する（round_index は既存の最大値+1）。
-/// 採番と挿入、親の updated_at 更新を1トランザクションにまとめる。
-const insertCompositionRoundTx = db.transaction((input: CompositionRoundInput): number => {
-  const row = db
-    .prepare("SELECT MAX(round_index) AS max_index FROM composition_rounds WHERE composition_id = ?")
-    .get(input.compositionId) as { max_index: number | null };
-  const roundIndex = (row.max_index ?? 0) + 1;
-  const now = new Date().toISOString();
-  db.prepare(
-    `INSERT INTO composition_rounds (
-       composition_id, round_index, english_text, japanese_text,
-       corrected_text, explanation, model, created_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(
-    input.compositionId,
-    roundIndex,
-    input.englishText,
-    input.japaneseText,
-    input.correctedText,
-    input.explanation,
-    input.model,
-    now
-  );
-  db.prepare("UPDATE compositions SET updated_at = ? WHERE id = ?").run(now, input.compositionId);
-  return roundIndex;
-});
-
-export function insertCompositionRound(input: CompositionRoundInput): number {
-  return insertCompositionRoundTx(input);
 }
 
 export interface CompositionChatMessageRow {
@@ -1862,12 +1680,12 @@ export function savePricingState(pricesJson: string): void {
 }
 
 // ===== 利用料金（コスト）集計: 全機能横断 =====
-// cost_usd を持つ7テーブルを「コスト付きイベント」の共通形に正規化し、キャリア別/機能別/
+// cost_usd を持つ各テーブルを「コスト付きイベント」の共通形に正規化し、キャリア別/機能別/
 // モデル別/日次/期間サマリを一度のスキャンでまとめて返す。個人利用規模なので全行取得→JS集計
 // で足りる（tts等が肥大化したら期間フィルタ付きSQLへ寄せる）。スキーマ変更・書き込みは無し。
 //
 // 集計上の注意（画面にも注記する）:
-// - 追記ログ4種（requests / word_info / writing_feedback / transcription）は呼び出しごとの
+// - 追記ログ3種（requests / word_info / transcription）は呼び出しごとの
 //   真の履歴なので累計コストとして正確。
 // - 保存キャッシュ3種（tts_audio / word_illustrations / quiz_questions）は「現在保持している
 //   成果物の最終生成コスト」であり、再生成・削除の履歴は残らない＝総額はこれら機能について
@@ -1879,7 +1697,6 @@ export type UsageFeature =
   | "document"
   | "word-info"
   | "word-normalize"
-  | "writing-feedback"
   | "writing-chat"
   | "writing-title"
   | "tts"
@@ -2107,13 +1924,6 @@ function collectUsageEvents(): UsageEvent[] {
     .all() as { created_at: string; model: string; input_tokens: number; output_tokens: number; cost_usd: number }[];
   for (const r of wordNormalizes) {
     push("word-normalize", r.model, r.created_at, r.cost_usd, r.input_tokens, r.output_tokens);
-  }
-
-  const feedbacks = db
-    .prepare(`SELECT created_at, model, input_tokens, output_tokens, cost_usd FROM writing_feedback_requests`)
-    .all() as { created_at: string; model: string; input_tokens: number; output_tokens: number; cost_usd: number }[];
-  for (const r of feedbacks) {
-    push("writing-feedback", r.model, r.created_at, r.cost_usd, r.input_tokens, r.output_tokens);
   }
 
   // 作文チャットは assistant の発言そのものが呼び出し履歴（user 行はコスト 0 なので除く）

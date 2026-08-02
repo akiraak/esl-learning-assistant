@@ -467,9 +467,11 @@ AI 添削（修正英文＋母語解説）を受ける（仕様書3.4章）。�
 
 ### WritingRound / WritingFeedback（埋め込み構造体）
 
-`WritingRound` は1回分の添削ラウンド（学習者が送った英文＋意図＋その添削）。`WritingFeedback` は添削結果で、
-バックエンド `/api/writing-feedback` のレスポンス `feedback` と同構造（`backend/src/writingFeedback.ts`）。
-フィールドを増減する場合は iOS・backend 両方を合わせる。
+`WritingRound` は1回分の添削ラウンド（学習者が送った英文＋意図＋その添削）。`WritingFeedback` は添削結果。
+
+※ バックエンドの添削機能（`/api/writing-feedback` と管理画面の Review）は
+`docs/plans/composition-pages-tabs.md` Phase 1 で削除した。iOS からの呼び出しは元々無く、
+これらの型は端末ローカルの既存データを開くために残置している（新規の書き込みは無い）。
 
 **WritingRound**
 

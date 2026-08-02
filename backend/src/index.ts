@@ -40,8 +40,6 @@ import { createDocumentJob, getDocumentJob, runDocumentExtractTranslate } from "
 import { generateWordInfo, type WordInfo } from "./wordInfo";
 import { buildWordDetail, buildWordSummary, parseWordListQuery } from "./wordsApi";
 import { normalizeWord } from "./wordNormalize";
-import { validateWritingFeedbackRequest } from "./writingFeedback";
-import { runWritingFeedback } from "./writingFeedbackRunner";
 import { generateQuizQuestions } from "./quizQuestions";
 import { estimateCostUsd } from "./pricing";
 import { startPricingSync } from "./pricingSync";
@@ -767,25 +765,6 @@ app.get("/api/words/:word", (req, res) => {
   }
   logger.info(`words: detail word="${stored.word}" targetLanguage=${targetLanguage}`);
   res.json(detail);
-});
-
-// 作文添削。英文と「伝えたかった意図（母語）」を渡し、修正英文＋母語解説を返す。
-// 作文本体の保存は /admin/writing（compositions テーブル）が担い、この API は生成のみを提供する。
-// 生成とログ記録は runWritingFeedback に集約してある（admin の Review と共通）。
-app.post("/api/writing-feedback", async (req, res) => {
-  const validation = validateWritingFeedbackRequest(req.body);
-  if (!validation.ok) {
-    logger.warn(`writing-feedback: rejected (${validation.error})`);
-    res.status(400).json({ error: validation.error });
-    return;
-  }
-
-  try {
-    const result = await runWritingFeedback(validation.value, "api");
-    res.json({ feedback: result.feedback, model: result.model });
-  } catch (error) {
-    res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
-  }
 });
 
 // 復習クイズ問題の生成（docs/plans/archive/quiz-questions-server-storage.md）。

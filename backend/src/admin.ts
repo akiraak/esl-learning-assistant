@@ -4,8 +4,6 @@ import { Router, type Response } from "express";
 import { marked } from "marked";
 import fs from "fs";
 import {
-  CompositionListRow,
-  CompositionRoundRow,
   countQuizQuestions,
   deleteAllStoredNormalizations,
   deleteComposition,
@@ -33,14 +31,11 @@ import {
   getWordIllustrationById,
   getWordInfoLog,
   getWordNormalizeLog,
-  getWritingFeedbackLog,
   insertComposition,
   insertCompositionChatMessage,
-  insertCompositionRound,
   insertCompositionTitleLog,
   insertWordInfoLog,
   listCompositionChatMessages,
-  listCompositionRounds,
   listCompositions,
   listIllustratedWords,
   listQuizQuestions,
@@ -51,7 +46,6 @@ import {
   listRecentTranscriptionLogs,
   listRecentWordInfoLogs,
   listRecentWordNormalizeLogs,
-  listRecentWritingFeedbackLogs,
   listStoredNormalizations,
   listStoredWords,
   listStoredWordTexts,
@@ -72,26 +66,15 @@ import {
   type UsageFeature,
   WordInfoLogRow,
   WordNormalizeLogRow,
-  WritingFeedbackLogRow,
 } from "./db";
 import { config } from "./config";
 import { generateWordInfo, type WordInfo } from "./wordInfo";
+import { DEFAULT_EXPLANATION_LANGUAGE, WRITING_TEXT_MAX_LENGTH } from "./composition";
 import {
-  DEFAULT_EXPLANATION_LANGUAGE,
-  validateWritingFeedbackRequest,
-  WRITING_TEXT_MAX_LENGTH,
-  type WritingFeedback,
-} from "./writingFeedback";
-import { runWritingFeedback } from "./writingFeedbackRunner";
-import {
-  canReviewComposition,
   compositionListTitle,
   compositionPreview,
-  compositionStatus,
   renderCompositionEditorPageHtml,
   renderCompositionMarkdown,
-  renderCompositionReadPageHtml,
-  type CompositionStatusSource,
 } from "./compositionView";
 import { CHAT_MESSAGE_MAX_LENGTH, generateChatReply } from "./compositionChat";
 import {
@@ -256,7 +239,7 @@ function renderMarkdown(value: string | null): string {
   return marked.parse(escaped, { async: false, breaks: true }) as string;
 }
 
-type NavSection = "writing" | "ocr" | "transcriptions" | "documents" | "word-info" | "word-normalize" | "word-normalizations" | "writing-feedback" | "words" | "quiz-questions" | "tts" | "illustrations" | "content-files" | "usage" | "pricing" | "logs";
+type NavSection = "writing" | "ocr" | "transcriptions" | "documents" | "word-info" | "word-normalize" | "word-normalizations" | "words" | "quiz-questions" | "tts" | "illustrations" | "content-files" | "usage" | "pricing" | "logs";
 
 const NAV_ITEMS: Array<[NavSection, string, string]> = [
   ["writing", "/admin/writing", "作文"],
@@ -266,7 +249,6 @@ const NAV_ITEMS: Array<[NavSection, string, string]> = [
   ["word-info", "/admin/word-info", "単語情報ログ"],
   ["word-normalize", "/admin/word-normalize", "単語正規化ログ"],
   ["word-normalizations", "/admin/word-normalizations", "単語正規化キャッシュ"],
-  ["writing-feedback", "/admin/writing-feedback", "作文添削ログ"],
   ["words", "/admin/words", "単語一覧"],
   ["quiz-questions", "/admin/quiz-questions", "単語クイズ"],
   ["tts", "/admin/tts", "TTS一覧"],
@@ -906,174 +888,16 @@ adminRouter.post("/word-normalizations/delete-all", (_req, res) => {
   res.redirect("/admin/word-normalizations");
 });
 
-adminRouter.get("/writing-feedback", (_req, res) => {
-  const logs = listRecentWritingFeedbackLogs(100);
-
-  const totalCostUsd = logs.reduce((sum, log) => sum + log.cost_usd, 0);
-  const errorCount = logs.filter((log) => log.status !== "success").length;
-
-  const rows = logs
-    .map(
-      (log) => `
-        <tr class="log-row">
-          <td class="mono dim">#${log.id}</td>
-          <td class="mono dim">${escapeHtml(formatSeattleTime(log.created_at))}</td>
-          <td>${escapeHtml(truncate(log.english_text, 60))}<br><span class="dim">${escapeHtml(truncate(log.japanese_text, 60))}</span></td>
-          <td>${escapeHtml(log.explanation_language)}</td>
-          <td><strong>${escapeHtml(log.model)}</strong> <span class="dim">(in:${log.input_tokens} / out:${log.output_tokens})</span></td>
-          <td class="mono">$${log.cost_usd.toFixed(5)}</td>
-          <td>${statusLabel(log)}${log.error_message ? `<div class="err-note">${escapeHtml(log.error_message)}</div>` : ""}</td>
-          <td class="mono dim">${log.latency_ms}ms</td>
-          <td><a href="/admin/writing-feedback/${log.id}">詳細 →</a></td>
-        </tr>
-      `
-    )
-    .join("\n");
-
-  res.type("html").send(
-    renderPage(
-      "ESL Assistant - 作文添削ログ",
-      "",
-      `
-        <h1>作文添削ログ</h1>
-        <p class="page-sub">直近${logs.length}件の作文添削リクエスト</p>
-        <div class="stats">
-          <div class="stat"><div class="lbl">直近件数</div><div class="val">${logs.length}<small>件</small></div></div>
-          <div class="stat"><div class="lbl">コスト合計</div><div class="val">$${totalCostUsd.toFixed(2)}</div></div>
-          <div class="stat${errorCount > 0 ? " alert" : ""}"><div class="lbl">エラー</div><div class="val">${errorCount}<small>件</small></div></div>
-        </div>
-        <div class="card">
-          <table>
-            <thead>
-              <tr>
-                <th>ID</th><th>日時</th><th>英文 / 意図</th><th>解説言語</th>
-                <th>モデル / トークン</th><th>コスト</th><th>状態</th><th>処理時間</th><th></th>
-              </tr>
-            </thead>
-            <tbody>${rows}</tbody>
-          </table>
-        </div>
-      `,
-      "writing-feedback"
-    )
-  );
-});
-
-/// feedback_json を人が読める形に整形する（パース不能ならJSONをそのまま表示）。
-function renderWritingFeedbackBlock(row: { feedback_json: string | null }): string {
-  if (!row.feedback_json) return "<p>(生成結果なし)</p>";
-
-  let feedback: WritingFeedback;
-  try {
-    feedback = JSON.parse(row.feedback_json) as WritingFeedback;
-  } catch {
-    return `<pre>${escapeHtml(row.feedback_json)}</pre>`;
-  }
-
-  return `
-    <h2>修正後の英文</h2>
-    <div class="markdown-block">${renderMarkdown(feedback.correctedText)}</div>
-    <h2>解説</h2>
-    <div class="markdown-block">${renderMarkdown(feedback.explanation)}</div>
-  `;
-}
-
-adminRouter.get("/writing-feedback/:id", (req, res) => {
-  const id = Number(req.params.id);
-  const log = getWritingFeedbackLog(id);
-  if (!log) {
-    res
-      .status(404)
-      .type("html")
-      .send(
-        renderPage(
-          "ログが見つかりません",
-          "",
-          '<p>指定されたログは存在しません。</p><p><a href="/admin/writing-feedback">← 一覧に戻る</a></p>'
-        )
-      );
-    return;
-  }
-
-  const prev = getWritingFeedbackLog(id + 1); // 新しいログ
-  const next = getWritingFeedbackLog(id - 1); // 古いログ
-
-  const body = `
-    <p><a href="/admin/writing-feedback">← 一覧に戻る</a></p>
-    <h1>作文添削ログ #${log.id}</h1>
-    <table class="meta-table">
-      <tr><th>日時</th><td>${escapeHtml(formatSeattleTime(log.created_at))}</td></tr>
-      <tr><th>解説言語</th><td>${escapeHtml(log.explanation_language)}</td></tr>
-      <tr><th>モデル</th><td>${escapeHtml(log.model)}（in: ${log.input_tokens} / out: ${log.output_tokens}）</td></tr>
-      <tr><th>コスト</th><td>$${log.cost_usd.toFixed(5)}</td></tr>
-      <tr><th>状態</th><td>${statusLabel(log)}${log.error_message ? `<br>${escapeHtml(log.error_message)}` : ""}</td></tr>
-      <tr><th>処理時間</th><td>${log.latency_ms}ms</td></tr>
-    </table>
-
-    <h2>学習者が書いた英文</h2>
-    <div class="markdown-block">${renderMarkdown(log.english_text)}</div>
-
-    <h2>伝えたかった意図</h2>
-    <div class="markdown-block">${renderMarkdown(log.japanese_text)}</div>
-
-    ${renderWritingFeedbackBlock(log)}
-
-    <p class="nav-links">
-      ${prev ? `<a href="/admin/writing-feedback/${prev.id}">← 新しいログ (#${prev.id})</a>` : "<span>(これが最新)</span>"}
-      &nbsp;|&nbsp;
-      ${next ? `<a href="/admin/writing-feedback/${next.id}">古いログ (#${next.id}) →</a>` : "<span>(これが最古)</span>"}
-    </p>
-  `;
-
-  res.type("html").send(renderPage(`作文添削ログ #${log.id} - ESL Assistant`, "", body, "writing-feedback"));
-});
-
 // --- 作文（/admin/writing）---------------------------------------------------
-// docs/plans/writing-web-interface.md: PC のキーボードで書き、AI 添削を積み上げ、
-// 読みやすいレイアウトで読み返すための画面。作文の「正」はサーバ（compositions テーブル）にある。
+// docs/plans/writing-web-interface.md: PC のキーボードで英作文を書き、AI に相談しながら
+// 書き進めるための画面。作文の「正」はサーバ（compositions テーブル）にある。
 
-// 一覧ページ用のスタイル。書く画面（紙）と読む画面は admin のテーマを使わない単独ページなので、
-// それぞれ compositionView.ts / printView.ts 側にスタイルを持つ。
+// 一覧ページ用のスタイル。書く画面（紙）は admin のテーマを使わない単独ページなので、
+// そちらのスタイルは compositionView.ts 側に持つ。
 const WRITING_STYLE = `
-  .status-draft { color: #8B98A5; background: rgba(139,152,165,0.12); border: 1px solid rgba(139,152,165,0.35); }
-  .status-edited { color: #D29922; background: rgba(210,153,34,0.12); border: 1px solid rgba(210,153,34,0.35); }
-  .status-reviewed { color: #3FB950; background: rgba(63,185,80,0.12); border: 1px solid rgba(63,185,80,0.35); }
   .writing-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
   .writing-head .btn { min-height: 44px; }
 `;
-
-/// 一覧・編集で使う状態バッジ
-function compositionStatusPill(source: CompositionStatusSource): string {
-  const kind = compositionStatus(source);
-  if (kind === "draft") return `<span class="pill status-draft">未添削</span>`;
-  if (kind === "edited") return `<span class="pill status-edited">編集中</span>`;
-  return `<span class="pill status-reviewed">添削済み ×${source.roundCount}</span>`;
-}
-
-function listRowStatusSource(row: CompositionListRow): CompositionStatusSource {
-  return {
-    englishText: row.english_text,
-    japaneseText: row.japanese_text,
-    roundCount: row.round_count,
-    lastRoundEnglishText: row.last_round_english_text,
-    lastRoundJapaneseText: row.last_round_japanese_text,
-  };
-}
-
-/// 保存済みの作文とラウンドから状態判定用の入力を組む（編集画面・Review ガード用）
-function statusSourceFor(
-  draft: { english_text: string; japanese_text: string },
-  rounds: CompositionRoundRow[]
-): CompositionStatusSource {
-  const last = rounds.at(-1);
-  return {
-    englishText: draft.english_text,
-    japaneseText: draft.japanese_text,
-    roundCount: rounds.length,
-    lastRoundEnglishText: last?.english_text ?? null,
-    lastRoundJapaneseText: last?.japanese_text ?? null,
-  };
-}
 
 function compositionNotFound(res: Response): void {
   res
@@ -1091,8 +915,6 @@ function compositionNotFound(res: Response): void {
 
 adminRouter.get("/writing", (_req, res) => {
   const compositions = listCompositions(200);
-  const roundTotal = compositions.reduce((sum, row) => sum + row.round_count, 0);
-  const pendingCount = compositions.filter((row) => compositionStatus(listRowStatusSource(row)) !== "reviewed").length;
 
   const rows = compositions
     .map((row) => {
@@ -1115,12 +937,7 @@ adminRouter.get("/writing", (_req, res) => {
             ${bodyPreview ? `<br><span class="dim">${escapeHtml(bodyPreview)}</span>` : ""}
             ${japanesePreview ? `<br><span class="dim">${escapeHtml(japanesePreview)}</span>` : ""}
           </td>
-          <td>${compositionStatusPill(listRowStatusSource(row))}</td>
-          <td class="mono dim">${row.round_count}</td>
-          <td>
-            <a href="/admin/writing/${row.id}">編集 →</a>
-            ${row.round_count > 0 ? `<br><a href="/admin/writing/${row.id}/read">読む →</a>` : ""}
-          </td>
+          <td><a href="/admin/writing/${row.id}">編集 →</a></td>
         </tr>
       `;
     })
@@ -1134,7 +951,7 @@ adminRouter.get("/writing", (_req, res) => {
         <div class="writing-head">
           <div>
             <h1>作文</h1>
-            <p class="page-sub">PC で英作文を書き、AI 添削を積み上げる。読むだけならスマホからでも。</p>
+            <p class="page-sub">PC で英作文を書き、AI に相談しながら書き進める。</p>
           </div>
           <form method="post" action="/admin/writing/new">
             <button type="submit" class="btn btn-primary">＋ 新しい作文</button>
@@ -1142,15 +959,13 @@ adminRouter.get("/writing", (_req, res) => {
         </div>
         <div class="stats">
           <div class="stat"><div class="lbl">作文</div><div class="val">${compositions.length}<small>件</small></div></div>
-          <div class="stat"><div class="lbl">添削ラウンド</div><div class="val">${roundTotal}<small>回</small></div></div>
-          <div class="stat"><div class="lbl">未添削・編集中</div><div class="val">${pendingCount}<small>件</small></div></div>
         </div>
         <div class="card">
           <table>
             <thead>
-              <tr><th>ID</th><th>更新</th><th>タイトル・本文</th><th>状態</th><th>ラウンド</th><th></th></tr>
+              <tr><th>ID</th><th>更新</th><th>タイトル・本文</th><th></th></tr>
             </thead>
-            <tbody>${rows || '<tr><td colspan="6" class="faint">まだ作文がありません。「＋ 新しい作文」から書き始めてください。</td></tr>'}</tbody>
+            <tbody>${rows || '<tr><td colspan="4" class="faint">まだ作文がありません。「＋ 新しい作文」から書き始めてください。</td></tr>'}</tbody>
           </table>
         </div>
       `,
@@ -1415,86 +1230,6 @@ adminRouter.post("/writing/spell-ignore", (req, res) => {
   res.json({ ok: true, word: added });
 });
 
-// 下書きを保存 → 添削 → ラウンド追加。history には全ラウンドを渡し、文脈込みで再添削する。
-// 編集画面を「本文入力欄と削除だけ」にしたため、現状この POST を叩く導線は画面上に無い
-// （添削の生成経路としては /api/writing-feedback と共通のまま残してある）。
-adminRouter.post("/writing/:id/review", async (req, res) => {
-  const id = Number(req.params.id);
-  const composition = getComposition(id);
-  if (!composition) {
-    compositionNotFound(res);
-    return;
-  }
-
-  const { englishText, japaneseText } = (req.body ?? {}) as Record<string, unknown>;
-  const draftEnglish = typeof englishText === "string" ? englishText : composition.english_text;
-  const draftJapanese = typeof japaneseText === "string" ? japaneseText : composition.japanese_text;
-
-  // 編集画面には表示先（バナー）が無いので、失敗はその場でエラーページとして見せる
-  const failWith = (message: string) =>
-    res
-      .status(400)
-      .type("html")
-      .send(
-        renderPage(
-          "添削に失敗しました",
-          "",
-          `<h1>添削に失敗しました</h1><p>${escapeHtml(message)}</p>` +
-            `<p><a href="/admin/writing/${id}">← 作文に戻る</a></p>`,
-          "writing"
-        )
-      );
-
-  const validation = validateWritingFeedbackRequest({
-    englishText: draftEnglish,
-    japaneseText: draftJapanese,
-    explanationLanguage: composition.explanation_language,
-  });
-  if (!validation.ok) {
-    logger.warn(`admin: composition #${id} review rejected (${validation.error})`);
-    failWith(validation.error);
-    return;
-  }
-
-  // 送信された下書きを先に保存する（添削が失敗しても入力は失われない）
-  updateCompositionDraft(id, draftEnglish, draftJapanese);
-
-  const rounds = listCompositionRounds(id);
-  if (!canReviewComposition(statusSourceFor({ english_text: draftEnglish, japanese_text: draftJapanese }, rounds))) {
-    logger.warn(`admin: composition #${id} review rejected (no change since last round)`);
-    failWith("最終ラウンドから変更がありません。英文か意図を書き直してください。");
-    return;
-  }
-
-  try {
-    const result = await runWritingFeedback(
-      {
-        ...validation.value,
-        history: rounds.map((round) => ({
-          englishText: round.english_text,
-          japaneseText: round.japanese_text,
-          correctedText: round.corrected_text,
-          explanation: round.explanation,
-        })),
-      },
-      `admin:composition#${id}`
-    );
-
-    const roundIndex = insertCompositionRound({
-      compositionId: id,
-      englishText: validation.value.englishText,
-      japaneseText: validation.value.japaneseText,
-      correctedText: result.feedback.correctedText,
-      explanation: result.feedback.explanation,
-      model: result.model,
-    });
-    logger.info(`admin: composition #${id} round ${roundIndex} added`);
-    res.redirect(303, `/admin/writing/${id}`);
-  } catch (error) {
-    failWith(error instanceof Error ? error.message : String(error));
-  }
-});
-
 adminRouter.post("/writing/:id/delete", (req, res) => {
   const id = Number(req.params.id);
   if (!getComposition(id)) {
@@ -1504,47 +1239,6 @@ adminRouter.post("/writing/:id/delete", (req, res) => {
   deleteComposition(id);
   logger.info(`admin: deleted composition #${id}`);
   res.redirect(303, "/admin/writing");
-});
-
-// 読書用ページ。管理画面のダークテーマ・サイドバーを外し、印刷にも使える単独ページとして描画する。
-adminRouter.get("/writing/:id/read", (req, res) => {
-  const id = Number(req.params.id);
-  const composition = getComposition(id);
-  if (!composition) {
-    compositionNotFound(res);
-    return;
-  }
-
-  const rounds = listCompositionRounds(id);
-  const draft = { englishText: composition.english_text, japaneseText: composition.japanese_text };
-  // 見出しもタイトル優先。空欄なら従来どおり最終添削文（無ければ下書き）の先頭から作る
-  const title =
-    compositionListTitle(
-      {
-        title: composition.title,
-        englishText: rounds.at(-1)?.corrected_text ?? composition.english_text,
-        japaneseText: composition.japanese_text,
-      },
-      50
-    ) || `作文 #${composition.id}`;
-
-  res.type("html").send(
-    renderCompositionReadPageHtml({
-      id: composition.id,
-      title,
-      meta: `#${composition.id} ・ 更新 ${formatSeattleTime(composition.updated_at)} ・ 添削 ${rounds.length} 回`,
-      draft,
-      rounds: rounds.map((round) => ({
-        roundIndex: round.round_index,
-        englishText: round.english_text,
-        japaneseText: round.japanese_text,
-        correctedText: round.corrected_text,
-        explanation: round.explanation,
-        createdAt: formatSeattleTime(round.created_at),
-      })),
-      backHref: `/admin/writing/${composition.id}`,
-    })
-  );
 });
 
 /// 一覧プレビュー用に先頭語義を取り出す（パース不能なら空文字）
@@ -2031,7 +1725,6 @@ function modelUsage(model: string): string {
   if (model === config.translateModel) usages.push("翻訳");
   if (model === config.wordInfoModel) usages.push("単語情報");
   if (model === config.wordNormalizeModel) usages.push("単語正規化");
-  if (model === config.writingFeedbackModel) usages.push("作文添削");
   if (model === config.writingChatModel) usages.push("作文チャット");
   if (model === "gemini-2.5-flash-preview-tts") usages.push("TTS (flash・旧)");
   if (model === "gemini-2.5-pro-preview-tts") usages.push("TTS (pro・旧)");
@@ -2069,7 +1762,6 @@ const USAGE_FEATURE_META: Record<UsageFeature, { label: string; href: string }> 
   document: { label: "ドキュメント抽出・翻訳", href: "/admin/documents" },
   "word-info": { label: "単語情報", href: "/admin/word-info" },
   "word-normalize": { label: "単語正規化", href: "/admin/word-normalize" },
-  "writing-feedback": { label: "作文添削", href: "/admin/writing-feedback" },
   "writing-chat": { label: "作文チャット", href: "/admin/writing" },
   "writing-title": { label: "作文タイトル", href: "/admin/writing" },
   tts: { label: "TTS音声", href: "/admin/tts" },

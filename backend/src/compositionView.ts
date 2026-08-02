@@ -1,8 +1,7 @@
 import { marked } from "marked";
-import { renderPrintPageHtml } from "./printView";
 
 // 作文（compositions）の表示ロジック。admin.ts は db.ts を読み込むためテストから import できない。
-// 状態判定・段落化・読書用ページの HTML 生成といった純粋な部分をここに置き、
+// 見出し・プレビューの整形と執筆画面の HTML 生成といった純粋な部分をここに置き、
 // backend/test/compositionView.test.ts から検証する（printView.ts と同じ方針）。
 
 function escapeHtml(value: string): string {
@@ -47,40 +46,6 @@ export interface CompositionDraft {
   japaneseText: string;
 }
 
-/// 状態バッジ（iOS の CompositionRow と同じ3状態）
-/// - `draft`: まだ一度も添削していない
-/// - `edited`: 添削済みだが下書きを直した（次の Review を送れる）
-/// - `reviewed`: 下書きが最終ラウンドと同一（送る変更が無い）
-export type CompositionStatusKind = "draft" | "edited" | "reviewed";
-
-export interface CompositionStatusSource extends CompositionDraft {
-  roundCount: number;
-  lastRoundEnglishText: string | null;
-  lastRoundJapaneseText: string | null;
-}
-
-/// 現在の下書きが最終ラウンドと同一か（＝新たに送る変更が無い）。
-/// ラウンドがまだ無ければ false（初回は下書きさえあれば送れる）。
-export function draftMatchesLastRound(source: CompositionStatusSource): boolean {
-  if (source.roundCount === 0) return false;
-  return (
-    normalize(source.englishText) === normalize(source.lastRoundEnglishText ?? "") &&
-    normalize(source.japaneseText) === normalize(source.lastRoundJapaneseText ?? "")
-  );
-}
-
-export function compositionStatus(source: CompositionStatusSource): CompositionStatusKind {
-  if (source.roundCount === 0) return "draft";
-  return draftMatchesLastRound(source) ? "reviewed" : "edited";
-}
-
-/// Review を送れるか: 英日とも非空、かつ下書きが最終ラウンドと相違。
-/// 画面のボタン活性と、POST 受け口のサーバ側ガードの両方で使う。
-export function canReviewComposition(source: CompositionStatusSource): boolean {
-  if (!normalize(source.englishText) || !normalize(source.japaneseText)) return false;
-  return !draftMatchesLastRound(source);
-}
-
 /// 一覧・タイトルに出す1行プレビュー（英文優先、空なら意図）。超過分は…で切る。
 export function compositionPreview(draft: CompositionDraft, max = 60): string {
   const source = normalize(draft.englishText) || normalize(draft.japaneseText);
@@ -89,7 +54,7 @@ export function compositionPreview(draft: CompositionDraft, max = 60): string {
   return oneLine.length > max ? `${oneLine.slice(0, max)}…` : oneLine;
 }
 
-/// 一覧・読書ページの見出し。タイトルが入っていればそれを、空欄なら従来どおり
+/// 一覧の見出し。タイトルが入っていればそれを、空欄なら従来どおり
 /// 本文の先頭（無ければ意図）から作る（docs/plans/composition-title.md）。
 export function compositionListTitle(source: CompositionDraft & { title: string }, max = 70): string {
   const title = normalize(source.title).replace(/\s+/g, " ");
@@ -1047,121 +1012,4 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
   </script>
 </body>
 </html>`;
-}
-
-export interface CompositionReadRound {
-  roundIndex: number;
-  englishText: string;
-  japaneseText: string;
-  correctedText: string;
-  explanation: string;
-  /// 表示用に整形済みの日時文字列
-  createdAt: string;
-}
-
-export interface CompositionReadPage {
-  id: number;
-  /// 見出し兼 <title>（呼び出し側で作文プレビューから作る）
-  title: string;
-  /// 見出し下の補足行（ID・更新日時・ラウンド数など）
-  meta: string;
-  /// 未添削のときに表示する現在の下書き
-  draft: CompositionDraft;
-  /// 添削ラウンド（古い順）
-  rounds: CompositionReadRound[];
-  backHref: string;
-}
-
-// 読み物として通しで読むための本文スタイル（plan Step 3-1 / 3-2）。
-// printView の白地・serif を土台に、行長を 68ch に抑え、
-// 「You wrote / Corrected」を PC では 2 カラム、狭い画面では縦積みにする。
-const READ_STYLE = `
-  article {
-    max-width: 72ch;
-    font-family: "Iowan Old Style", Georgia, "Hiragino Mincho ProN", "Yu Mincho", "Times New Roman", serif;
-  }
-  .body p, .body li { font-size: clamp(17px, 0.6vw + 15px, 20px); line-height: 1.9; }
-  .body .final p { text-align: justify; }
-  .lead-label {
-    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Segoe UI", sans-serif;
-    font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: #6B7280;
-    margin: 0 0 6px; font-weight: 600;
-  }
-  .intent { color: #374151; }
-  .intent p { font-size: 15px; line-height: 1.8; text-align: left; }
-  .round { border-top: 1px solid #E5E7EB; margin-top: 40px; padding-top: 24px; }
-  .round-head {
-    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Segoe UI", sans-serif;
-    font-size: 12px; color: #6B7280; margin: 0 0 16px;
-    display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;
-  }
-  .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
-  .compare p { font-size: 16px; line-height: 1.8; text-align: left; }
-  .compare .corrected p { color: #111; }
-  .compare .wrote p { color: #6B7280; }
-  .explanation { margin-top: 20px; }
-  .explanation p, .explanation li { font-size: 15px; line-height: 1.8; text-align: left; }
-  .no-rounds { color: #6B7280; font-style: italic; }
-  @media (max-width: 720px) {
-    .compare { grid-template-columns: 1fr; gap: 16px; }
-    article { padding: 24px 20px 48px; }
-  }
-  @media print {
-    /* 基底スタイルの @media print より後ろに置かれるため、紙面いっぱいの指定をここで復元する */
-    article { max-width: none; padding: 0; }
-    .compare { grid-template-columns: 1fr 1fr; }
-    .body p, .body li { font-size: 12pt; }
-    .compare p, .explanation p, .explanation li, .intent p { font-size: 10.5pt; }
-  }
-`;
-
-function readRoundHtml(round: CompositionReadRound): string {
-  const explanation = renderCompositionMarkdown(round.explanation);
-  return `
-    <section class="round">
-      <div class="round-head"><span>Round ${round.roundIndex}</span><span>${escapeHtml(round.createdAt)}</span></div>
-      <div class="compare">
-        <div class="wrote">
-          <p class="lead-label">You wrote</p>
-          ${compositionParagraphsHtml(round.englishText)}
-        </div>
-        <div class="corrected">
-          <p class="lead-label">Corrected</p>
-          ${compositionParagraphsHtml(round.correctedText)}
-        </div>
-      </div>
-      ${explanation ? `<div class="explanation"><p class="lead-label">Explanation</p>${explanation}</div>` : ""}
-    </section>
-  `;
-}
-
-/// 読書用ページ（/admin/writing/:id/read）の HTML。最終的な添削済み英文を先頭に大きく置き、
-/// その下に各ラウンドの対比と解説を古い順に並べる。管理画面のダークテーマは使わず
-/// printView と同じ単独ページとして描画するので、そのまま印刷にも使える。
-export function renderCompositionReadPageHtml(page: CompositionReadPage): string {
-  const lastRound = page.rounds.at(-1);
-  const finalText = lastRound?.correctedText ?? page.draft.englishText;
-  const intentText = lastRound?.japaneseText ?? page.draft.japaneseText;
-
-  const finalHtml = compositionParagraphsHtml(finalText);
-  const intentHtml = compositionParagraphsHtml(intentText);
-
-  const bodyHtml = `
-    <section class="final">
-      ${finalHtml || '<p class="no-rounds">(本文がまだありません)</p>'}
-    </section>
-    ${intentHtml ? `<section class="intent"><p class="lead-label">伝えたかった意図</p>${intentHtml}</section>` : ""}
-    ${page.rounds.length === 0 ? '<p class="no-rounds">この作文はまだ添削されていません。</p>' : ""}
-    ${page.rounds.map(readRoundHtml).join("\n")}
-  `;
-
-  return renderPrintPageHtml({
-    lang: "en",
-    title: page.title,
-    meta: page.meta,
-    bodyHtml,
-    backHref: page.backHref,
-    backLabel: "← 編集画面に戻る",
-    extraStyle: READ_STYLE,
-  });
 }
