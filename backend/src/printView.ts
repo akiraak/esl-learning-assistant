@@ -34,6 +34,8 @@ export interface PrintPage {
   /// 画面表示時のみのツールバーの戻り先
   backHref: string;
   backLabel?: string;
+  /// 本文の既定スタイルに追記する CSS（作文の対比レイアウトなど、ページ固有の装飾用）
+  extraStyle?: string;
 }
 
 /// 印刷用ページ全体の HTML を組む。紙に印刷して読む用途のため、管理画面の
@@ -102,6 +104,7 @@ export function renderPrintPageHtml(page: PrintPage): string {
       .body h2 { font-size: 13pt; }
       .body h3 { font-size: 12.5pt; }
     }
+    ${page.extraStyle ?? ""}
   </style>
 </head>
 <body>

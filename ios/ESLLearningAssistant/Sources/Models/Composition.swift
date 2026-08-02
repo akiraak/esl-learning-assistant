@@ -2,8 +2,11 @@ import Foundation
 import SwiftData
 
 /// 学習者の英作文とその AI 添削（docs/plans/writing-composition-feedback.md）。
-/// Word と同様に Lesson に従属しない独立エンティティ。作文本文は端末ローカルが原則で、
-/// サーバ側は保存しない（添削はログのみ）。
+///
+/// **作文機能は Web（/admin/writing・compositions テーブル）へ移設済みで、アプリに画面は無い**
+/// （docs/plans/archive/writing-web-interface.md）。このエンティティは、スキーマから外すと
+/// 既存ストアが開けなくなるおそれがあるため残置している（ModelContainer への登録・
+/// DebugDataCleaner も同じ理由で残す）。端末に残る旧データは参照されない。
 @Model
 final class Composition {
     var id: UUID

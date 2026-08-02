@@ -4,8 +4,11 @@ import { Router, type Response } from "express";
 import { marked } from "marked";
 import fs from "fs";
 import {
+  CompositionListRow,
+  CompositionRoundRow,
   countQuizQuestions,
   deleteAllStoredNormalizations,
+  deleteComposition,
   deleteDocumentLog,
   deleteQuizQuestions,
   deleteStoredNormalization,
@@ -15,6 +18,7 @@ import {
   deleteWordIllustration,
   DocumentLogRow,
   getAudioTitlesByFilename,
+  getComposition,
   getDocumentLog,
   getDocumentTitlesByFilename,
   getPricingState,
@@ -30,7 +34,13 @@ import {
   getWordInfoLog,
   getWordNormalizeLog,
   getWritingFeedbackLog,
+  insertComposition,
+  insertCompositionChatMessage,
+  insertCompositionRound,
   insertWordInfoLog,
+  listCompositionChatMessages,
+  listCompositionRounds,
+  listCompositions,
   listIllustratedWords,
   listQuizQuestions,
   listQuizQuestionSummaries,
@@ -50,6 +60,7 @@ import {
   RequestLogRow,
   StoredWordRow,
   TranscriptionLogRow,
+  updateCompositionDraft,
   upsertStoredWord,
   upsertWordIllustration,
   USAGE_APPROX_FEATURES,
@@ -60,7 +71,23 @@ import {
 } from "./db";
 import { config } from "./config";
 import { generateWordInfo, type WordInfo } from "./wordInfo";
-import { type WritingFeedback } from "./writingFeedback";
+import {
+  DEFAULT_EXPLANATION_LANGUAGE,
+  validateWritingFeedbackRequest,
+  WRITING_TEXT_MAX_LENGTH,
+  type WritingFeedback,
+} from "./writingFeedback";
+import { runWritingFeedback } from "./writingFeedbackRunner";
+import {
+  canReviewComposition,
+  compositionPreview,
+  compositionStatus,
+  renderCompositionEditorPageHtml,
+  renderCompositionMarkdown,
+  renderCompositionReadPageHtml,
+  type CompositionStatusSource,
+} from "./compositionView";
+import { CHAT_MESSAGE_MAX_LENGTH, generateChatReply } from "./compositionChat";
 import { generateQuizQuestions, type QuizQuestion } from "./quizQuestions";
 import { generateIllustration, ILLUSTRATION_MODEL } from "./illustration";
 import { DEFAULT_IMAGE_PRICING, DEFAULT_PRICING, DEFAULT_TTS_PRICING, estimateCostUsd, getCurrentPricing, providerLabel, type Provider } from "./pricing";
@@ -152,6 +179,23 @@ const PAGE_STYLE = `
   .markdown-block code { background: #1B2632; padding: 0 4px; border-radius: 3px; }
   pre { background: #0E141B; border: 1px solid #1F2A35; padding: 12px; border-radius: 8px; overflow-x: auto; }
   .nav-links { margin-top: 16px; }
+  /* スマホ（作文を読む用途が主）。サイドバーは上部の横スクロールナビに切り替える。
+     テーブルは .card の overflow-x で横スクロールするため本文は横に溢れない。 */
+  @media (max-width: 720px) {
+    .layout { flex-direction: column; min-height: 100dvh; }
+    .sidebar {
+      flex: none; position: static; height: auto; width: 100%;
+      border-right: none; border-bottom: 1px solid #1F2A35; padding: 12px 0 0;
+    }
+    .sidebar .brand { padding: 0 16px 10px; }
+    .sidebar nav { flex-direction: row; gap: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .sidebar nav a {
+      white-space: nowrap; padding: 10px 14px; border-left: none; border-bottom: 3px solid transparent;
+    }
+    .sidebar nav a.active { border-left-color: transparent; border-bottom-color: #38BDF8; }
+    .sidebar .foot { display: none; }
+    main { padding: 18px 16px 40px; }
+  }
 `;
 
 // DBのタイムスタンプはUTCのISO文字列。管理画面ではシアトル時刻（DST自動切替）で表示する。
@@ -197,9 +241,10 @@ function renderMarkdown(value: string | null): string {
   return marked.parse(escaped, { async: false, breaks: true }) as string;
 }
 
-type NavSection = "ocr" | "transcriptions" | "documents" | "word-info" | "word-normalize" | "word-normalizations" | "writing-feedback" | "words" | "quiz-questions" | "tts" | "illustrations" | "content-files" | "usage" | "pricing" | "logs";
+type NavSection = "writing" | "ocr" | "transcriptions" | "documents" | "word-info" | "word-normalize" | "word-normalizations" | "writing-feedback" | "words" | "quiz-questions" | "tts" | "illustrations" | "content-files" | "usage" | "pricing" | "logs";
 
 const NAV_ITEMS: Array<[NavSection, string, string]> = [
+  ["writing", "/admin/writing", "作文"],
   ["ocr", "/admin", "OCR・翻訳ログ"],
   ["transcriptions", "/admin/transcriptions", "音声文字起こしログ"],
   ["documents", "/admin/documents", "ドキュメント抽出ログ"],
@@ -968,6 +1013,376 @@ adminRouter.get("/writing-feedback/:id", (req, res) => {
   res.type("html").send(renderPage(`作文添削ログ #${log.id} - ESL Assistant`, "", body, "writing-feedback"));
 });
 
+// --- 作文（/admin/writing）---------------------------------------------------
+// docs/plans/writing-web-interface.md: PC のキーボードで書き、AI 添削を積み上げ、
+// 読みやすいレイアウトで読み返すための画面。作文の「正」はサーバ（compositions テーブル）にある。
+
+// 一覧ページ用のスタイル。書く画面（紙）と読む画面は admin のテーマを使わない単独ページなので、
+// それぞれ compositionView.ts / printView.ts 側にスタイルを持つ。
+const WRITING_STYLE = `
+  .status-draft { color: #8B98A5; background: rgba(139,152,165,0.12); border: 1px solid rgba(139,152,165,0.35); }
+  .status-edited { color: #D29922; background: rgba(210,153,34,0.12); border: 1px solid rgba(210,153,34,0.35); }
+  .status-reviewed { color: #3FB950; background: rgba(63,185,80,0.12); border: 1px solid rgba(63,185,80,0.35); }
+  .writing-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .writing-head .btn { min-height: 44px; }
+`;
+
+/// 一覧・編集で使う状態バッジ
+function compositionStatusPill(source: CompositionStatusSource): string {
+  const kind = compositionStatus(source);
+  if (kind === "draft") return `<span class="pill status-draft">未添削</span>`;
+  if (kind === "edited") return `<span class="pill status-edited">編集中</span>`;
+  return `<span class="pill status-reviewed">添削済み ×${source.roundCount}</span>`;
+}
+
+function listRowStatusSource(row: CompositionListRow): CompositionStatusSource {
+  return {
+    englishText: row.english_text,
+    japaneseText: row.japanese_text,
+    roundCount: row.round_count,
+    lastRoundEnglishText: row.last_round_english_text,
+    lastRoundJapaneseText: row.last_round_japanese_text,
+  };
+}
+
+/// 保存済みの作文とラウンドから状態判定用の入力を組む（編集画面・Review ガード用）
+function statusSourceFor(
+  draft: { english_text: string; japanese_text: string },
+  rounds: CompositionRoundRow[]
+): CompositionStatusSource {
+  const last = rounds.at(-1);
+  return {
+    englishText: draft.english_text,
+    japaneseText: draft.japanese_text,
+    roundCount: rounds.length,
+    lastRoundEnglishText: last?.english_text ?? null,
+    lastRoundJapaneseText: last?.japanese_text ?? null,
+  };
+}
+
+function compositionNotFound(res: Response): void {
+  res
+    .status(404)
+    .type("html")
+    .send(
+      renderPage(
+        "作文が見つかりません",
+        "",
+        '<p>指定された作文は存在しません。</p><p><a href="/admin/writing">← 一覧に戻る</a></p>',
+        "writing"
+      )
+    );
+}
+
+adminRouter.get("/writing", (_req, res) => {
+  const compositions = listCompositions(200);
+  const roundTotal = compositions.reduce((sum, row) => sum + row.round_count, 0);
+  const pendingCount = compositions.filter((row) => compositionStatus(listRowStatusSource(row)) !== "reviewed").length;
+
+  const rows = compositions
+    .map((row) => {
+      const preview = compositionPreview({ englishText: row.english_text, japaneseText: row.japanese_text }, 70);
+      const japanesePreview = compositionPreview({ englishText: "", japaneseText: row.japanese_text }, 50);
+      return `
+        <tr class="log-row">
+          <td class="mono dim">#${row.id}</td>
+          <td class="mono dim">${escapeHtml(formatSeattleTime(row.updated_at))}</td>
+          <td>
+            <a href="/admin/writing/${row.id}">${preview ? escapeHtml(preview) : "<span class=\"faint\">(空の作文)</span>"}</a>
+            ${japanesePreview ? `<br><span class="dim">${escapeHtml(japanesePreview)}</span>` : ""}
+          </td>
+          <td>${compositionStatusPill(listRowStatusSource(row))}</td>
+          <td class="mono dim">${row.round_count}</td>
+          <td>
+            <a href="/admin/writing/${row.id}">編集 →</a>
+            ${row.round_count > 0 ? `<br><a href="/admin/writing/${row.id}/read">読む →</a>` : ""}
+          </td>
+        </tr>
+      `;
+    })
+    .join("\n");
+
+  res.type("html").send(
+    renderPage(
+      "ESL Assistant - 作文",
+      WRITING_STYLE,
+      `
+        <div class="writing-head">
+          <div>
+            <h1>作文</h1>
+            <p class="page-sub">PC で英作文を書き、AI 添削を積み上げる。読むだけならスマホからでも。</p>
+          </div>
+          <form method="post" action="/admin/writing/new">
+            <button type="submit" class="btn btn-primary">＋ 新しい作文</button>
+          </form>
+        </div>
+        <div class="stats">
+          <div class="stat"><div class="lbl">作文</div><div class="val">${compositions.length}<small>件</small></div></div>
+          <div class="stat"><div class="lbl">添削ラウンド</div><div class="val">${roundTotal}<small>回</small></div></div>
+          <div class="stat"><div class="lbl">未添削・編集中</div><div class="val">${pendingCount}<small>件</small></div></div>
+        </div>
+        <div class="card">
+          <table>
+            <thead>
+              <tr><th>ID</th><th>更新</th><th>本文</th><th>状態</th><th>ラウンド</th><th></th></tr>
+            </thead>
+            <tbody>${rows || '<tr><td colspan="6" class="faint">まだ作文がありません。「＋ 新しい作文」から書き始めてください。</td></tr>'}</tbody>
+          </table>
+        </div>
+      `,
+      "writing"
+    )
+  );
+});
+
+adminRouter.post("/writing/new", (_req, res) => {
+  const id = insertComposition(DEFAULT_EXPLANATION_LANGUAGE);
+  logger.info(`admin: created composition #${id}`);
+  res.redirect(303, `/admin/writing/${id}`);
+});
+
+// 書くことに集中する画面。紙に文字を書く体裁の単独ページ（管理画面のダークテーマ・
+// サイドバーは使わない）で、置くのは本文入力欄と削除だけ。添削（Review）・意図欄・
+// 添削履歴はここには出さない。入力は自動保存し、状態だけツールバーに小さく示す。
+adminRouter.get("/writing/:id", (req, res) => {
+  const id = Number(req.params.id);
+  const composition = getComposition(id);
+  if (!composition) {
+    compositionNotFound(res);
+    return;
+  }
+
+  res.type("html").send(
+    renderCompositionEditorPageHtml({
+      id: composition.id,
+      text: composition.english_text,
+      saveUrl: `/admin/writing/${composition.id}/save`,
+      deleteUrl: `/admin/writing/${composition.id}/delete`,
+      chatUrl: `/admin/writing/${composition.id}/chat`,
+      backHref: "/admin/writing",
+      messages: listCompositionChatMessages(composition.id).map((row) => ({
+        role: row.role === "assistant" ? "assistant" : "user",
+        content: row.content,
+      })),
+      chatModel: config.writingChatModel,
+    })
+  );
+});
+
+// 執筆画面の相談チャット。質問には常に「いま保存されている本文」をプロンプトへ含める
+// （画面側は送信前に自動保存を確定させてからここを叩く）。
+// 発言は composition_chat_messages に積み、assistant 行が課金ログも兼ねる。
+adminRouter.post("/writing/:id/chat", async (req, res) => {
+  const id = Number(req.params.id);
+  const composition = getComposition(id);
+  if (!composition) {
+    res.status(404).json({ error: "composition not found" });
+    return;
+  }
+
+  const { message } = (req.body ?? {}) as Record<string, unknown>;
+  if (typeof message !== "string" || !message.trim()) {
+    res.status(400).json({ error: "message is required" });
+    return;
+  }
+  if (message.length > CHAT_MESSAGE_MAX_LENGTH) {
+    res.status(400).json({ error: `message must be ${CHAT_MESSAGE_MAX_LENGTH} characters or fewer` });
+    return;
+  }
+
+  const question = message.trim();
+  const history = listCompositionChatMessages(id).map((row) => ({
+    role: row.role === "assistant" ? ("assistant" as const) : ("user" as const),
+    content: row.content,
+  }));
+
+  const startedAt = Date.now();
+  logger.info(
+    `composition-chat: start composition=#${id} questionLen=${question.length} ` +
+      `historyMessages=${history.length} compositionLen=${composition.english_text.length} model=${config.writingChatModel}`
+  );
+
+  try {
+    const result = await generateChatReply(composition.english_text, history, question);
+    // 生成が成功したときだけ質問も残す（失敗時に片側だけ残ると次回の文脈が壊れるため）
+    insertCompositionChatMessage({ compositionId: id, role: "user", content: question });
+    insertCompositionChatMessage({
+      compositionId: id,
+      role: "assistant",
+      content: result.text,
+      model: result.model,
+      inputTokens: result.inputTokens,
+      outputTokens: result.outputTokens,
+      costUsd: estimateCostUsd(result.model, result.inputTokens, result.outputTokens),
+    });
+
+    logger.info(`composition-chat: success composition=#${id} latencyMs=${Date.now() - startedAt}`);
+    res.json({ replyHtml: renderCompositionMarkdown(result.text) });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(
+      `composition-chat: failed composition=#${id} latencyMs=${Date.now() - startedAt} error=${errorMessage}`
+    );
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// 本文の自動保存（エディタからの fetch）。単一ユーザー運用のため楽観ロックは持たず最終書き込み優先。
+// japaneseText は編集画面に無いので省略でき、その場合は保存済みの値をそのまま残す。
+adminRouter.post("/writing/:id/save", (req, res) => {
+  const id = Number(req.params.id);
+  const composition = getComposition(id);
+  if (!composition) {
+    res.status(404).json({ error: "composition not found" });
+    return;
+  }
+
+  const { englishText, japaneseText } = (req.body ?? {}) as Record<string, unknown>;
+  if (typeof englishText !== "string") {
+    res.status(400).json({ error: "englishText is required" });
+    return;
+  }
+  if (japaneseText !== undefined && typeof japaneseText !== "string") {
+    res.status(400).json({ error: "japaneseText must be a string" });
+    return;
+  }
+  const japanese = typeof japaneseText === "string" ? japaneseText : composition.japanese_text;
+  if (englishText.length > WRITING_TEXT_MAX_LENGTH || japanese.length > WRITING_TEXT_MAX_LENGTH) {
+    res.status(400).json({ error: `text must be ${WRITING_TEXT_MAX_LENGTH} characters or fewer` });
+    return;
+  }
+
+  updateCompositionDraft(id, englishText, japanese);
+  res.json({ ok: true });
+});
+
+// 下書きを保存 → 添削 → ラウンド追加。history には全ラウンドを渡し、文脈込みで再添削する。
+// 編集画面を「本文入力欄と削除だけ」にしたため、現状この POST を叩く導線は画面上に無い
+// （添削の生成経路としては /api/writing-feedback と共通のまま残してある）。
+adminRouter.post("/writing/:id/review", async (req, res) => {
+  const id = Number(req.params.id);
+  const composition = getComposition(id);
+  if (!composition) {
+    compositionNotFound(res);
+    return;
+  }
+
+  const { englishText, japaneseText } = (req.body ?? {}) as Record<string, unknown>;
+  const draftEnglish = typeof englishText === "string" ? englishText : composition.english_text;
+  const draftJapanese = typeof japaneseText === "string" ? japaneseText : composition.japanese_text;
+
+  // 編集画面には表示先（バナー）が無いので、失敗はその場でエラーページとして見せる
+  const failWith = (message: string) =>
+    res
+      .status(400)
+      .type("html")
+      .send(
+        renderPage(
+          "添削に失敗しました",
+          "",
+          `<h1>添削に失敗しました</h1><p>${escapeHtml(message)}</p>` +
+            `<p><a href="/admin/writing/${id}">← 作文に戻る</a></p>`,
+          "writing"
+        )
+      );
+
+  const validation = validateWritingFeedbackRequest({
+    englishText: draftEnglish,
+    japaneseText: draftJapanese,
+    explanationLanguage: composition.explanation_language,
+  });
+  if (!validation.ok) {
+    logger.warn(`admin: composition #${id} review rejected (${validation.error})`);
+    failWith(validation.error);
+    return;
+  }
+
+  // 送信された下書きを先に保存する（添削が失敗しても入力は失われない）
+  updateCompositionDraft(id, draftEnglish, draftJapanese);
+
+  const rounds = listCompositionRounds(id);
+  if (!canReviewComposition(statusSourceFor({ english_text: draftEnglish, japanese_text: draftJapanese }, rounds))) {
+    logger.warn(`admin: composition #${id} review rejected (no change since last round)`);
+    failWith("最終ラウンドから変更がありません。英文か意図を書き直してください。");
+    return;
+  }
+
+  try {
+    const result = await runWritingFeedback(
+      {
+        ...validation.value,
+        history: rounds.map((round) => ({
+          englishText: round.english_text,
+          japaneseText: round.japanese_text,
+          correctedText: round.corrected_text,
+          explanation: round.explanation,
+        })),
+      },
+      `admin:composition#${id}`
+    );
+
+    const roundIndex = insertCompositionRound({
+      compositionId: id,
+      englishText: validation.value.englishText,
+      japaneseText: validation.value.japaneseText,
+      correctedText: result.feedback.correctedText,
+      explanation: result.feedback.explanation,
+      model: result.model,
+    });
+    logger.info(`admin: composition #${id} round ${roundIndex} added`);
+    res.redirect(303, `/admin/writing/${id}`);
+  } catch (error) {
+    failWith(error instanceof Error ? error.message : String(error));
+  }
+});
+
+adminRouter.post("/writing/:id/delete", (req, res) => {
+  const id = Number(req.params.id);
+  if (!getComposition(id)) {
+    compositionNotFound(res);
+    return;
+  }
+  deleteComposition(id);
+  logger.info(`admin: deleted composition #${id}`);
+  res.redirect(303, "/admin/writing");
+});
+
+// 読書用ページ。管理画面のダークテーマ・サイドバーを外し、印刷にも使える単独ページとして描画する。
+adminRouter.get("/writing/:id/read", (req, res) => {
+  const id = Number(req.params.id);
+  const composition = getComposition(id);
+  if (!composition) {
+    compositionNotFound(res);
+    return;
+  }
+
+  const rounds = listCompositionRounds(id);
+  const draft = { englishText: composition.english_text, japaneseText: composition.japanese_text };
+  const title =
+    compositionPreview(
+      { englishText: rounds.at(-1)?.corrected_text ?? composition.english_text, japaneseText: composition.japanese_text },
+      50
+    ) || `作文 #${composition.id}`;
+
+  res.type("html").send(
+    renderCompositionReadPageHtml({
+      id: composition.id,
+      title,
+      meta: `#${composition.id} ・ 更新 ${formatSeattleTime(composition.updated_at)} ・ 添削 ${rounds.length} 回`,
+      draft,
+      rounds: rounds.map((round) => ({
+        roundIndex: round.round_index,
+        englishText: round.english_text,
+        japaneseText: round.japanese_text,
+        correctedText: round.corrected_text,
+        explanation: round.explanation,
+        createdAt: formatSeattleTime(round.created_at),
+      })),
+      backHref: `/admin/writing/${composition.id}`,
+    })
+  );
+});
+
 /// 一覧プレビュー用に先頭語義を取り出す（パース不能なら空文字）
 function firstMeaningPreview(row: StoredWordRow): string {
   try {
@@ -1453,6 +1868,7 @@ function modelUsage(model: string): string {
   if (model === config.wordInfoModel) usages.push("単語情報");
   if (model === config.wordNormalizeModel) usages.push("単語正規化");
   if (model === config.writingFeedbackModel) usages.push("作文添削");
+  if (model === config.writingChatModel) usages.push("作文チャット");
   if (model === "gemini-2.5-flash-preview-tts") usages.push("TTS (flash・旧)");
   if (model === "gemini-2.5-pro-preview-tts") usages.push("TTS (pro・旧)");
   if (model === "gemini-3.1-flash-tts-preview") usages.push("TTS (flash31・全読み上げの既定)");
@@ -1490,6 +1906,7 @@ const USAGE_FEATURE_META: Record<UsageFeature, { label: string; href: string }> 
   "word-info": { label: "単語情報", href: "/admin/word-info" },
   "word-normalize": { label: "単語正規化", href: "/admin/word-normalize" },
   "writing-feedback": { label: "作文添削", href: "/admin/writing-feedback" },
+  "writing-chat": { label: "作文チャット", href: "/admin/writing" },
   tts: { label: "TTS音声", href: "/admin/tts" },
   illustrations: { label: "単語イラスト", href: "/admin/illustrations" },
   quiz: { label: "単語クイズ", href: "/admin/quiz-questions" },

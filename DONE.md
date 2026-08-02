@@ -1,5 +1,34 @@
 # DONE
 
+- [x] 2026-08-01 Writing機能を変更する（PCのWebインターフェースで書く・読みやすい表示・スマホ対応）
+      [plan](docs/plans/archive/writing-web-interface.md)
+      作文の「正」を iOS のローカル SwiftData からサーバへ移し、書く・添削する・読むを
+      すべて `/admin/writing` で行うようにした。`compositions` / `composition_rounds` テーブルと
+      CRUD を追加（削除は子行を先に消すトランザクション、ラウンドは round_index で採番）。
+      添削生成＋課金ログ記録は `writingFeedbackRunner.runWritingFeedback` に集約し、
+      `/api/writing-feedback`（外部クライアント用に存置）と admin の Review が共有する
+      （ログは1か所なので二重計上しない）。入力バリデーションは `writingFeedback.ts` の
+      純粋関数に切り出して共通化。執筆画面は「左に紙・右に AI チャット」の2ペインの単独ページ
+      （admin のダークテーマ・サイドバーは使わない）。左は机の上の1枚の罫線紙で、罫線の周期と
+      本文の line-height を同じ値から組み立てて字が罫線に乗るようにし、縦の余白線・紙の影・
+      serif 書体で紙らしさを出す。紙に置く操作は本文入力欄と削除だけ（意図欄・Review ボタン・
+      添削履歴は出さない。添削の生成経路自体は `/admin/writing/:id/review` として残置）で、
+      自動保存（1.5秒デバウンス＋blur、⌘S も可）と保存状態をツールバーに添えた。
+      右は ChatGPT 風の相談チャット（`compositionChat.ts` / claude-sonnet-5）。**質問には必ず
+      いま書いている英文をシステムプロンプトへ同梱する**ので本文を貼らずに聞ける。送信前に
+      自動保存を確定させてからサーバの本文を読むため、聞いている内容と紙が食い違わない。
+      会話は `composition_chat_messages` に作文ごとのスレッドとして永続化し、assistant 行が
+      課金ログを兼ねる（/admin/usage に「作文チャット」として計上）。返答は Markdown を
+      サーバ側でエスケープ＋レンダリングして返す。読書用ページ
+      `/admin/writing/:id/read` は printView 系の白地 serif 単独ページで、You wrote/Corrected を
+      PC では2カラム、狭い画面では縦積みにする（そのまま印刷可）。admin 全体に
+      `@media (max-width: 720px)` を足し、サイドバーを上部の横スクロールナビへ切り替え。
+      iOS からは Writing タブ・2画面・RemoteWritingFeedbackService・UIテストを削除
+      （`Composition` モデルと ModelContainer 登録はストア互換のため残置）。
+      backend 118件パス（作文CRUD・チャット保存・プロンプト組み立て・各ページのHTML生成を追加）、
+      iOS ユニット139件パス。ローカルサーバで新規作成→保存→ラウンド表示→削除、
+      Review の変更なしガードと失敗時バナー、幅390pxで横スクロールが出ないことを実地確認。
+
 - [x] 2026-08-01 外部アプリから登録した単語がアプリに表示されない（サーバ→アプリの取り込み経路を新設）
       [plan](docs/plans/archive/external-word-registration-sync.md)
       アプリにはサーバから状態を引く経路が無かったため、既存の `GET /api/words` を使った

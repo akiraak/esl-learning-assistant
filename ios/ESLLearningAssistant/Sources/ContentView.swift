@@ -28,11 +28,8 @@ struct ContentView: View {
                 .badge(dueCount)
                 .tag(AppTab.words)
 
-            CompositionsView()
-                .tabItem {
-                    Label("Writing", systemImage: "pencil.and.scribble")
-                }
-                .tag(AppTab.writing)
+            // 英作文（Writing）は Web の /admin/writing に移した（docs/plans/writing-web-interface.md）。
+            // 長文入力は PC のキーボードで行うため、アプリからはタブごと外している。
 
             // タブは5個まで（6個以上は iOS の More タブに入り、More のナビゲーションバーと
             // 各タブの NavigationStack が二重になる）。音声・文書は Content タブに統合する。

@@ -14,7 +14,6 @@ import {
   insertTranscriptionLog,
   insertWordInfoLog,
   insertWordNormalizeLog,
-  insertWritingFeedbackLog,
   listIllustratedWords,
   listQuizQuestions,
   listStoredWordTexts,
@@ -41,7 +40,8 @@ import { createDocumentJob, getDocumentJob, runDocumentExtractTranslate } from "
 import { generateWordInfo, type WordInfo } from "./wordInfo";
 import { buildWordDetail, buildWordSummary, parseWordListQuery } from "./wordsApi";
 import { normalizeWord } from "./wordNormalize";
-import { generateWritingFeedback, type WritingFeedbackRound } from "./writingFeedback";
+import { validateWritingFeedbackRequest } from "./writingFeedback";
+import { runWritingFeedback } from "./writingFeedbackRunner";
 import { generateQuizQuestions } from "./quizQuestions";
 import { estimateCostUsd } from "./pricing";
 import { startPricingSync } from "./pricingSync";
@@ -769,122 +769,22 @@ app.get("/api/words/:word", (req, res) => {
   res.json(detail);
 });
 
-const WRITING_TEXT_MAX_LENGTH = 5000;
-const DEFAULT_EXPLANATION_LANGUAGE = "ja";
-// 反復改善の履歴として AI に渡す過去ラウンドの上限（トークン肥大を防ぐため直近のみ）
-const WRITING_HISTORY_MAX_ROUNDS = 20;
-
-/// リクエストの history を防御的に正規化する。配列でなければ [] を返し、各ラウンドの文字列フィールドを
-/// クランプ、直近 WRITING_HISTORY_MAX_ROUNDS 件に丸める。無効な要素は落とす。
-function sanitizeWritingHistory(raw: unknown): WritingFeedbackRound[] {
-  if (!Array.isArray(raw)) return [];
-  const clamp = (value: unknown): string =>
-    typeof value === "string" ? value.slice(0, WRITING_TEXT_MAX_LENGTH) : "";
-  return raw
-    .filter((item): item is Record<string, unknown> => typeof item === "object" && item !== null)
-    .map((item) => ({
-      englishText: clamp(item.englishText),
-      japaneseText: clamp(item.japaneseText),
-      correctedText: clamp(item.correctedText),
-      explanation: clamp(item.explanation),
-    }))
-    .filter((round) => round.englishText.trim() !== "" && round.correctedText.trim() !== "")
-    .slice(-WRITING_HISTORY_MAX_ROUNDS);
-}
-
 // 作文添削。英文と「伝えたかった意図（母語）」を渡し、修正英文＋母語解説を返す。
-// 作文本文は毎回異なりキャッシュが効かないため、サーバ側は保存せずログ用途のみ。
+// 作文本体の保存は /admin/writing（compositions テーブル）が担い、この API は生成のみを提供する。
+// 生成とログ記録は runWritingFeedback に集約してある（admin の Review と共通）。
 app.post("/api/writing-feedback", async (req, res) => {
-  const { englishText, japaneseText, explanationLanguage, history } = req.body ?? {};
-
-  if (typeof englishText !== "string" || !englishText.trim()) {
-    logger.warn("writing-feedback: rejected (englishText is required)");
-    res.status(400).json({ error: "englishText is required" });
+  const validation = validateWritingFeedbackRequest(req.body);
+  if (!validation.ok) {
+    logger.warn(`writing-feedback: rejected (${validation.error})`);
+    res.status(400).json({ error: validation.error });
     return;
   }
-  if (englishText.length > WRITING_TEXT_MAX_LENGTH) {
-    logger.warn(`writing-feedback: rejected (englishText too long: ${englishText.length})`);
-    res.status(400).json({ error: `englishText must be ${WRITING_TEXT_MAX_LENGTH} characters or fewer` });
-    return;
-  }
-  if (typeof japaneseText !== "string" || !japaneseText.trim()) {
-    logger.warn("writing-feedback: rejected (japaneseText is required)");
-    res.status(400).json({ error: "japaneseText is required" });
-    return;
-  }
-  if (japaneseText.length > WRITING_TEXT_MAX_LENGTH) {
-    logger.warn(`writing-feedback: rejected (japaneseText too long: ${japaneseText.length})`);
-    res.status(400).json({ error: `japaneseText must be ${WRITING_TEXT_MAX_LENGTH} characters or fewer` });
-    return;
-  }
-  if (explanationLanguage !== undefined && typeof explanationLanguage !== "string") {
-    logger.warn("writing-feedback: rejected (explanationLanguage must be a string)");
-    res.status(400).json({ error: "explanationLanguage must be a string" });
-    return;
-  }
-
-  const trimmedEnglish = englishText.trim();
-  const trimmedJapanese = japaneseText.trim();
-  const resolvedLanguage =
-    typeof explanationLanguage === "string" && explanationLanguage.trim()
-      ? explanationLanguage.trim()
-      : DEFAULT_EXPLANATION_LANGUAGE;
-
-  const sanitizedHistory = sanitizeWritingHistory(history);
-
-  const startedAt = Date.now();
-  logger.info(
-    `writing-feedback: start englishLen=${trimmedEnglish.length} japaneseLen=${trimmedJapanese.length} ` +
-      `historyRounds=${sanitizedHistory.length} explanationLanguage=${resolvedLanguage} model=${config.writingFeedbackModel}`
-  );
 
   try {
-    const result = await generateWritingFeedback(
-      trimmedEnglish,
-      trimmedJapanese,
-      resolvedLanguage,
-      sanitizedHistory
-    );
-    const latencyMs = Date.now() - startedAt;
-    const costUsd = estimateCostUsd(result.model, result.inputTokens, result.outputTokens);
-    const feedbackJson = JSON.stringify(result.feedback);
-
-    insertWritingFeedbackLog({
-      englishText: trimmedEnglish,
-      japaneseText: trimmedJapanese,
-      explanationLanguage: resolvedLanguage,
-      feedbackJson,
-      model: result.model,
-      inputTokens: result.inputTokens,
-      outputTokens: result.outputTokens,
-      costUsd,
-      status: "success",
-      errorMessage: null,
-      latencyMs,
-    });
-
-    logger.info(`writing-feedback: success latencyMs=${latencyMs}`);
+    const result = await runWritingFeedback(validation.value, "api");
     res.json({ feedback: result.feedback, model: result.model });
   } catch (error) {
-    const latencyMs = Date.now() - startedAt;
-    const errorMessage = error instanceof Error ? error.message : String(error);
-
-    insertWritingFeedbackLog({
-      englishText: trimmedEnglish,
-      japaneseText: trimmedJapanese,
-      explanationLanguage: resolvedLanguage,
-      feedbackJson: null,
-      model: config.writingFeedbackModel,
-      inputTokens: 0,
-      outputTokens: 0,
-      costUsd: 0,
-      status: "error",
-      errorMessage,
-      latencyMs,
-    });
-
-    logger.error(`writing-feedback: failed latencyMs=${latencyMs} error=${errorMessage}`);
-    res.status(500).json({ error: errorMessage });
+    res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
   }
 });
 
@@ -1184,7 +1084,9 @@ app.post("/api/word-illustration", async (req, res) => {
   }
 });
 
-app.use("/admin", adminRouter);
+// /admin の作文画面は通常のフォーム POST（新規作成・Review・削除）を使うため、
+// JSON に加えて urlencoded をここだけで受ける（/api は JSON のみで従来どおり）。
+app.use("/admin", express.urlencoded({ extended: false }), adminRouter);
 
 app.listen(config.port, () => {
   if (!config.anthropicApiKey) {

@@ -43,6 +43,76 @@ export interface WritingFeedbackResult {
   outputTokens: number;
 }
 
+export const WRITING_TEXT_MAX_LENGTH = 5000;
+export const DEFAULT_EXPLANATION_LANGUAGE = "ja";
+// 反復改善の履歴として AI に渡す過去ラウンドの上限（トークン肥大を防ぐため直近のみ）
+export const WRITING_HISTORY_MAX_ROUNDS = 20;
+
+/// バリデーション済みの添削リクエスト（本文は trim 済み、解説言語は既定値解決済み）
+export interface WritingFeedbackRequest {
+  englishText: string;
+  japaneseText: string;
+  explanationLanguage: string;
+  history: WritingFeedbackRound[];
+}
+
+export type WritingFeedbackRequestValidation =
+  | { ok: true; value: WritingFeedbackRequest }
+  | { ok: false; error: string };
+
+/// history を防御的に正規化する。配列でなければ [] を返し、各ラウンドの文字列フィールドを
+/// クランプ、直近 WRITING_HISTORY_MAX_ROUNDS 件に丸める。無効な要素は落とす。
+export function sanitizeWritingHistory(raw: unknown): WritingFeedbackRound[] {
+  if (!Array.isArray(raw)) return [];
+  const clamp = (value: unknown): string =>
+    typeof value === "string" ? value.slice(0, WRITING_TEXT_MAX_LENGTH) : "";
+  return raw
+    .filter((item): item is Record<string, unknown> => typeof item === "object" && item !== null)
+    .map((item) => ({
+      englishText: clamp(item.englishText),
+      japaneseText: clamp(item.japaneseText),
+      correctedText: clamp(item.correctedText),
+      explanation: clamp(item.explanation),
+    }))
+    .filter((round) => round.englishText.trim() !== "" && round.correctedText.trim() !== "")
+    .slice(-WRITING_HISTORY_MAX_ROUNDS);
+}
+
+/// `/api/writing-feedback` の本文と `/admin/writing/:id/review` の共通バリデーション。
+/// HTTP に依存しないよう、失敗は 400 の文言となるメッセージで返す。
+export function validateWritingFeedbackRequest(body: unknown): WritingFeedbackRequestValidation {
+  const { englishText, japaneseText, explanationLanguage, history } = (body ?? {}) as Record<string, unknown>;
+
+  if (typeof englishText !== "string" || !englishText.trim()) {
+    return { ok: false, error: "englishText is required" };
+  }
+  if (englishText.length > WRITING_TEXT_MAX_LENGTH) {
+    return { ok: false, error: `englishText must be ${WRITING_TEXT_MAX_LENGTH} characters or fewer` };
+  }
+  if (typeof japaneseText !== "string" || !japaneseText.trim()) {
+    return { ok: false, error: "japaneseText is required" };
+  }
+  if (japaneseText.length > WRITING_TEXT_MAX_LENGTH) {
+    return { ok: false, error: `japaneseText must be ${WRITING_TEXT_MAX_LENGTH} characters or fewer` };
+  }
+  if (explanationLanguage !== undefined && typeof explanationLanguage !== "string") {
+    return { ok: false, error: "explanationLanguage must be a string" };
+  }
+
+  return {
+    ok: true,
+    value: {
+      englishText: englishText.trim(),
+      japaneseText: japaneseText.trim(),
+      explanationLanguage:
+        typeof explanationLanguage === "string" && explanationLanguage.trim()
+          ? explanationLanguage.trim()
+          : DEFAULT_EXPLANATION_LANGUAGE,
+      history: sanitizeWritingHistory(history),
+    },
+  };
+}
+
 export async function generateWritingFeedback(
   englishText: string,
   japaneseText: string,
