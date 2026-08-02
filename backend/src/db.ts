@@ -931,6 +931,37 @@ export function deleteCompositionPage(compositionId: number, pageId: number): De
   return deleteCompositionPageTx(compositionId, pageId);
 }
 
+/// 並べ替えの結果。渡された ID の集合がその作文の全ページと一致しないときは何もしない。
+export type ReorderCompositionPagesResult = "reordered" | "mismatch";
+
+/// タブの並びを pageIds の順に振り直す。
+/// UNIQUE(composition_id, position) に触れないよう、いったん全部を負の値へ逃がしてから入れ直す。
+const reorderCompositionPagesTx = db.transaction(
+  (compositionId: number, pageIds: number[]): ReorderCompositionPagesResult => {
+    const current = listCompositionPages(compositionId);
+    const known = new Set(current.map((page) => page.id));
+    const requested = new Set(pageIds);
+    if (requested.size !== pageIds.length || pageIds.length !== current.length) return "mismatch";
+    if (pageIds.some((id) => !known.has(id))) return "mismatch";
+
+    db.prepare("UPDATE composition_pages SET position = -position WHERE composition_id = ?").run(compositionId);
+    const update = db.prepare("UPDATE composition_pages SET position = ? WHERE id = ?");
+    pageIds.forEach((id, index) => update.run(index + 1, id));
+    db.prepare("UPDATE compositions SET updated_at = ? WHERE id = ?").run(
+      new Date().toISOString(),
+      compositionId
+    );
+    return "reordered";
+  }
+);
+
+export function reorderCompositionPages(
+  compositionId: number,
+  pageIds: number[]
+): ReorderCompositionPagesResult {
+  return reorderCompositionPagesTx(compositionId, pageIds);
+}
+
 /// ページ導入前の作文（ページが0件）に1枚だけ作り、compositions.english_text を移す。
 /// 起動時に1度だけ走らせる（title 列の ALTER TABLE と同じ後方互換マイグレーション）。
 /// 戻り値は移行した作文の件数。

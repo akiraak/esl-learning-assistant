@@ -64,6 +64,7 @@ import {
   StoredWordRow,
   TranscriptionLogRow,
   renameCompositionPage,
+  reorderCompositionPages,
   updateCompositionJapaneseText,
   updateCompositionPageText,
   updateCompositionTitle,
@@ -1286,6 +1287,29 @@ adminRouter.post("/writing/:id/pages/:pageId/rename", (req, res) => {
   const sanitized = sanitizePageName(name);
   renameCompositionPage(page.id, sanitized);
   res.json({ name: sanitized, pages: pageSummaries(id) });
+});
+
+// タブの並べ替え。渡された `pageIds` の順に position を振り直す。
+// 一部だけ・重複・他の作文のページが混ざっていたら 400（画面は必ず全ページを並びのまま送る）。
+adminRouter.post("/writing/:id/pages/reorder", (req, res) => {
+  const id = Number(req.params.id);
+  if (!getComposition(id)) {
+    res.status(404).json({ error: "composition not found" });
+    return;
+  }
+
+  const { pageIds } = (req.body ?? {}) as Record<string, unknown>;
+  if (!Array.isArray(pageIds) || pageIds.some((value) => !Number.isInteger(value))) {
+    res.status(400).json({ error: "pageIds must be an array of page ids" });
+    return;
+  }
+  if (reorderCompositionPages(id, pageIds as number[]) === "mismatch") {
+    res.status(400).json({ error: "pageIds must list every page of this composition exactly once" });
+    return;
+  }
+
+  logger.info(`admin: composition #${id} pages reordered`);
+  res.json({ pages: pageSummaries(id) });
 });
 
 // ページの削除。最後の1枚は消せない（409）。

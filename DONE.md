@@ -1,5 +1,27 @@
 # DONE
 
+- [x] 2026-08-02 執筆画面の紙をタブ化して 1 作文に複数ページを持たせた（＋添削機能の削除）
+      [plan](docs/plans/archive/composition-pages-tabs.md)
+      本文が 1 枚きりで、下書き・清書・メモを書き分けるには作文そのものを分けるしかなかったので、
+      `composition_pages`（`composition_id` / `position` / `name` / `english_text`）を足して
+      本文の持ち主を作文からページへ移した。既存の作文は起動時のマイグレーションで 1 枚に移す
+      （`compositions.english_text` は一覧プレビュー用に先頭ページのミラーとして残す）。
+      執筆画面はタイトルカードと罫線紙の間にタブ列を置き、タブ列と紙を `.paper-stack` で包んで
+      影を親に 1 つだけ落とす。選択中のタブは紙と同じ地色で下辺を消して紙へつなげ、非選択だけ
+      一段沈めて後ろに重なった別紙に見せる。切り替え・追加・削除・ダブルクリック（F2）での
+      その場リネーム・ドラッグでの並べ替えができ、切り替えは自動保存を確定させてから本文と
+      赤い波線を差し替える。全ページの本文と綴り誤りは最初にまとめて配るので切り替えに通信は要らない。
+      選択中のタブは `localStorage`（`writing:<id>:activePage`）に覚える。
+      API は `/save`・`/chat`・`/title` に `pageId` を通し、`POST /pages`・`/pages/:pageId/rename`・
+      `/pages/:pageId/delete`・`/pages/reorder` を追加した（上限 20 枚と最後の 1 枚は 409）。
+      チャット履歴は作文で 1 本のままで、どのページの話かは同梱する本文で表す。
+      あわせて実運用で使っていなかった添削（Review）機能を削除した。
+      `POST /admin/writing/:id/review`・`/read`・`/admin/writing-feedback`（一覧・詳細）・
+      `POST /api/writing-feedback`・`writingFeedback.ts` / `writingFeedbackRunner.ts`・一覧の状態バッジ /
+      ラウンド数 /「読む →」・`/admin/usage` の「作文添削」集計を落とし、
+      `writing_feedback_requests` / `composition_rounds` は過去データを残すため DROP せず
+      読み書きだけ止めた（iOS からの呼び出しは元々無い）。
+
 - [x] 2026-08-02 執筆画面のタイトルを本文の紙から分離して上に置いた
       タイトルが罫線紙の一番上に同居していて本文の続きに見えたので、`.sheet` の外へ出し、
       紙と同じ地色（`#FFFDF7`）と浅い影を持つ「もう一枚の紙」として上に並べた。

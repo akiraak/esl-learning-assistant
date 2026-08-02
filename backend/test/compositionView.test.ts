@@ -343,6 +343,19 @@ test("タブ: 追加・リネーム・削除の送信先を持つ", () => {
   assert.match(html, /if \(target\.text\.trim\(\) && !confirm\(/);
 });
 
+test("タブ: ドラッグで並べ替えられ、落ちる位置に目印を出す", () => {
+  const html = tabbedPage();
+
+  assert.match(html, /<div class="tab is-active" data-page-id="11"[^>]*draggable="true"/);
+  assert.match(html, /tabsEl\.addEventListener\('dragstart'/);
+  assert.match(html, /tabsEl\.addEventListener\('drop'/);
+  assert.match(html, /pagesUrl \+ '\/reorder'/);
+  assert.match(html, /JSON\.stringify\(\{ pageIds: order \}\)/);
+  assert.match(html, /\.tab\.drop-before \{[^}]*box-shadow: inset 2px 0 0/);
+  // スクリプト側で描き直したタブも掴める
+  assert.match(html, /tab\.draggable = true;/);
+});
+
 test("タブ: チャットとタイトル生成には選択中のページを伝える", () => {
   const html = tabbedPage();
 

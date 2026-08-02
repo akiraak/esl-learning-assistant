@@ -242,6 +242,39 @@ test("deleteCompositionPage: 無いページ・他の作文のページは not-f
   assert.equal(db.deleteCompositionPage(id, otherPage.id), "not-found");
 });
 
+test("reorderCompositionPages: 渡された順に position を振り直す", () => {
+  const id = db.insertComposition("ja");
+  const first = db.listCompositionPages(id)[0];
+  const second = db.insertCompositionPage(id, "2枚目");
+  const third = db.insertCompositionPage(id, "3枚目");
+
+  assert.equal(db.reorderCompositionPages(id, [third.id, first.id, second.id]), "reordered");
+
+  assert.deepEqual(
+    db.listCompositionPages(id).map((page) => [page.id, page.position]),
+    [
+      [third.id, 1],
+      [first.id, 2],
+      [second.id, 3],
+    ]
+  );
+});
+
+test("reorderCompositionPages: 過不足・重複・他の作文のページが混ざれば何もしない", () => {
+  const id = db.insertComposition("ja");
+  const first = db.listCompositionPages(id)[0];
+  const second = db.insertCompositionPage(id);
+  const other = db.listCompositionPages(db.insertComposition("ja"))[0];
+  const before = db.listCompositionPages(id).map((page) => [page.id, page.position]);
+
+  assert.equal(db.reorderCompositionPages(id, [first.id]), "mismatch");
+  assert.equal(db.reorderCompositionPages(id, [first.id, first.id]), "mismatch");
+  assert.equal(db.reorderCompositionPages(id, [first.id, other.id]), "mismatch");
+  assert.equal(db.reorderCompositionPages(id, [first.id, second.id, other.id]), "mismatch");
+
+  assert.deepEqual(db.listCompositionPages(id).map((page) => [page.id, page.position]), before);
+});
+
 test("migrateCompositionsToPages: ページが0件の作文に1枚作って本文を移す", () => {
   const id = db.insertComposition("ja");
   // ページ導入前の状態を作る（本文は compositions 側にあり、ページは 1 枚も無い）。

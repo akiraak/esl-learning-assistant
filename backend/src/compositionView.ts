@@ -160,7 +160,8 @@ function tabHtml(tab: CompositionEditorTab, isActive: boolean, canDelete: boolea
     : "";
   return (
     `<div class="tab${isActive ? " is-active" : ""}" data-page-id="${tab.id}" role="tab"` +
-    ` tabindex="0" aria-selected="${isActive}" title="ダブルクリックで名前を変更">` +
+    ` tabindex="0" draggable="true" aria-selected="${isActive}"` +
+    ` title="ダブルクリックで名前を変更・ドラッグで並べ替え">` +
     `<span class="tab-name">${escapeHtml(tabLabel(tab))}</span>${del}</div>`
   );
 }
@@ -289,6 +290,9 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
       margin-top: 0; padding: 6px 13px 8px; color: ${PAPER_INK};
       background: ${PAPER_SHEET}; border-bottom-color: transparent;
     }
+    /* ドラッグ中に「ここへ入る」と分かる縦線を、落ちる側の縁に内側から引く */
+    .tab.drop-before { box-shadow: inset 2px 0 0 #A99C7E; }
+    .tab.drop-after { box-shadow: inset -2px 0 0 #A99C7E; }
     .tab-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     /* その場リネームの入力欄。字送りが変わるとタブが跳ねるので、見た目はタブ名のまま。 */
     .tab-edit {
@@ -945,7 +949,8 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
           tab.setAttribute('role', 'tab');
           tab.tabIndex = 0;
           tab.setAttribute('aria-selected', String(isActive));
-          tab.title = 'ダブルクリックで名前を変更';
+          tab.draggable = true;
+          tab.title = 'ダブルクリックで名前を変更・ドラッグで並べ替え';
           var name = document.createElement('span');
           name.className = 'tab-name';
           name.textContent = pageLabel(item);
@@ -1134,6 +1139,96 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
           var id = Number(tab.dataset.pageId);
           if (id === activeId) startRename(tab); else switchTo(id);
         }
+      });
+
+      // --- タブのドラッグ並べ替え -------------------------------------------
+      var dragId = null;
+
+      function clearDropMarks() {
+        Array.prototype.forEach.call(tabsEl.querySelectorAll('.tab'), function (tab) {
+          tab.classList.remove('drop-before', 'drop-after');
+        });
+      }
+
+      /// 掴んだタブが、指しているタブの左右どちらへ入るか（中点で分ける）
+      function dropSide(tab, clientX) {
+        var rect = tab.getBoundingClientRect();
+        return clientX < rect.left + rect.width / 2 ? 'before' : 'after';
+      }
+
+      /// 並びを先に画面へ反映してからサーバへ送る（掴んだ手応えを待たせない）。
+      /// 失敗したら元の並びへ戻す。
+      function reorderTo(order) {
+        var previous = pages;
+        pages = order.map(function (id, index) {
+          var item = pageById(id);
+          return { id: item.id, name: item.name, position: index + 1, text: item.text, spans: item.spans };
+        });
+        renderTabs();
+        fetch(pagesUrl + '/reorder', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pageIds: order })
+        }).then(function (res) {
+          return res.json().then(function (data) {
+            if (!res.ok) throw new Error(data.error || 'reorder failed');
+            return data;
+          });
+        }).then(function (data) {
+          applyPages(data.pages);
+          renderTabs();
+        }).catch(function (error) {
+          pages = previous;
+          renderTabs();
+          status.textContent = 'ページを並べ替えられませんでした: ' + error.message;
+        });
+      }
+
+      tabsEl.addEventListener('dragstart', function (event) {
+        var tab = event.target.closest('.tab');
+        if (!tab || event.target.closest('.tab-edit')) return;
+        dragId = Number(tab.dataset.pageId);
+        event.dataTransfer.effectAllowed = 'move';
+        // データを載せないとドラッグが始まらないブラウザがある
+        event.dataTransfer.setData('text/plain', String(dragId));
+      });
+
+      tabsEl.addEventListener('dragover', function (event) {
+        if (dragId === null) return;
+        var tab = event.target.closest('.tab');
+        if (!tab) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'move';
+        clearDropMarks();
+        if (Number(tab.dataset.pageId) !== dragId) {
+          tab.classList.add(dropSide(tab, event.clientX) === 'before' ? 'drop-before' : 'drop-after');
+        }
+      });
+
+      tabsEl.addEventListener('dragleave', function (event) {
+        if (!tabsEl.contains(event.relatedTarget)) clearDropMarks();
+      });
+
+      tabsEl.addEventListener('drop', function (event) {
+        var moving = dragId;
+        dragId = null;
+        clearDropMarks();
+        if (moving === null) return;
+        event.preventDefault();
+        var tab = event.target.closest('.tab');
+        if (!tab) return;
+        var overId = Number(tab.dataset.pageId);
+        if (overId === moving) return;
+        var rest = pages.filter(function (item) { return item.id !== moving; });
+        var index = rest.findIndex(function (item) { return item.id === overId; });
+        if (index === -1) return;
+        rest.splice(dropSide(tab, event.clientX) === 'before' ? index : index + 1, 0, pageById(moving));
+        reorderTo(rest.map(function (item) { return item.id; }));
+      });
+
+      tabsEl.addEventListener('dragend', function () {
+        dragId = null;
+        clearDropMarks();
       });
 
       // 前回開いていたタブを思い出す（消えたページを指していたら先頭に落とす）
