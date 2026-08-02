@@ -26,6 +26,14 @@ test("システムプロンプト: 本文が空でも「まだ書かれていな
   assert.match(prompt, /\(まだ何も書かれていません\)/);
 });
 
+test("システムプロンプト: 英文はコピーできるようコードブロックで示させる", () => {
+  const prompt = buildChatSystemPrompt("I go to school yesterday.");
+
+  // 画面側はこのブロックを1つのまとまりと見なしてコピーボタンを出す
+  assert.match(prompt, /```/);
+  assert.match(prompt, /修正後の英文・例文・言い換えは/);
+});
+
 test("システムプロンプト: 長すぎる本文は上限で切る", () => {
   const long = "a".repeat(CHAT_COMPOSITION_MAX_LENGTH + 500);
   const prompt = buildChatSystemPrompt(long);

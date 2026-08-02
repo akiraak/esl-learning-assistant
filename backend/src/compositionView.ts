@@ -334,8 +334,26 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
     .msg .bubble ul, .msg .bubble ol { margin: 0 0 0.7em; padding-left: 1.3em; }
     .msg .bubble li { margin-bottom: 0.2em; }
     .msg .bubble code { background: #EFE9DC; padding: 1px 5px; border-radius: 4px; font-size: 0.92em; }
-    .msg .bubble pre { background: #EFE9DC; padding: 10px 12px; border-radius: 8px; overflow-x: auto; }
-    .msg .bubble pre code { background: none; padding: 0; }
+    /* AI がコードフェンスで囲んだ英文は「そのまま紙へ写せるまとまり」。等幅のコード塊ではなく、
+       本文と同じ serif の英文カードとして見せ、右上にコピーボタンを重ねる。 */
+    .msg .bubble pre, .msg .bubble blockquote {
+      position: relative; margin: 0 0 0.7em; background: #FFFDF7;
+      border: 1px solid #E4DDCE; border-left: 3px solid #C9BFA6; border-radius: 8px;
+      padding: 10px 12px; padding-right: 62px; overflow-x: auto;
+      font-family: "Iowan Old Style", Georgia, "Times New Roman", serif;
+      font-size: 14.5px; line-height: 1.7; white-space: pre-wrap; word-break: break-word;
+    }
+    .msg .bubble blockquote > *:last-child { margin-bottom: 0; }
+    .msg .bubble pre code { background: none; padding: 0; font: inherit; }
+    /* カードの角に控えめに置き、押した直後だけ結果を出す */
+    .copy-btn {
+      position: absolute; top: 6px; right: 6px;
+      font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Segoe UI", sans-serif;
+      font-size: 11.5px; line-height: 1; padding: 5px 8px; border-radius: 6px;
+      background: #F0EADC; color: ${PAPER_FAINT}; border: 1px solid #DDD5C1; cursor: pointer;
+    }
+    .copy-btn:hover { background: #E7E0CF; color: ${PAPER_INK}; }
+    .copy-btn.done { color: #3F6B4A; border-color: #BFD0BF; background: #E8F0E6; }
     .msg .bubble h1, .msg .bubble h2, .msg .bubble h3 { font-size: 1.05em; margin: 0.6em 0 0.3em; }
     .msg.pending .bubble { color: ${PAPER_FAINT}; }
     .chat-error { color: #A3392F; font-size: 13px; margin-bottom: 14px; }
@@ -371,7 +389,7 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
     }
     @media print {
       body { background: #fff; height: auto; overflow: visible; display: block; }
-      .toolbar, .chat-pane, .resizer { display: none; }
+      .toolbar, .chat-pane, .resizer, .copy-btn { display: none; }
       .split { display: block; }
       .paper-pane { overflow: visible; }
       .sheet { margin: 0; padding: 0; box-shadow: none; max-width: none; background-image: none; }
@@ -788,6 +806,61 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
 
       function scrollLog() { log.scrollTop = log.scrollHeight; }
 
+      // AI がコードフェンスで囲んだ英文（＋古い履歴の引用ブロック）に「コピー」ボタンを後付けする。
+      // サーバが埋めた履歴と、送信後に差し込む返信の両方をこの関数へ通す。
+      function decorateCopyTargets(root) {
+        var blocks = root.querySelectorAll('.msg-assistant .bubble pre, .msg-assistant .bubble blockquote');
+        Array.prototype.forEach.call(blocks, function (block) {
+          if (block.querySelector('.copy-btn')) return;
+          // ボタンを入れる前の文字列を控える（ボタンの文言が混ざらないように）
+          var text = block.textContent.replace(/\\s+$/, '');
+          if (!text) return;
+          var button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'copy-btn';
+          button.textContent = 'コピー';
+          button.addEventListener('click', function () {
+            copyText(text).then(function () {
+              button.textContent = 'コピーしました';
+              button.classList.add('done');
+              setTimeout(function () {
+                button.textContent = 'コピー';
+                button.classList.remove('done');
+              }, 1400);
+            }).catch(function () {
+              button.textContent = 'コピーできません';
+              setTimeout(function () { button.textContent = 'コピー'; }, 1400);
+            });
+          });
+          block.appendChild(button);
+        });
+      }
+
+      // clipboard API は https / localhost でしか使えないので、駄目なら選択+execCommand に落とす
+      function copyText(text) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          return navigator.clipboard.writeText(text);
+        }
+        return new Promise(function (resolve, reject) {
+          var previous = document.activeElement;
+          var area = document.createElement('textarea');
+          area.value = text;
+          area.setAttribute('readonly', '');
+          area.style.position = 'fixed';
+          area.style.opacity = '0';
+          document.body.appendChild(area);
+          area.select();
+          var ok = false;
+          try { ok = document.execCommand('copy'); } catch (err) { ok = false; }
+          document.body.removeChild(area);
+          // 書きかけの場所へフォーカスを返す（一時的な textarea に奪われたままにしない）
+          if (previous && previous.focus) previous.focus();
+          ok ? resolve() : reject(new Error('copy failed'));
+        });
+      }
+
+      decorateCopyTargets(log);
+
       /// 吹き出しを1件足す。html=false のときは textContent として入れる（ユーザー入力用）
       function appendMessage(role, body, isHtml, extraClass) {
         var empty = log.querySelector('.chat-empty');
@@ -835,6 +908,7 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
         }).then(function (data) {
           pending.classList.remove('pending');
           pending.querySelector('.bubble').innerHTML = data.replyHtml;
+          decorateCopyTargets(pending);
           scrollLog();
         }).catch(function (error) {
           pending.remove();

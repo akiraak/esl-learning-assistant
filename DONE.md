@@ -1,5 +1,19 @@
 # DONE
 
+- [x] 2026-08-01 AI 返信の英文ブロックにコピーボタンを表示
+      [plan](docs/plans/archive/writing-chat-copy-button.md)
+      執筆画面のチャットで、修正後の英文をボタン一つで紙へ写せるようにした。返信は自由な
+      Markdown なので「まとまり」の境界が要点で、システムプロンプト（`compositionChat.ts`）に
+      「修正後の英文・例文・言い換えはコードフェンスで囲んだブロックに英文だけを入れる
+      （日本語の説明は外）」を足し、そのブロックを1グループとして扱う。表示側は `pre`
+      （＋フェンスの無い古い履歴のための `blockquote`）を等幅のコード塊ではなく本文と同じ
+      serif の英文カードとして見せ、右上に「コピー」ボタンを重ねる。ボタンは
+      `decorateCopyTargets()` で後付けし、サーバが埋めた履歴と送信後に `replyHtml` で差し込む
+      返信の両方を同じ関数へ通す（文字列はボタン挿入前の `textContent` から取る）。コピーは
+      `navigator.clipboard.writeText`、使えない環境（http 越しの LAN アクセスなど）は
+      隠し textarea + `execCommand('copy')` に落とし、フォーカスは元の場所へ返す。
+      押した直後は「コピーしました」に変えて 1.4 秒で戻す。印刷時は出さない。
+
 - [x] 2026-08-01 執筆画面の紙を横いっぱいに広げ、AI 欄との境界をドラッグで動かせるようにした
       [plan](docs/plans/archive/writing-pane-resizer.md)
       `.sheet` の `max-width: 44em`（中央寄せ）を外して紙をペイン幅いっぱいに広げ（縁が窓に

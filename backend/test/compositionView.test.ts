@@ -133,6 +133,24 @@ test("執筆ページ: 紙を横いっぱいに広げ、AI 欄との境界を掴
   assert.match(html, /var WIDTH_KEY = 'composition\.chatWidth';/);
 });
 
+test("執筆ページ: AI 返信の英文ブロックにコピーボタンを付ける", () => {
+  const html = editorPage("Last weekend I visited my grandmother.", [
+    { role: "user", content: "この文は自然ですか？" },
+    { role: "assistant", content: "時制を直すと自然です。\n\n```\nI visited my grandmother last weekend.\n```" },
+  ]);
+
+  // ``` は pre/code として描画され、そこへ後からボタンを足す
+  assert.match(html, /<pre><code>I visited my grandmother last weekend\.\n<\/code><\/pre>/);
+  assert.match(html, /function decorateCopyTargets\(root\)/);
+  assert.match(html, /\.msg-assistant \.bubble pre, \.msg-assistant \.bubble blockquote/);
+  assert.match(html, /button\.textContent = 'コピー';/);
+  // 新しい返信を差し込んだ直後にも同じ処理を通す
+  assert.match(html, /decorateCopyTargets\(pending\);/);
+  // clipboard API が使えない環境の逃げ道も持つ
+  assert.match(html, /document\.execCommand\('copy'\)/);
+  assert.match(html, /\.copy-btn \{/);
+});
+
 test("執筆ページ: 綴りの下敷きを紙の背後に敷き、標準のスペルチェックは止める", () => {
   const html = editorPage("I recieve a letter.", [], [{ start: 2, end: 9, word: "recieve" }]);
 
