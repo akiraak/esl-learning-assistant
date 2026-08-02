@@ -455,8 +455,11 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
     .chat-empty code { background: #EDE7DA; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
     .msg { display: flex; margin-bottom: 14px; }
     .msg-user { justify-content: flex-end; }
-    .msg .bubble { max-width: 92%; font-size: 14px; line-height: 1.75; }
+    .msg .bubble { max-width: 100%; font-size: 14px; line-height: 1.75; }
+    /* 自分の発言だけ少し狭くして右寄せと分かるようにする。AI 側にも上限を掛けると
+       左寄せなので右端に空白が残り続ける（AI 欄を広げても返答が広がらない）。 */
     .msg-user .bubble {
+      max-width: 92%;
       background: #E7E0CF; border: 1px solid #DDD5C1; border-radius: 14px 14px 4px 14px; padding: 9px 13px;
     }
     .msg-assistant .bubble {

@@ -1,5 +1,11 @@
 # DONE
 
+- [x] 2026-08-02 執筆画面のチャットで AI の返答の右に残る余白をなくした
+      [plan](docs/plans/archive/chat-bubble-width.md)
+      `.msg .bubble` の `max-width: 92%` が左寄せの AI 側にも掛かっていて、右端に常に
+      8% の空白が縦一列に残っていた。上限は「自分の発言を画面いっぱいにしない」ためのものなので
+      `.msg-user .bubble` へ移し、AI 側は AI 欄の幅いっぱいに広がるようにした。
+
 - [x] 2026-08-02 管理画面のヘッダーとブラウザタブに iOS アプリのアイコンを出すようにした
       [plan](docs/plans/archive/admin-header-icon.md)
       サイドバーの見出しが文字だけで、favicon も無く他のタブに紛れて見つけにくかったので、
