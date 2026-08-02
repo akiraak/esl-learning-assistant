@@ -105,12 +105,28 @@ export interface CompositionChatMessageView {
   content: string;
 }
 
+/// 綴り誤りの位置（spellcheck.ts の Misspelling と同じ形。表示側が判定モジュールに依存しないよう
+/// ここでも定義しておく）。start/end は本文の文字オフセットで、終端は排他。
+export interface EditorMisspelling {
+  start: number;
+  end: number;
+  word: string;
+}
+
 export interface CompositionEditorPage {
   id: number;
   /// 現在の本文（textarea の初期値）
   text: string;
   /// 自動保存の POST 先
   saveUrl: string;
+  /// 綴り検査の POST 先
+  spellcheckUrl: string;
+  /// 修正候補の POST 先（赤い語にカーソルを置いたときに 1 語だけ問い合わせる）
+  spellSuggestUrl: string;
+  /// 「辞書に追加」の POST 先
+  spellIgnoreUrl: string;
+  /// 開いた時点の綴り誤り（初期表示から赤線が出ている状態にする）
+  misspellings: EditorMisspelling[];
   /// 削除フォームの POST 先
   deleteUrl: string;
   /// チャット送信の POST 先
@@ -177,6 +193,7 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
        上下の padding を行送りの倍数にしてあるので、罫線と本文の行がぴったり重なる。
        縦の余白線はノートらしさのため、本文の左端から 12px 手前に引く。 */
     .sheet {
+      position: relative;
       --pad-x: 56px;
       max-width: 44em; margin: 28px auto 64px; background-color: ${PAPER_SHEET};
       box-shadow: 0 1px 2px rgba(60,50,35,0.10), 0 10px 30px rgba(60,50,35,0.12);
@@ -192,16 +209,57 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
           transparent 0, transparent ${lh - 1}px, ${PAPER_RULE} ${lh - 1}px, ${PAPER_RULE} ${lh}px
         );
     }
+    /* 本文入力欄と、その背後に敷く綴り検査の下敷き。折り返し位置が 1px でも違うと
+       赤線が字の下から外れるので、字組みに関わる指定は必ずこの 1 か所で両方に当てる。 */
+    .paper, .paper-backdrop {
+      font-family: "Iowan Old Style", Georgia, "Hiragino Mincho ProN", "Yu Mincho", "Times New Roman", serif;
+      font-size: 19px; line-height: ${lh}px; padding: 0; margin: 0; border: none;
+      white-space: pre-wrap; word-wrap: break-word; overflow-wrap: break-word;
+      text-align: left; letter-spacing: normal;
+    }
     /* 本文入力欄は紙の上の透明な層。行送りは罫線の間隔と同じ値でなければならない。
        padding は 0（罫線と字のズレを防ぐ）にして余白は .sheet 側で持つ。 */
     .paper {
-      display: block; width: 100%; border: none; outline: none; resize: none; overflow: hidden;
+      position: relative; z-index: 1;
+      display: block; width: 100%; outline: none; resize: none; overflow: hidden;
       background: transparent; color: ${PAPER_INK};
-      font-family: "Iowan Old Style", Georgia, "Hiragino Mincho ProN", "Yu Mincho", "Times New Roman", serif;
-      font-size: 19px; line-height: ${lh}px; padding: 0; margin: 0;
       min-height: calc(100vh - 260px); caret-color: ${PAPER_INK};
     }
     .paper::placeholder { color: #B8B0A0; }
+    /* 本文と同じ字を透明で敷き直し、綴りの誤りにだけ赤い波線を引く層。
+       .sheet の padding と同じ位置に置くので、textarea と座標がそのまま一致する。
+       textarea はオートグローで内容の丈まで伸びるためスクロール位置の同期は要らない。 */
+    .paper-backdrop {
+      position: absolute; top: ${lh}px; left: var(--pad-x); right: var(--pad-x);
+      color: transparent; pointer-events: none; user-select: none; overflow: hidden;
+    }
+    /* 紙にペンで引いた印に寄せる（標準の赤い波線は spellcheck="false" で止めてある） */
+    .paper-backdrop mark {
+      background: none; color: transparent;
+      text-decoration: underline wavy;
+      text-decoration-color: rgba(163,57,47,0.75);
+      text-decoration-skip-ink: none;
+    }
+
+    /* 赤い語にカーソルを置いたときに出る小さな紙片。修正候補と「辞書に追加」を置く。
+       紙の上に浮かせるので z-index は本文入力欄より上。 */
+    .spell-pop {
+      position: fixed; z-index: 5; display: none;
+      background: ${PAPER_SHEET}; border: 1px solid #DDD5C1; border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(60,50,35,0.10), 0 8px 20px rgba(60,50,35,0.16);
+      padding: 4px; min-width: 132px; max-width: 240px;
+      font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Segoe UI", sans-serif;
+    }
+    .spell-pop.open { display: block; }
+    .spell-pop button {
+      display: block; width: 100%; text-align: left; font: inherit; font-size: 13px;
+      padding: 6px 10px; border: none; border-radius: 5px; background: transparent;
+      color: ${PAPER_INK}; cursor: pointer;
+    }
+    .spell-pop button:hover { background: #F0EADC; }
+    .spell-pop .none { padding: 6px 10px; font-size: 12.5px; color: ${PAPER_FAINT}; }
+    .spell-pop .sep { border-top: 1px solid #E9E2D2; margin: 4px 0; }
+    .spell-pop .ignore { color: ${PAPER_FAINT}; font-size: 12px; }
 
     /* 右ペイン: 書いている英文について相談するチャット（ChatGPT 風に上が履歴、下が入力欄） */
     .chat-pane {
@@ -273,6 +331,8 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
       .paper-pane { overflow: visible; }
       .sheet { margin: 0; padding: 0; box-shadow: none; max-width: none; background-image: none; }
       .paper { font-size: 12pt; min-height: 0; }
+      /* 印刷物に赤線は要らない */
+      .paper-backdrop { display: none; }
     }
   </style>
 </head>
@@ -289,9 +349,11 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
   <div class="split">
     <div class="paper-pane">
       <div class="sheet">
-        <textarea id="body" class="paper" spellcheck="true" autofocus
+        <div class="paper-backdrop" id="backdrop" aria-hidden="true"></div>
+        <textarea id="body" class="paper" spellcheck="false" autofocus
                   placeholder="ここに書く">${escapeHtml(page.text)}</textarea>
       </div>
+      <div class="spell-pop" id="spell-pop"></div>
     </div>
     <aside class="chat-pane">
       <div class="chat-head">AI に相談<span class="model">${escapeHtml(page.chatModel)}</span></div>
@@ -370,6 +432,231 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
       autogrow();
       // カーソルを末尾に置いて続きから書けるようにする
       input.setSelectionRange(input.value.length, input.value.length);
+
+      // --- 綴りの強調表示 ---------------------------------------------------
+      var spellcheckUrl = ${jsonForScript(page.spellcheckUrl)};
+      var backdrop = document.getElementById('backdrop');
+      var spans = ${jsonForScript(page.misspellings)};
+      // 入力中の語まで赤くすると打鍵のたびに赤線が明滅するので、打っている最中だけ
+      // カーソルのある語を伏せる。カーソルを動かしただけのときは伏せない（Phase 3 の
+      // ポップオーバーは、赤い語にカーソルを置いて開くため）。
+      var typing = false;
+      var spellTimer = null;
+
+      /// 本文と同じ字を下敷きに敷き直し、spans の範囲だけ <mark> で包む。
+      /// 本文は textContent として入れるので HTML としては解釈されない。
+      function renderMarks() {
+        var text = input.value;
+        var caret = input.selectionStart;
+        var fragment = document.createDocumentFragment();
+        var cursor = 0;
+        for (var i = 0; i < spans.length; i += 1) {
+          var span = spans[i];
+          if (span.start < cursor || span.end > text.length) continue;
+          if (text.slice(span.start, span.end) !== span.word) continue;
+          if (typing && caret >= span.start && caret <= span.end) continue;
+          fragment.appendChild(document.createTextNode(text.slice(cursor, span.start)));
+          var mark = document.createElement('mark');
+          mark.dataset.index = String(i);
+          mark.textContent = span.word;
+          fragment.appendChild(mark);
+          cursor = span.end;
+        }
+        // 末尾の改行が潰れて下の行がずれないよう、最後に空白を1つ足す
+        fragment.appendChild(document.createTextNode(text.slice(cursor) + ' '));
+        backdrop.replaceChildren(fragment);
+      }
+
+      /// 判定はサーバ側。返答待ちの間に打鍵が進んでいたらオフセットが食い違うので、
+      /// 送った本文と現在の本文が一致するときだけ反映する（違えば次のデバウンスに任せる）。
+      /// 通信に失敗したら直前の結果を残したまま黙って諦める（書く手を止めない）。
+      function runSpellcheck() {
+        var sent = input.value;
+        fetch(spellcheckUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: sent })
+        }).then(function (res) {
+          if (!res.ok) throw new Error('spellcheck failed');
+          return res.json();
+        }).then(function (data) {
+          if (input.value !== sent) return;
+          spans = data.misspellings || [];
+          renderMarks();
+        }).catch(function () {});
+      }
+
+      function scheduleSpellcheck() {
+        clearTimeout(spellTimer);
+        spellTimer = setTimeout(runSpellcheck, 600);
+      }
+
+      input.addEventListener('input', function () {
+        typing = true;
+        renderMarks();
+        scheduleSpellcheck();
+      });
+      // カーソルが動いただけなら通信せずに描き直す（打ち終えた語がここで赤くなる）。
+      // keyup は打鍵のたびにも来るので、カーソル移動キーに限る。
+      var CARET_KEYS = [
+        'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'
+      ];
+      input.addEventListener('click', function () {
+        typing = false;
+        renderMarks();
+        syncPopover();
+      });
+      input.addEventListener('keyup', function (event) {
+        if (CARET_KEYS.indexOf(event.key) === -1) return;
+        typing = false;
+        renderMarks();
+        syncPopover();
+      });
+      input.addEventListener('blur', function () {
+        typing = false;
+        renderMarks();
+      });
+
+      // --- 修正候補のポップオーバー -----------------------------------------
+      var suggestUrl = ${jsonForScript(page.spellSuggestUrl)};
+      var ignoreUrl = ${jsonForScript(page.spellIgnoreUrl)};
+      var pop = document.getElementById('spell-pop');
+      var popIndex = -1;
+
+      function closePopover() {
+        popIndex = -1;
+        pop.classList.remove('open');
+        pop.replaceChildren();
+      }
+
+      function popButton(label, className, onClick) {
+        var button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = label;
+        if (className) button.className = className;
+        // mousedown で拾う（click だと textarea から先にフォーカスが外れる）
+        button.addEventListener('mousedown', function (event) {
+          event.preventDefault();
+          onClick();
+        });
+        return button;
+      }
+
+      /// 候補を選んだとき: 本文を置き換え、後続の語の位置をずらして描き直す。
+      /// 判定し直しはサーバに任せる（置換で新しい誤りが生まれることもあるため）。
+      function applySuggestion(index, replacement) {
+        var span = spans[index];
+        if (!span) return;
+        var delta = replacement.length - (span.end - span.start);
+        input.setRangeText(replacement, span.start, span.end, 'end');
+        spans = spans.filter(function (item) { return item !== span; }).map(function (item) {
+          return item.start >= span.end
+            ? { start: item.start + delta, end: item.end + delta, word: item.word }
+            : item;
+        });
+        closePopover();
+        typing = false;
+        renderMarks();
+        autogrow();
+        input.focus();
+        dirty = true;
+        status.textContent = '未保存';
+        save();
+        scheduleSpellcheck();
+      }
+
+      /// 「辞書に追加」: 以後どの作文でもこの語は赤くならない。
+      /// 画面上も同じ綴りの語をまとめて消す（サーバの応答を待たずに消すと巻き戻しが要るので待つ）。
+      function ignoreWord(index) {
+        var span = spans[index];
+        if (!span) return;
+        var lower = span.word.toLowerCase();
+        closePopover();
+        input.focus();
+        fetch(ignoreUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ word: span.word })
+        }).then(function (res) {
+          if (!res.ok) throw new Error('ignore failed');
+          spans = spans.filter(function (item) { return item.word.toLowerCase() !== lower; });
+          renderMarks();
+        }).catch(function () {});
+      }
+
+      function fillPopover(index, suggestions) {
+        if (popIndex !== index) return;
+        pop.replaceChildren();
+        if (suggestions.length === 0) {
+          var none = document.createElement('div');
+          none.className = 'none';
+          none.textContent = '候補なし';
+          pop.appendChild(none);
+        } else {
+          suggestions.forEach(function (suggestion) {
+            pop.appendChild(popButton(suggestion, '', function () {
+              applySuggestion(index, suggestion);
+            }));
+          });
+        }
+        var sep = document.createElement('div');
+        sep.className = 'sep';
+        pop.appendChild(sep);
+        pop.appendChild(popButton('辞書に追加', 'ignore', function () { ignoreWord(index); }));
+      }
+
+      /// カーソルのある赤い語の下にポップオーバーを開く（無ければ閉じる）。
+      /// 位置は下敷きの <mark> の実寸から取るので、折り返しても語の真下に出る。
+      function syncPopover() {
+        var caret = input.selectionStart;
+        var index = -1;
+        for (var i = 0; i < spans.length; i += 1) {
+          if (caret >= spans[i].start && caret <= spans[i].end) { index = i; break; }
+        }
+        if (index === -1) { closePopover(); return; }
+        if (index === popIndex) return;
+
+        var mark = backdrop.querySelector('mark[data-index="' + index + '"]');
+        if (!mark) { closePopover(); return; }
+
+        popIndex = index;
+        pop.replaceChildren();
+        var loading = document.createElement('div');
+        loading.className = 'none';
+        loading.textContent = '候補を探しています…';
+        pop.appendChild(loading);
+        pop.classList.add('open');
+        var rect = mark.getBoundingClientRect();
+        pop.style.top = (rect.bottom + 4) + 'px';
+        pop.style.left = Math.min(rect.left, window.innerWidth - pop.offsetWidth - 8) + 'px';
+
+        var word = spans[index].word;
+        fetch(suggestUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ word: word })
+        }).then(function (res) {
+          if (!res.ok) throw new Error('suggest failed');
+          return res.json();
+        }).then(function (data) {
+          fillPopover(index, data.suggestions || []);
+        }).catch(function () {
+          fillPopover(index, []);
+        });
+      }
+
+      // 書き続ける・別の場所を触る・紙をスクロールしたら閉じる（浮いたまま残さない）
+      input.addEventListener('input', closePopover);
+      document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') closePopover();
+      });
+      document.addEventListener('mousedown', function (event) {
+        if (!pop.contains(event.target)) closePopover();
+      });
+      document.querySelector('.paper-pane').addEventListener('scroll', closePopover);
+      window.addEventListener('resize', closePopover);
+
+      renderMarks();
 
       // --- AI との相談チャット ---------------------------------------------
       var log = document.getElementById('chat-log');

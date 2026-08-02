@@ -10,6 +10,7 @@ import {
   renderCompositionReadPageHtml,
   type CompositionChatMessageView,
   type CompositionStatusSource,
+  type EditorMisspelling,
 } from "../src/compositionView";
 
 // compositionView（docs/plans/writing-web-interface.md）は db.ts を読み込まない純粋モジュールなので、
@@ -83,10 +84,18 @@ test("compositionPreview: 英文優先・空なら意図、超過分は…で切
   assert.equal(compositionPreview({ englishText: "abcdefghij", japaneseText: "" }, 5), "abcde…");
 });
 
-function editorPage(text: string, messages: CompositionChatMessageView[] = []) {
+function editorPage(
+  text: string,
+  messages: CompositionChatMessageView[] = [],
+  misspellings: EditorMisspelling[] = []
+) {
   return renderCompositionEditorPageHtml({
     id: 7,
     text,
+    misspellings,
+    spellcheckUrl: "/admin/writing/7/spellcheck",
+    spellSuggestUrl: "/admin/writing/spell-suggest",
+    spellIgnoreUrl: "/admin/writing/spell-ignore",
     saveUrl: "/admin/writing/7/save",
     deleteUrl: "/admin/writing/7/delete",
     chatUrl: "/admin/writing/7/chat",
@@ -104,6 +113,38 @@ test("執筆ページ: 本文を textarea に入れ、保存・削除・戻り�
   assert.match(html, /"\/admin\/writing\/7\/save"/);
   assert.match(html, /action="\/admin\/writing\/7\/delete"/);
   assert.match(html, /href="\/admin\/writing"/);
+});
+
+test("執筆ページ: 綴りの下敷きを紙の背後に敷き、標準のスペルチェックは止める", () => {
+  const html = editorPage("I recieve a letter.", [], [{ start: 2, end: 9, word: "recieve" }]);
+
+  assert.match(html, /<div class="paper-backdrop" id="backdrop" aria-hidden="true"><\/div>/);
+  assert.match(html, /<textarea id="body" class="paper" spellcheck="false"/);
+  assert.match(html, /\.paper-backdrop mark \{[\s\S]*?text-decoration: underline wavy;/);
+  // 折り返し位置がずれないよう、字組みは textarea と下敷きへ同時に当てる
+  assert.match(html, /\.paper, \.paper-backdrop \{[\s\S]*?white-space: pre-wrap;/);
+  assert.match(html, /"\/admin\/writing\/7\/spellcheck"/);
+  assert.match(html, /var spans = \[\{"start":2,"end":9,"word":"recieve"\}\];/);
+});
+
+test("執筆ページ: 初期の綴り誤りを埋め込んでも <script> を閉じさせない", () => {
+  const html = editorPage("x", [], [{ start: 0, end: 1, word: "</script><img src=x>" }]);
+
+  assert.doesNotMatch(html, /<\/script><img src=x>/);
+  assert.match(html, /\\u003c\/script\\u003cimg src=x>|\\u003c\/script>\\u003cimg src=x>/);
+});
+
+test("執筆ページ: 修正候補のポップオーバーと送信先を置く", () => {
+  const html = editorPage("I recieve it.", [], [{ start: 2, end: 9, word: "recieve" }]);
+
+  assert.match(html, /<div class="spell-pop" id="spell-pop"><\/div>/);
+  assert.match(html, /"\/admin\/writing\/spell-suggest"/);
+  assert.match(html, /"\/admin\/writing\/spell-ignore"/);
+  assert.match(html, /辞書に追加/);
+});
+
+test("執筆ページ: 綴り誤りが無ければ空配列を埋め込む", () => {
+  assert.match(editorPage("I received a letter."), /var spans = \[\];/);
 });
 
 test("執筆ページ: 左の紙と右のチャット欄・送信先・モデル名を置く", () => {

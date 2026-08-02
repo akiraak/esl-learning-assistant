@@ -400,6 +400,16 @@ db.exec(`
   )
 `);
 
+// 執筆画面の綴り検査で「辞書に追加」した語（docs/plans/writing-spellcheck-highlight.md Phase 3）。
+// en_US 辞書に無い固有名詞（Akira / Kozakai など）を毎回赤くしないための例外リスト。
+// 照合は小文字化して行うので、word は小文字で入れる。
+db.exec(`
+  CREATE TABLE IF NOT EXISTS spell_ignored_words (
+    word TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL
+  )
+`);
+
 // 廃止した穴埋めテキスト入力形式（tt2）の保存済み問題を一掃する
 // （docs/plans/archive/remove-fill-blank-typing.md。冪等なので毎起動で実行してよい。
 //   vtt1 は音声で答えを特定できるため復活: docs/plans/archive/restore-vtt1.md）。
@@ -1706,6 +1716,32 @@ export function listStoredWordTexts(targetLanguage: string): string[] {
       word: string;
     }[]
   ).map((row) => row.word);
+}
+
+/// 言語を問わない words テーブルの単語テキスト一覧（執筆画面の綴り検査の例外語）。
+/// 学習者が単語帳に入れている語は、辞書に無くても赤くしない。
+export function listAllStoredWordTexts(): string[] {
+  return (db.prepare("SELECT DISTINCT word FROM words").all() as { word: string }[]).map(
+    (row) => row.word
+  );
+}
+
+/// 綴り検査の無視リスト（小文字）
+export function listSpellIgnoredWords(): string[] {
+  return (
+    db.prepare("SELECT word FROM spell_ignored_words ORDER BY word").all() as { word: string }[]
+  ).map((row) => row.word);
+}
+
+/// 無視リストへ追加する（既にあれば何もしない）。返り値は正規化後の語、追加できなければ null。
+export function insertSpellIgnoredWord(word: string): string | null {
+  const normalized = word.trim().toLowerCase();
+  if (!normalized) return null;
+  db.prepare("INSERT OR IGNORE INTO spell_ignored_words (word, created_at) VALUES (?, ?)").run(
+    normalized,
+    new Date().toISOString()
+  );
+  return normalized;
 }
 
 export type SystemLogLevel = "info" | "warn" | "error";

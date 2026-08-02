@@ -54,6 +54,9 @@ import {
   listStoredNormalizations,
   listStoredWords,
   listStoredWordTexts,
+  listAllStoredWordTexts,
+  listSpellIgnoredWords,
+  insertSpellIgnoredWord,
   listTtsAudio,
   listWordIllustrations,
   replaceQuizQuestions,
@@ -88,6 +91,10 @@ import {
   type CompositionStatusSource,
 } from "./compositionView";
 import { CHAT_MESSAGE_MAX_LENGTH, generateChatReply } from "./compositionChat";
+import { findMisspellings, suggestCorrections } from "./spellcheck";
+
+// 綴り検査の 1 語あたりの上限（辞書の語より十分長い値。長大な文字列を投げられないためのガード）
+const SPELL_WORD_MAX_LENGTH = 80;
 import { generateQuizQuestions, type QuizQuestion } from "./quizQuestions";
 import { generateIllustration, ILLUSTRATION_MODEL } from "./illustration";
 import { DEFAULT_IMAGE_PRICING, DEFAULT_PRICING, DEFAULT_TTS_PRICING, estimateCostUsd, getCurrentPricing, providerLabel, type Provider } from "./pricing";
@@ -1157,6 +1164,10 @@ adminRouter.get("/writing/:id", (req, res) => {
       id: composition.id,
       text: composition.english_text,
       saveUrl: `/admin/writing/${composition.id}/save`,
+      spellcheckUrl: `/admin/writing/${composition.id}/spellcheck`,
+      spellSuggestUrl: "/admin/writing/spell-suggest",
+      spellIgnoreUrl: "/admin/writing/spell-ignore",
+      misspellings: findMisspellings(composition.english_text, spellIgnoredWords()),
       deleteUrl: `/admin/writing/${composition.id}/delete`,
       chatUrl: `/admin/writing/${composition.id}/chat`,
       backHref: "/admin/writing",
@@ -1254,6 +1265,66 @@ adminRouter.post("/writing/:id/save", (req, res) => {
 
   updateCompositionDraft(id, englishText, japanese);
   res.json({ ok: true });
+});
+
+// 綴り検査の例外語。単語帳に入れている語（学習者が意図して使う語）と、
+// 画面から「辞書に追加」した語（固有名詞など）は辞書に無くても赤くしない。
+function spellIgnoredWords(): string[] {
+  return [...listAllStoredWordTexts(), ...listSpellIgnoredWords()];
+}
+
+// 執筆画面の綴り検査（辞書ベース・AI を呼ばないので /admin/usage には計上しない）。
+// 返すのは本文中のオフセットだけで、修正候補は赤い語をクリックしたときに別途求める
+// （suggest は 1 語 1 秒級で、本文全体にかけると入力のたびに待たされるため）。
+adminRouter.post("/writing/:id/spellcheck", (req, res) => {
+  const id = Number(req.params.id);
+  if (!getComposition(id)) {
+    res.status(404).json({ error: "composition not found" });
+    return;
+  }
+
+  const { text } = (req.body ?? {}) as Record<string, unknown>;
+  if (typeof text !== "string") {
+    res.status(400).json({ error: "text is required" });
+    return;
+  }
+  // /save が受け付けない長さの本文は判定しない（保存側のバリデーションと揃える）
+  if (text.length > WRITING_TEXT_MAX_LENGTH) {
+    res.json({ misspellings: [] });
+    return;
+  }
+
+  res.json({ misspellings: findMisspellings(text, spellIgnoredWords()) });
+});
+
+// 赤い語をクリックしたときの修正候補（1 語だけ求める。作文に依らないので :id は取らない）。
+adminRouter.post("/writing/spell-suggest", (req, res) => {
+  const { word } = (req.body ?? {}) as Record<string, unknown>;
+  if (typeof word !== "string" || !word.trim()) {
+    res.status(400).json({ error: "word is required" });
+    return;
+  }
+  if (word.length > SPELL_WORD_MAX_LENGTH) {
+    res.status(400).json({ error: `word must be ${SPELL_WORD_MAX_LENGTH} characters or fewer` });
+    return;
+  }
+  res.json({ suggestions: suggestCorrections(word) });
+});
+
+// 「辞書に追加」。以後どの作文でもこの語は赤くならない。
+adminRouter.post("/writing/spell-ignore", (req, res) => {
+  const { word } = (req.body ?? {}) as Record<string, unknown>;
+  if (typeof word !== "string" || !word.trim()) {
+    res.status(400).json({ error: "word is required" });
+    return;
+  }
+  if (word.length > SPELL_WORD_MAX_LENGTH) {
+    res.status(400).json({ error: `word must be ${SPELL_WORD_MAX_LENGTH} characters or fewer` });
+    return;
+  }
+  const added = insertSpellIgnoredWord(word);
+  logger.info(`admin: spell ignore word "${added}"`);
+  res.json({ ok: true, word: added });
 });
 
 // 下書きを保存 → 添削 → ラウンド追加。history には全ラウンドを渡し、文脈込みで再添削する。
