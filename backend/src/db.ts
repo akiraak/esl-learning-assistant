@@ -2,6 +2,7 @@ import fs from "fs";
 import { createHash } from "crypto";
 import Database from "better-sqlite3";
 import { config } from "./config";
+import { logger } from "./logger";
 import { providerForModel, type Provider } from "./pricing";
 import { MODEL_PRESETS, type ModelKey } from "./tts";
 
@@ -130,6 +131,26 @@ const compositionColumns = new Set(
 if (!compositionColumns.has("title")) {
   db.exec("ALTER TABLE compositions ADD COLUMN title TEXT NOT NULL DEFAULT ''");
 }
+
+// 1作文の中の「紙」＝ページ（docs/plans/composition-pages-tabs.md）。本文の持ち主は作文ではなくここ。
+// 執筆画面のタブ1枚に1行が対応し、position が 1 始まりの並び順、name が空ならタブには「ページ N」を出す。
+// better-sqlite3 は既定で PRAGMA foreign_keys = OFF のため CASCADE は当てにせず、
+// deleteComposition 側でトランザクションを組んで子行を先に消す。
+db.exec(`
+  CREATE TABLE IF NOT EXISTS composition_pages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    composition_id INTEGER NOT NULL REFERENCES compositions(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    name TEXT NOT NULL DEFAULT '',
+    english_text TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(composition_id, position)
+  )
+`);
+db.exec(
+  "CREATE INDEX IF NOT EXISTS idx_composition_pages_composition ON composition_pages(composition_id, position)"
+);
 
 // 本文からのタイトル生成（POST /admin/writing/:id/title）の通信・課金ログ。
 // タイトル本体の保存先は compositions.title で、ここは料金集計用の追記ログとして役割を分ける
@@ -738,7 +759,8 @@ export function getComposition(id: number): CompositionRow | undefined {
   return db.prepare("SELECT * FROM compositions WHERE id = ?").get(id) as CompositionRow | undefined;
 }
 
-export function insertComposition(explanationLanguage: string): number {
+/// 新しい作文と、その1枚目のページを一緒に作る（作文は常に1枚以上のページを持つ）。
+const insertCompositionTx = db.transaction((explanationLanguage: string): number => {
   const now = new Date().toISOString();
   const result = db
     .prepare(
@@ -746,7 +768,13 @@ export function insertComposition(explanationLanguage: string): number {
        VALUES ('', '', ?, ?, ?)`
     )
     .run(explanationLanguage, now, now);
-  return Number(result.lastInsertRowid);
+  const id = Number(result.lastInsertRowid);
+  insertPageStmt.run(id, 1, "", "", now, now);
+  return id;
+});
+
+export function insertComposition(explanationLanguage: string): number {
+  return insertCompositionTx(explanationLanguage);
 }
 
 /// 下書き（英文・意図）を上書きする。単一ユーザー運用のため楽観ロックは持たず最終書き込み優先。
@@ -768,12 +796,160 @@ export function updateCompositionTitle(id: number, title: string): boolean {
 }
 
 const deleteCompositionTx = db.transaction((id: number) => {
+  db.prepare("DELETE FROM composition_pages WHERE composition_id = ?").run(id);
   db.prepare("DELETE FROM composition_chat_messages WHERE composition_id = ?").run(id);
   db.prepare("DELETE FROM compositions WHERE id = ?").run(id);
 });
 
 export function deleteComposition(id: number): void {
   deleteCompositionTx(id);
+}
+
+// --- 作文のページ（composition_pages）----------------------------------------
+// 執筆画面のタブ1枚＝1行（docs/plans/composition-pages-tabs.md）。本文の「正」はここにあり、
+// compositions.english_text は一覧プレビュー用に先頭ページの本文をミラーしているだけ。
+
+export interface CompositionPageRow {
+  id: number;
+  composition_id: number;
+  /// 1 始まりのタブの並び順（欠番を作らないよう追加・削除のたびに振り直す）
+  position: number;
+  /// タブ名。空文字なら画面は「ページ N」を出す
+  name: string;
+  english_text: string;
+  created_at: string;
+  updated_at: string;
+}
+
+const insertPageStmt = db.prepare(
+  `INSERT INTO composition_pages (composition_id, position, name, english_text, created_at, updated_at)
+   VALUES (?, ?, ?, ?, ?, ?)`
+);
+
+export function listCompositionPages(compositionId: number): CompositionPageRow[] {
+  return db
+    .prepare("SELECT * FROM composition_pages WHERE composition_id = ? ORDER BY position ASC")
+    .all(compositionId) as CompositionPageRow[];
+}
+
+/// ページを1枚取り出す。別の作文のページ ID を渡されても取れないよう composition_id も条件に入れる。
+export function getCompositionPage(compositionId: number, pageId: number): CompositionPageRow | undefined {
+  return db
+    .prepare("SELECT * FROM composition_pages WHERE composition_id = ? AND id = ?")
+    .get(compositionId, pageId) as CompositionPageRow | undefined;
+}
+
+/// 末尾にページを足す（position は既存の最大値+1）。採番と挿入を1トランザクションにまとめる。
+const insertCompositionPageTx = db.transaction((compositionId: number, name: string): CompositionPageRow => {
+  const row = db
+    .prepare("SELECT MAX(position) AS max_position FROM composition_pages WHERE composition_id = ?")
+    .get(compositionId) as { max_position: number | null };
+  const position = (row.max_position ?? 0) + 1;
+  const now = new Date().toISOString();
+  const result = insertPageStmt.run(compositionId, position, name, "", now, now);
+  db.prepare("UPDATE compositions SET updated_at = ? WHERE id = ?").run(now, compositionId);
+  return db
+    .prepare("SELECT * FROM composition_pages WHERE id = ?")
+    .get(Number(result.lastInsertRowid)) as CompositionPageRow;
+});
+
+export function insertCompositionPage(compositionId: number, name = ""): CompositionPageRow {
+  return insertCompositionPageTx(compositionId, name);
+}
+
+/// ページの本文を上書きし、作文の updated_at も進める（一覧の並びを書いた順に保つ）。
+/// 先頭ページのときは compositions.english_text にもミラーする（一覧のプレビューがそこを読むため）。
+const updateCompositionPageTextTx = db.transaction((pageId: number, englishText: string): boolean => {
+  const page = db.prepare("SELECT * FROM composition_pages WHERE id = ?").get(pageId) as
+    | CompositionPageRow
+    | undefined;
+  if (!page) return false;
+
+  const now = new Date().toISOString();
+  db.prepare("UPDATE composition_pages SET english_text = ?, updated_at = ? WHERE id = ?").run(
+    englishText,
+    now,
+    pageId
+  );
+  if (page.position === 1) {
+    db.prepare("UPDATE compositions SET english_text = ?, updated_at = ? WHERE id = ?").run(
+      englishText,
+      now,
+      page.composition_id
+    );
+  } else {
+    db.prepare("UPDATE compositions SET updated_at = ? WHERE id = ?").run(now, page.composition_id);
+  }
+  return true;
+});
+
+export function updateCompositionPageText(pageId: number, englishText: string): boolean {
+  return updateCompositionPageTextTx(pageId, englishText);
+}
+
+/// タブ名を変える（整形は呼び出し側の sanitizePageName に任せる）。該当行が無ければ false。
+export function renameCompositionPage(pageId: number, name: string): boolean {
+  const result = db
+    .prepare("UPDATE composition_pages SET name = ?, updated_at = ? WHERE id = ?")
+    .run(name, new Date().toISOString(), pageId);
+  return result.changes > 0;
+}
+
+/// 削除の結果。最後の1枚は消せない（作文は常に1枚以上のページを持つ）。
+export type DeleteCompositionPageResult = "deleted" | "not-found" | "last-page";
+
+/// ページを消し、後続の position を1つずつ詰める。
+/// UNIQUE(composition_id, position) に触れないよう、いったん負の値へ逃がしてから戻す。
+const deleteCompositionPageTx = db.transaction(
+  (compositionId: number, pageId: number): DeleteCompositionPageResult => {
+    const page = db
+      .prepare("SELECT * FROM composition_pages WHERE composition_id = ? AND id = ?")
+      .get(compositionId, pageId) as CompositionPageRow | undefined;
+    if (!page) return "not-found";
+
+    const { count } = db
+      .prepare("SELECT COUNT(*) AS count FROM composition_pages WHERE composition_id = ?")
+      .get(compositionId) as { count: number };
+    if (count <= 1) return "last-page";
+
+    db.prepare("DELETE FROM composition_pages WHERE id = ?").run(pageId);
+    db.prepare(
+      "UPDATE composition_pages SET position = -position WHERE composition_id = ? AND position > ?"
+    ).run(compositionId, page.position);
+    db.prepare(
+      "UPDATE composition_pages SET position = -position - 1 WHERE composition_id = ? AND position < 0"
+    ).run(compositionId);
+    db.prepare("UPDATE compositions SET updated_at = ? WHERE id = ?").run(
+      new Date().toISOString(),
+      compositionId
+    );
+    return "deleted";
+  }
+);
+
+export function deleteCompositionPage(compositionId: number, pageId: number): DeleteCompositionPageResult {
+  return deleteCompositionPageTx(compositionId, pageId);
+}
+
+/// ページ導入前の作文（ページが0件）に1枚だけ作り、compositions.english_text を移す。
+/// 起動時に1度だけ走らせる（title 列の ALTER TABLE と同じ後方互換マイグレーション）。
+/// 戻り値は移行した作文の件数。
+export const migrateCompositionsToPages = db.transaction((): number => {
+  const rows = db
+    .prepare(
+      `SELECT c.id, c.english_text, c.created_at, c.updated_at FROM compositions c
+        WHERE NOT EXISTS (SELECT 1 FROM composition_pages p WHERE p.composition_id = c.id)`
+    )
+    .all() as { id: number; english_text: string; created_at: string; updated_at: string }[];
+  for (const row of rows) {
+    insertPageStmt.run(row.id, 1, "", row.english_text, row.created_at, row.updated_at);
+  }
+  return rows.length;
+});
+
+const migratedCount = migrateCompositionsToPages();
+if (migratedCount > 0) {
+  logger.info(`db: migrated ${migratedCount} composition(s) to composition_pages`);
 }
 
 export interface CompositionChatMessageRow {

@@ -26,6 +26,15 @@ test("insertComposition: 空の下書きが作られ、作成/更新日時が入
   assert.equal(row.created_at, row.updated_at);
 });
 
+test("insertComposition: 1枚目のページが一緒に作られる（作文は常に1枚以上を持つ）", () => {
+  const pages = db.listCompositionPages(db.insertComposition("ja"));
+
+  assert.equal(pages.length, 1);
+  assert.equal(pages[0].position, 1);
+  assert.equal(pages[0].name, "");
+  assert.equal(pages[0].english_text, "");
+});
+
 test("updateCompositionDraft: 本文を上書きし updated_at を進める", () => {
   const id = db.insertComposition("ja");
   const before = db.getComposition(id)!;
@@ -129,4 +138,139 @@ test("deleteComposition: 子のチャットも一緒に消える", () => {
 
   assert.equal(db.getComposition(id), undefined);
   assert.equal(db.listCompositionChatMessages(id).length, 0);
+});
+
+// --- ページ（composition_pages）----------------------------------------------
+
+test("insertCompositionPage: 末尾に足され、position が 1 から順に振られる", () => {
+  const id = db.insertComposition("ja");
+  const second = db.insertCompositionPage(id, "清書");
+  const third = db.insertCompositionPage(id);
+
+  assert.equal(second.position, 2);
+  assert.equal(second.name, "清書");
+  assert.equal(third.position, 3);
+  assert.equal(third.name, "");
+  assert.deepEqual(
+    db.listCompositionPages(id).map((page) => page.position),
+    [1, 2, 3]
+  );
+});
+
+test("getCompositionPage: 別の作文のページ ID では取れない", () => {
+  const first = db.insertComposition("ja");
+  const second = db.insertComposition("ja");
+  const page = db.listCompositionPages(first)[0];
+
+  assert.ok(db.getCompositionPage(first, page.id));
+  assert.equal(db.getCompositionPage(second, page.id), undefined);
+});
+
+test("updateCompositionPageText: そのページだけを書き換え、他のページには触らない", () => {
+  const id = db.insertComposition("ja");
+  const first = db.listCompositionPages(id)[0];
+  const second = db.insertCompositionPage(id);
+
+  assert.equal(db.updateCompositionPageText(second.id, "Second page."), true);
+
+  const pages = db.listCompositionPages(id);
+  assert.equal(pages[0].english_text, "");
+  assert.equal(pages[1].english_text, "Second page.");
+  assert.equal(db.getCompositionPage(id, first.id)!.english_text, "");
+});
+
+test("updateCompositionPageText: 先頭ページは compositions.english_text にもミラーする（一覧のプレビュー用）", () => {
+  const id = db.insertComposition("ja");
+  const first = db.listCompositionPages(id)[0];
+  const second = db.insertCompositionPage(id);
+
+  db.updateCompositionPageText(first.id, "First page.");
+  assert.equal(db.getComposition(id)!.english_text, "First page.");
+
+  // 2枚目以降はミラーしない（一覧に出るのは先頭ページのまま）
+  db.updateCompositionPageText(second.id, "Second page.");
+  assert.equal(db.getComposition(id)!.english_text, "First page.");
+});
+
+test("updateCompositionPageText: 存在しないページは false", () => {
+  assert.equal(db.updateCompositionPageText(999999, "x"), false);
+});
+
+test("renameCompositionPage: タブ名だけを変える", () => {
+  const id = db.insertComposition("ja");
+  const page = db.listCompositionPages(id)[0];
+  db.updateCompositionPageText(page.id, "Body.");
+
+  assert.equal(db.renameCompositionPage(page.id, "下書き"), true);
+
+  const after = db.getCompositionPage(id, page.id)!;
+  assert.equal(after.name, "下書き");
+  assert.equal(after.english_text, "Body.");
+  assert.equal(db.renameCompositionPage(999999, "x"), false);
+});
+
+test("deleteCompositionPage: 消した後ろの position を詰める", () => {
+  const id = db.insertComposition("ja");
+  const first = db.listCompositionPages(id)[0];
+  const second = db.insertCompositionPage(id, "2枚目");
+  const third = db.insertCompositionPage(id, "3枚目");
+
+  assert.equal(db.deleteCompositionPage(id, second.id), "deleted");
+
+  const pages = db.listCompositionPages(id);
+  assert.deepEqual(
+    pages.map((page) => [page.id, page.position]),
+    [
+      [first.id, 1],
+      [third.id, 2],
+    ]
+  );
+});
+
+test("deleteCompositionPage: 最後の1枚は消せない", () => {
+  const id = db.insertComposition("ja");
+  const page = db.listCompositionPages(id)[0];
+
+  assert.equal(db.deleteCompositionPage(id, page.id), "last-page");
+  assert.equal(db.listCompositionPages(id).length, 1);
+});
+
+test("deleteCompositionPage: 無いページ・他の作文のページは not-found", () => {
+  const id = db.insertComposition("ja");
+  db.insertCompositionPage(id);
+  const other = db.insertComposition("ja");
+  const otherPage = db.listCompositionPages(other)[0];
+
+  assert.equal(db.deleteCompositionPage(id, 999999), "not-found");
+  assert.equal(db.deleteCompositionPage(id, otherPage.id), "not-found");
+});
+
+test("migrateCompositionsToPages: ページが0件の作文に1枚作って本文を移す", () => {
+  const id = db.insertComposition("ja");
+  db.updateCompositionDraft(id, "Legacy body.", "移行前の本文。");
+  // ページ導入前の状態を作る（この作文だけページを持たない）。
+  // db.ts は削除 API を公開していないので、同じ SQLite ファイルを別接続で開いて直接消す。
+  const raw = new (require("better-sqlite3"))(path.join(dataDir, "db.sqlite"));
+  raw.prepare("DELETE FROM composition_pages WHERE composition_id = ?").run(id);
+  raw.close();
+  assert.equal(db.listCompositionPages(id).length, 0);
+
+  assert.equal(db.migrateCompositionsToPages(), 1);
+
+  const pages = db.listCompositionPages(id);
+  assert.equal(pages.length, 1);
+  assert.equal(pages[0].position, 1);
+  assert.equal(pages[0].name, "");
+  assert.equal(pages[0].english_text, "Legacy body.");
+  // 2度目は何もしない（既にページを持つ作文は対象外）
+  assert.equal(db.migrateCompositionsToPages(), 0);
+});
+
+test("deleteComposition: 子のページも一緒に消える", () => {
+  const id = db.insertComposition("ja");
+  db.insertCompositionPage(id, "2枚目");
+
+  db.deleteComposition(id);
+
+  assert.equal(db.listCompositionPages(id).length, 0);
 });
