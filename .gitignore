@@ -14,5 +14,8 @@ backend/dist/
 backend/.env
 backend/data/
 
+# 作業中の一時ファイル置き場（不具合のスクリーンショットなど。コミットしない）
+scratch/
+
 # 本番接続ビルド用 secret（run-ios-device.sh --prod が読む。.env.prod.example 参照）
 .env.prod
