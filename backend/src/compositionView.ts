@@ -62,6 +62,18 @@ export function compositionListTitle(source: CompositionDraft & { title: string 
   return compositionPreview(source, max);
 }
 
+/// ブラウザタブ（執筆画面の <title>）に出す見出し。複数の作文を並べて開いたときに
+/// どのタブで何を書いているのか分かるよう、タイトル → 本文の先頭 → 「作文 #id」の順で拾う。
+/// 同じ規則を画面側の script も持ち、タイトル欄の編集に document.title を追従させる。
+export function compositionDocumentTitle(
+  source: { id: number; title: string; text: string },
+  max = 40
+): string {
+  const oneLine = (normalize(source.title) || normalize(source.text)).replace(/\s+/g, " ");
+  if (!oneLine) return `作文 #${source.id}`;
+  return oneLine.length > max ? `${oneLine.slice(0, max)}…` : oneLine;
+}
+
 // 紙に文字を書く感覚に寄せた執筆画面のパレット。読書用ページ（白地・serif）と地続きにする。
 const PAPER_BG = "#EDE9DF"; // 机の色（紙の外側）
 const PAPER_SHEET = "#FFFDF7"; // 紙そのもの
@@ -201,8 +213,9 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>作文 #${page.id}</title>
-  <style>
+  <title>${escapeHtml(
+    compositionDocumentTitle({ id: page.id, title: page.title, text: activeTab.text })
+  )}</title>  <style>
     :root { color-scheme: light; }
     * { box-sizing: border-box; }
     /* 左に紙、右にチャットの2ペイン。ページ全体はスクロールせず、各ペインが個別にスクロールする
@@ -607,6 +620,14 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
         currentPage().spans = next;
       }
 
+      // ブラウザタブの見出しをいまの題（無ければ本文の先頭）に合わせる。
+      // 規則はサーバの compositionDocumentTitle と同じにする。
+      function refreshDocumentTitle() {
+        var text = (titleInput.value.trim() || input.value.trim()).replace(/\\s+/g, ' ');
+        if (!text) { document.title = '作文 #' + ${page.id}; return; }
+        document.title = text.length > 40 ? text.slice(0, 40) + '…' : text;
+      }
+
       // 紙が書いた分だけ伸びるように高さを内容に合わせる。行送りの倍数に丸め、
       // 最終行の下にも罫線が続いて見えるようにする。
       function autogrow() {
@@ -640,6 +661,7 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
       // 入力停止 1.5 秒 + フォーカスを外したときに自動保存する
       input.addEventListener('input', function () {
         autogrow();
+        refreshDocumentTitle();
         dirty = true;
         status.textContent = '未保存';
         clearTimeout(timer);
@@ -649,6 +671,7 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
 
       // タイトルも本文と同じ自動保存に相乗りする（保存要求は 1 回にまとめる）
       function markDirty() {
+        refreshDocumentTitle();
         dirty = true;
         status.textContent = '未保存';
         clearTimeout(timer);
@@ -684,6 +707,7 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
           });
         }).then(function (data) {
           titleInput.value = data.title;
+          refreshDocumentTitle();
           dirty = true;
           save();
         }).catch(function (error) {
@@ -1009,6 +1033,7 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
         renderTabs();
         renderMarks();
         autogrow();
+        refreshDocumentTitle();
         // 続きから書けるようカーソルは末尾へ（開いた直後と同じ扱い）
         input.setSelectionRange(input.value.length, input.value.length);
         rememberActive();

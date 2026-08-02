@@ -1,5 +1,12 @@
 # DONE
 
+- [x] 2026-08-02 執筆画面のブラウザタブに作文のタイトルを出すようにした
+      [plan](docs/plans/archive/composition-document-title.md)
+      `<title>` が `作文 #12` 固定で、作文を複数タブで開くとどれを書いているのか分からなかったので、
+      `compositionDocumentTitle()`（タイトル → 選択中ページ本文の先頭 → `作文 #id`、40 文字で切る）を
+      足して `<title>` に使う。タイトル欄の編集・「本文から生成」・本文入力・ページ切り替えでは
+      画面側の script が同じ規則で `document.title` を追従させる。
+
 - [x] 2026-08-02 執筆画面の紙をタブ化して 1 作文に複数ページを持たせた（＋添削機能の削除）
       [plan](docs/plans/archive/composition-pages-tabs.md)
       本文が 1 枚きりで、下書き・清書・メモを書き分けるには作文そのものを分けるしかなかったので、

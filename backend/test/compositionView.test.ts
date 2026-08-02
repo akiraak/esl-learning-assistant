@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  compositionDocumentTitle,
   compositionListTitle,
   compositionParagraphsHtml,
   compositionPreview,
@@ -53,6 +54,28 @@ test("compositionListTitle: 長いタイトルは…で切り、改行は1行に
   assert.equal(compositionListTitle({ englishText: "", japaneseText: "", title: "A  Visit\nHome" }), "A Visit Home");
 });
 
+test("compositionDocumentTitle: タイトル → 本文の先頭 → 作文 #id の順に拾う", () => {
+  assert.equal(
+    compositionDocumentTitle({ id: 7, title: "A Visit  Home\n", text: "Last weekend..." }),
+    "A Visit Home"
+  );
+  assert.equal(
+    compositionDocumentTitle({ id: 7, title: "  ", text: "Last weekend I visited\nmy grandmother." }),
+    "Last weekend I visited my grandmother."
+  );
+  assert.equal(compositionDocumentTitle({ id: 7, title: "", text: "  " }), "作文 #7");
+});
+
+test("compositionDocumentTitle: 長いときは…で切る", () => {
+  assert.equal(compositionDocumentTitle({ id: 7, title: "abcdefghij", text: "" }, 5), "abcde…");
+});
+
+test("執筆画面: ブラウザタブの見出しにタイトル（無ければ本文の先頭）を出す", () => {
+  assert.match(editorPage("Hello there.", [], [], "My Trip"), /<title>My Trip<\/title>/);
+  assert.match(editorPage("Hello there."), /<title>Hello there\.<\/title>/);
+  assert.match(editorPage(""), /<title>作文 #7<\/title>/);
+  assert.match(editorPage("", [], [], `a & b <c>`), /<title>a &amp; b &lt;c&gt;<\/title>/);});
+
 function editorPage(
   text: string,
   messages: CompositionChatMessageView[] = [],
@@ -81,8 +104,7 @@ function editorPageWith(overrides: Partial<Parameters<typeof renderCompositionEd
     saveUrl: "/admin/writing/7/save",
     deleteUrl: "/admin/writing/7/delete",
     chatUrl: "/admin/writing/7/chat",
-    backHref: "/admin/writing",
-    messages: [],
+    backHref: "/admin/writing",    messages: [],
     chatModel: "claude-sonnet-5",
     ...overrides,
   });
@@ -91,7 +113,6 @@ function editorPageWith(overrides: Partial<Parameters<typeof renderCompositionEd
 test("執筆ページ: 本文を textarea に入れ、保存・削除・戻りの導線を張る", () => {
   const html = editorPage("Last weekend I visited my grandmother.");
 
-  assert.match(html, /<title>作文 #7<\/title>/);
   assert.match(html, /<textarea id="body"[\s\S]*?>Last weekend I visited my grandmother\.<\/textarea>/);
   assert.match(html, /"\/admin\/writing\/7\/save"/);
   assert.match(html, /action="\/admin\/writing\/7\/delete"/);
