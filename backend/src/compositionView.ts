@@ -142,6 +142,8 @@ export interface CompositionEditorPage {
   chatUrl: string;
   /// ツールバーの戻り先
   backHref: string;
+  /// ブラウザタブに出すアイコン（favicon）の URL
+  iconHref: string;
   /// これまでのチャット（古い順）
   messages: CompositionChatMessageView[];
   /// チャット欄に出すモデル名
@@ -215,7 +217,9 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${escapeHtml(
     compositionDocumentTitle({ id: page.id, title: page.title, text: activeTab.text })
-  )}</title>  <style>
+  )}</title>
+  <link rel="icon" type="image/png" href="${escapeHtml(page.iconHref)}">
+  <style>
     :root { color-scheme: light; }
     * { box-sizing: border-box; }
     /* 左に紙、右にチャットの2ペイン。ページ全体はスクロールせず、各ペインが個別にスクロールする

@@ -115,6 +115,11 @@ import {
 
 export const adminRouter = Router();
 
+// 管理画面のヘッダー・favicon に使う iOS アプリのアイコン（1024px を 128px へ縮小したもの）。
+// `__dirname/..` は ts-node 実行（src/）でもビルド実行（dist/）でも backend/ を指す。
+const ADMIN_ICON_PATH = path.resolve(__dirname, "..", "assets", "admin-icon.png");
+export const ADMIN_ICON_URL = "/admin/icon.png";
+
 // ダーク基調 + 左サイドバーの共通テーマ。配色トークン:
 //   地 #0C1116 / パネル #111820 / 枠線 #1F2A35 / 行区切り #18212C
 //   文字 #E6EDF3 / 補助 #8B98A5 / 弱 #66737F / アクセント #38BDF8
@@ -134,7 +139,12 @@ const PAGE_STYLE = `
     padding: 18px 0; display: flex; flex-direction: column;
     position: sticky; top: 0; height: 100vh;
   }
-  .sidebar .brand { color: #fff; font-weight: 700; font-size: 14px; padding: 4px 20px 18px; }
+  .sidebar .brand {
+    color: #fff; font-weight: 700; font-size: 14px; padding: 4px 20px 18px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  /* iOS アプリと同じアイコン。角丸は iOS のマスクに寄せる */
+  .sidebar .brand-icon { flex: none; width: 28px; height: 28px; border-radius: 7px; }
   .sidebar .brand small { display: block; font-weight: 400; font-size: 10px; color: #66737F; letter-spacing: 0.12em; margin-top: 2px; }
   .sidebar nav { display: flex; flex-direction: column; gap: 2px; }
   .sidebar nav a { color: #8B98A5; font-size: 13px; padding: 9px 20px; border-left: 3px solid transparent; }
@@ -279,7 +289,10 @@ function sidebar(active?: NavSection): string {
   ).join("\n");
   return `
     <aside class="sidebar">
-      <div class="brand">ESL Assistant<small>ADMIN CONSOLE</small></div>
+      <div class="brand">
+        <img class="brand-icon" src="${ADMIN_ICON_URL}" alt="" width="28" height="28">
+        <span>ESL Assistant<small>ADMIN CONSOLE</small></span>
+      </div>
       <nav>${links}</nav>
       <div class="foot">${SEATTLE_TZ}</div>
     </aside>
@@ -294,6 +307,7 @@ function renderPage(title: string, extraStyle: string, body: string, active?: Na
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width, initial-scale=1">
       <title>${escapeHtml(title)}</title>
+      <link rel="icon" type="image/png" href="${ADMIN_ICON_URL}">
       <style>
         ${PAGE_STYLE}
         ${extraStyle}
@@ -326,6 +340,13 @@ function translateSummary(log: RequestLogRow): string {
   if (isCombinedCall(log)) return "OCR呼び出しに統合（追加コストなし）";
   return `${escapeHtml(log.translate_model)} (in:${log.translate_input_tokens} / out:${log.translate_output_tokens})`;
 }
+
+// ヘッダー・favicon 用のアイコン。中身が変わらないので長めにキャッシュさせる
+// （差し替えたときは開発者がハードリロードすれば済む）。
+adminRouter.get("/icon.png", (_req, res) => {
+  res.type("png").setHeader("Cache-Control", "public, max-age=86400");
+  res.sendFile(ADMIN_ICON_PATH);
+});
 
 adminRouter.get("/", (_req, res) => {
   const logs = listRecentRequestLogs(100);
@@ -1051,6 +1072,7 @@ adminRouter.get("/writing/:id", (req, res) => {
       deleteUrl: `/admin/writing/${composition.id}/delete`,
       chatUrl: `/admin/writing/${composition.id}/chat`,
       backHref: "/admin/writing",
+      iconHref: ADMIN_ICON_URL,
       messages: listCompositionChatMessages(composition.id).map((row) => ({
         role: row.role === "assistant" ? "assistant" : "user",
         content: row.content,

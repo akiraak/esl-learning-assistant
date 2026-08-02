@@ -1,5 +1,13 @@
 # DONE
 
+- [x] 2026-08-02 管理画面のヘッダーとブラウザタブに iOS アプリのアイコンを出すようにした
+      [plan](docs/plans/archive/admin-header-icon.md)
+      サイドバーの見出しが文字だけで、favicon も無く他のタブに紛れて見つけにくかったので、
+      `ios/.../AppIcon-1024.png` を 128px へ縮小した `backend/assets/admin-icon.png` を足し、
+      `GET /admin/icon.png`（1 日キャッシュ）で配る。`__dirname/..` 基準なので ts-node 実行でも
+      ビルド実行でも同じ `backend/assets` を指す。サイドバー見出しに 28px（角丸 7px）で並べ、
+      管理画面の全ページと執筆画面（`iconHref` で受け取る）に `<link rel="icon">` を張った。
+
 - [x] 2026-08-02 執筆画面のブラウザタブに作文のタイトルを出すようにした
       [plan](docs/plans/archive/composition-document-title.md)
       `<title>` が `作文 #12` 固定で、作文を複数タブで開くとどれを書いているのか分からなかったので、

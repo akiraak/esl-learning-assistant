@@ -74,7 +74,10 @@ test("執筆画面: ブラウザタブの見出しにタイトル（無ければ
   assert.match(editorPage("Hello there.", [], [], "My Trip"), /<title>My Trip<\/title>/);
   assert.match(editorPage("Hello there."), /<title>Hello there\.<\/title>/);
   assert.match(editorPage(""), /<title>作文 #7<\/title>/);
-  assert.match(editorPage("", [], [], `a & b <c>`), /<title>a &amp; b &lt;c&gt;<\/title>/);});
+  assert.match(editorPage("", [], [], `a & b <c>`), /<title>a &amp; b &lt;c&gt;<\/title>/);
+  // タブのアイコン（アプリと同じもの）も張る
+  assert.match(editorPage(""), /<link rel="icon" type="image\/png" href="\/admin\/icon\.png">/);
+});
 
 function editorPage(
   text: string,
@@ -104,7 +107,8 @@ function editorPageWith(overrides: Partial<Parameters<typeof renderCompositionEd
     saveUrl: "/admin/writing/7/save",
     deleteUrl: "/admin/writing/7/delete",
     chatUrl: "/admin/writing/7/chat",
-    backHref: "/admin/writing",    messages: [],
+    backHref: "/admin/writing",
+    iconHref: "/admin/icon.png",    messages: [],
     chatModel: "claude-sonnet-5",
     ...overrides,
   });
