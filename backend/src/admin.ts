@@ -37,6 +37,7 @@ import {
   insertComposition,
   insertCompositionChatMessage,
   insertCompositionRound,
+  insertCompositionTitleLog,
   insertWordInfoLog,
   listCompositionChatMessages,
   listCompositionRounds,
@@ -64,6 +65,7 @@ import {
   StoredWordRow,
   TranscriptionLogRow,
   updateCompositionDraft,
+  updateCompositionTitle,
   upsertStoredWord,
   upsertWordIllustration,
   USAGE_APPROX_FEATURES,
@@ -83,6 +85,7 @@ import {
 import { runWritingFeedback } from "./writingFeedbackRunner";
 import {
   canReviewComposition,
+  compositionListTitle,
   compositionPreview,
   compositionStatus,
   renderCompositionEditorPageHtml,
@@ -91,6 +94,11 @@ import {
   type CompositionStatusSource,
 } from "./compositionView";
 import { CHAT_MESSAGE_MAX_LENGTH, generateChatReply } from "./compositionChat";
+import {
+  COMPOSITION_TITLE_MAX_LENGTH,
+  generateCompositionTitle,
+  sanitizeCompositionTitle,
+} from "./compositionTitle";
 import { findMisspellings, suggestCorrections } from "./spellcheck";
 
 // 綴り検査の 1 語あたりの上限（辞書の語より十分長い値。長大な文字列を投げられないためのガード）
@@ -1088,14 +1096,23 @@ adminRouter.get("/writing", (_req, res) => {
 
   const rows = compositions
     .map((row) => {
-      const preview = compositionPreview({ englishText: row.english_text, japaneseText: row.japanese_text }, 70);
+      // タイトルが入っていればそれを、空欄なら従来どおり本文の先頭を見出しにする
+      const heading = compositionListTitle(
+        { title: row.title, englishText: row.english_text, japaneseText: row.japanese_text },
+        70
+      );
+      // タイトルを付けた作文は見出しから本文が分からなくなるので、本文の先頭を下に添える
+      const bodyPreview = row.title.trim()
+        ? compositionPreview({ englishText: row.english_text, japaneseText: "" }, 70)
+        : "";
       const japanesePreview = compositionPreview({ englishText: "", japaneseText: row.japanese_text }, 50);
       return `
         <tr class="log-row">
           <td class="mono dim">#${row.id}</td>
           <td class="mono dim">${escapeHtml(formatSeattleTime(row.updated_at))}</td>
           <td>
-            <a href="/admin/writing/${row.id}">${preview ? escapeHtml(preview) : "<span class=\"faint\">(空の作文)</span>"}</a>
+            <a href="/admin/writing/${row.id}">${heading ? escapeHtml(heading) : "<span class=\"faint\">(空の作文)</span>"}</a>
+            ${bodyPreview ? `<br><span class="dim">${escapeHtml(bodyPreview)}</span>` : ""}
             ${japanesePreview ? `<br><span class="dim">${escapeHtml(japanesePreview)}</span>` : ""}
           </td>
           <td>${compositionStatusPill(listRowStatusSource(row))}</td>
@@ -1131,7 +1148,7 @@ adminRouter.get("/writing", (_req, res) => {
         <div class="card">
           <table>
             <thead>
-              <tr><th>ID</th><th>更新</th><th>本文</th><th>状態</th><th>ラウンド</th><th></th></tr>
+              <tr><th>ID</th><th>更新</th><th>タイトル・本文</th><th>状態</th><th>ラウンド</th><th></th></tr>
             </thead>
             <tbody>${rows || '<tr><td colspan="6" class="faint">まだ作文がありません。「＋ 新しい作文」から書き始めてください。</td></tr>'}</tbody>
           </table>
@@ -1162,6 +1179,9 @@ adminRouter.get("/writing/:id", (req, res) => {
   res.type("html").send(
     renderCompositionEditorPageHtml({
       id: composition.id,
+      title: composition.title,
+      titleMaxLength: COMPOSITION_TITLE_MAX_LENGTH,
+      titleUrl: `/admin/writing/${composition.id}/title`,
       text: composition.english_text,
       saveUrl: `/admin/writing/${composition.id}/save`,
       spellcheckUrl: `/admin/writing/${composition.id}/spellcheck`,
@@ -1238,8 +1258,8 @@ adminRouter.post("/writing/:id/chat", async (req, res) => {
   }
 });
 
-// 本文の自動保存（エディタからの fetch）。単一ユーザー運用のため楽観ロックは持たず最終書き込み優先。
-// japaneseText は編集画面に無いので省略でき、その場合は保存済みの値をそのまま残す。
+// 本文・タイトルの自動保存（エディタからの fetch）。単一ユーザー運用のため楽観ロックは持たず最終書き込み優先。
+// japaneseText は編集画面に無いので省略でき、その場合は保存済みの値をそのまま残す（title も同じ）。
 adminRouter.post("/writing/:id/save", (req, res) => {
   const id = Number(req.params.id);
   const composition = getComposition(id);
@@ -1248,7 +1268,7 @@ adminRouter.post("/writing/:id/save", (req, res) => {
     return;
   }
 
-  const { englishText, japaneseText } = (req.body ?? {}) as Record<string, unknown>;
+  const { englishText, japaneseText, title } = (req.body ?? {}) as Record<string, unknown>;
   if (typeof englishText !== "string") {
     res.status(400).json({ error: "englishText is required" });
     return;
@@ -1257,14 +1277,82 @@ adminRouter.post("/writing/:id/save", (req, res) => {
     res.status(400).json({ error: "japaneseText must be a string" });
     return;
   }
+  if (title !== undefined && typeof title !== "string") {
+    res.status(400).json({ error: "title must be a string" });
+    return;
+  }
   const japanese = typeof japaneseText === "string" ? japaneseText : composition.japanese_text;
   if (englishText.length > WRITING_TEXT_MAX_LENGTH || japanese.length > WRITING_TEXT_MAX_LENGTH) {
     res.status(400).json({ error: `text must be ${WRITING_TEXT_MAX_LENGTH} characters or fewer` });
     return;
   }
+  if (typeof title === "string" && title.length > COMPOSITION_TITLE_MAX_LENGTH) {
+    res.status(400).json({ error: `title must be ${COMPOSITION_TITLE_MAX_LENGTH} characters or fewer` });
+    return;
+  }
 
   updateCompositionDraft(id, englishText, japanese);
+  // 手入力も生成結果と同じ整形（改行・余分な空白を落とす）を通してから保存する
+  if (typeof title === "string") updateCompositionTitle(id, sanitizeCompositionTitle(title));
   res.json({ ok: true });
+});
+
+// 「本文から生成」。保存済みの本文からタイトルを作って保存し、生成結果を返す
+// （画面側は送信前に自動保存を確定させてからここを叩く＝相談チャットと同じ約束）。
+// 成否のどちらも composition_title_requests に1行残す（/admin/usage の "作文タイトル"）。
+adminRouter.post("/writing/:id/title", async (req, res) => {
+  const id = Number(req.params.id);
+  const composition = getComposition(id);
+  if (!composition) {
+    res.status(404).json({ error: "composition not found" });
+    return;
+  }
+  if (!composition.english_text.trim()) {
+    res.status(400).json({ error: "本文がまだ空です" });
+    return;
+  }
+
+  const startedAt = Date.now();
+  logger.info(
+    `composition-title: start composition=#${id} compositionLen=${composition.english_text.length} ` +
+      `model=${config.writingTitleModel}`
+  );
+
+  try {
+    const result = await generateCompositionTitle(composition.english_text);
+    updateCompositionTitle(id, result.title);
+    insertCompositionTitleLog({
+      compositionId: id,
+      title: result.title,
+      model: result.model,
+      inputTokens: result.inputTokens,
+      outputTokens: result.outputTokens,
+      costUsd: estimateCostUsd(result.model, result.inputTokens, result.outputTokens),
+      status: "success",
+      errorMessage: null,
+      latencyMs: Date.now() - startedAt,
+    });
+
+    logger.info(`composition-title: success composition=#${id} title="${result.title}" latencyMs=${Date.now() - startedAt}`);
+    res.json({ title: result.title });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    insertCompositionTitleLog({
+      compositionId: id,
+      title: null,
+      model: config.writingTitleModel,
+      inputTokens: 0,
+      outputTokens: 0,
+      costUsd: 0,
+      status: "error",
+      errorMessage,
+      latencyMs: Date.now() - startedAt,
+    });
+    logger.error(
+      `composition-title: failed composition=#${id} latencyMs=${Date.now() - startedAt} error=${errorMessage}`
+    );
+    res.status(500).json({ error: errorMessage });
+  }
 });
 
 // 綴り検査の例外語。単語帳に入れている語（学習者が意図して使う語）と、
@@ -1429,9 +1517,14 @@ adminRouter.get("/writing/:id/read", (req, res) => {
 
   const rounds = listCompositionRounds(id);
   const draft = { englishText: composition.english_text, japaneseText: composition.japanese_text };
+  // 見出しもタイトル優先。空欄なら従来どおり最終添削文（無ければ下書き）の先頭から作る
   const title =
-    compositionPreview(
-      { englishText: rounds.at(-1)?.corrected_text ?? composition.english_text, japaneseText: composition.japanese_text },
+    compositionListTitle(
+      {
+        title: composition.title,
+        englishText: rounds.at(-1)?.corrected_text ?? composition.english_text,
+        japaneseText: composition.japanese_text,
+      },
       50
     ) || `作文 #${composition.id}`;
 
@@ -1978,6 +2071,7 @@ const USAGE_FEATURE_META: Record<UsageFeature, { label: string; href: string }> 
   "word-normalize": { label: "単語正規化", href: "/admin/word-normalize" },
   "writing-feedback": { label: "作文添削", href: "/admin/writing-feedback" },
   "writing-chat": { label: "作文チャット", href: "/admin/writing" },
+  "writing-title": { label: "作文タイトル", href: "/admin/writing" },
   tts: { label: "TTS音声", href: "/admin/tts" },
   illustrations: { label: "単語イラスト", href: "/admin/illustrations" },
   quiz: { label: "単語クイズ", href: "/admin/quiz-questions" },

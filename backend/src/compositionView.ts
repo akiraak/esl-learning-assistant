@@ -89,6 +89,14 @@ export function compositionPreview(draft: CompositionDraft, max = 60): string {
   return oneLine.length > max ? `${oneLine.slice(0, max)}…` : oneLine;
 }
 
+/// 一覧・読書ページの見出し。タイトルが入っていればそれを、空欄なら従来どおり
+/// 本文の先頭（無ければ意図）から作る（docs/plans/composition-title.md）。
+export function compositionListTitle(source: CompositionDraft & { title: string }, max = 70): string {
+  const title = normalize(source.title).replace(/\s+/g, " ");
+  if (title) return title.length > max ? `${title.slice(0, max)}…` : title;
+  return compositionPreview(source, max);
+}
+
 // 紙に文字を書く感覚に寄せた執筆画面のパレット。読書用ページ（白地・serif）と地続きにする。
 const PAPER_BG = "#EDE9DF"; // 机の色（紙の外側）
 const PAPER_SHEET = "#FFFDF7"; // 紙そのもの
@@ -115,9 +123,15 @@ export interface EditorMisspelling {
 
 export interface CompositionEditorPage {
   id: number;
+  /// 現在のタイトル（空欄可。空なら一覧では本文の先頭が見出しになる）
+  title: string;
+  /// タイトル入力欄の maxlength（compositionTitle.ts の上限を呼び出し側から渡す）
+  titleMaxLength: number;
+  /// 「本文から生成」の POST 先
+  titleUrl: string;
   /// 現在の本文（textarea の初期値）
   text: string;
-  /// 自動保存の POST 先
+  /// 自動保存の POST 先（本文とタイトルを一緒に送る）
   saveUrl: string;
   /// 綴り検査の POST 先
   spellcheckUrl: string;
@@ -253,6 +267,26 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
           transparent 0, transparent ${lh - 1}px, ${PAPER_RULE} ${lh - 1}px, ${PAPER_RULE} ${lh}px
         );
     }
+    /* 紙の一番上に置く記事タイトル。罫線と本文行がずれないよう、この行の高さは
+       行送りの整数倍（2行分）に固定する。題は下側の罫線に載せ、生成ボタンをその右に置く。 */
+    .title-row { display: flex; align-items: flex-end; gap: 12px; height: ${lh * 2}px; }
+    .title-input {
+      flex: 1; min-width: 0; height: ${lh}px; padding: 0; margin: 0; border: none;
+      background: transparent; outline: none; color: ${PAPER_INK};
+      font-family: "Iowan Old Style", Georgia, "Hiragino Mincho ProN", "Yu Mincho", "Times New Roman", serif;
+      font-size: 24px; line-height: ${lh}px;
+    }
+    .title-input::placeholder { color: #C0B8A8; font-size: 15px; }
+    .title-gen {
+      flex: none; font-family: inherit; font-size: 12px; line-height: 1; padding: 6px 10px;
+      margin-bottom: 5px; border-radius: 6px; cursor: pointer;
+      background: #F0EADC; color: #5C5445; border: 1px solid #DDD5C1;
+    }
+    .title-gen:hover { background: #E7E0CF; color: ${PAPER_INK}; }
+    .title-gen:disabled { opacity: 0.5; cursor: not-allowed; }
+    /* 本文入力欄と下敷きの共通の親。下敷きはここを基準に重ねるので、
+       上にタイトル行が入っても赤線が字の下からずれない。 */
+    .paper-area { position: relative; }
     /* 本文入力欄と、その背後に敷く綴り検査の下敷き。折り返し位置が 1px でも違うと
        赤線が字の下から外れるので、字組みに関わる指定は必ずこの 1 か所で両方に当てる。 */
     .paper, .paper-backdrop {
@@ -271,10 +305,10 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
     }
     .paper::placeholder { color: #B8B0A0; }
     /* 本文と同じ字を透明で敷き直し、綴りの誤りにだけ赤い波線を引く層。
-       .sheet の padding と同じ位置に置くので、textarea と座標がそのまま一致する。
+       本文入力欄と同じ親（.paper-area）にぴったり重ねるので、座標がそのまま一致する。
        textarea はオートグローで内容の丈まで伸びるためスクロール位置の同期は要らない。 */
     .paper-backdrop {
-      position: absolute; top: ${lh}px; left: var(--pad-x); right: var(--pad-x);
+      position: absolute; top: 0; left: 0; right: 0;
       color: transparent; pointer-events: none; user-select: none; overflow: hidden;
     }
     /* 紙にペンで引いた印に寄せる（標準の赤い波線は spellcheck="false" で止めてある） */
@@ -389,7 +423,7 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
     }
     @media print {
       body { background: #fff; height: auto; overflow: visible; display: block; }
-      .toolbar, .chat-pane, .resizer, .copy-btn { display: none; }
+      .toolbar, .chat-pane, .resizer, .copy-btn, .title-gen { display: none; }
       .split { display: block; }
       .paper-pane { overflow: visible; }
       .sheet { margin: 0; padding: 0; box-shadow: none; max-width: none; background-image: none; }
@@ -412,9 +446,17 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
   <div class="split">
     <div class="paper-pane">
       <div class="sheet">
-        <div class="paper-backdrop" id="backdrop" aria-hidden="true"></div>
-        <textarea id="body" class="paper" spellcheck="false" autofocus
-                  placeholder="ここに書く">${escapeHtml(page.text)}</textarea>
+        <div class="title-row">
+          <input id="title" class="title-input" type="text" maxlength="${page.titleMaxLength}"
+                 placeholder="タイトル（空欄なら一覧に本文の先頭が出ます）"
+                 value="${escapeHtml(page.title)}">
+          <button type="button" class="title-gen" id="title-generate">本文から生成</button>
+        </div>
+        <div class="paper-area">
+          <div class="paper-backdrop" id="backdrop" aria-hidden="true"></div>
+          <textarea id="body" class="paper" spellcheck="false" autofocus
+                    placeholder="ここに書く">${escapeHtml(page.text)}</textarea>
+        </div>
       </div>
       <div class="spell-pop" id="spell-pop"></div>
     </div>
@@ -440,7 +482,9 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
     (function () {
       var saveUrl = ${jsonForScript(page.saveUrl)};
       var chatUrl = ${jsonForScript(page.chatUrl)};
+      var titleUrl = ${jsonForScript(page.titleUrl)};
       var input = document.getElementById('body');
+      var titleInput = document.getElementById('title');
       var status = document.getElementById('save-status');
       var timer = null;
       var dirty = false;
@@ -462,7 +506,7 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
         return fetch(saveUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ englishText: input.value })
+          body: JSON.stringify({ englishText: input.value, title: titleInput.value })
         }).then(function (res) {
           if (!res.ok) throw new Error('save failed');
           status.textContent = '保存済み';
@@ -481,6 +525,49 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
         timer = setTimeout(save, 1500);
       });
       input.addEventListener('blur', save);
+
+      // タイトルも本文と同じ自動保存に相乗りする（保存要求は 1 回にまとめる）
+      function markDirty() {
+        dirty = true;
+        status.textContent = '未保存';
+        clearTimeout(timer);
+        timer = setTimeout(save, 1500);
+      }
+      titleInput.addEventListener('input', markDirty);
+      titleInput.addEventListener('blur', save);
+      // 題の途中で改行はできないので、⏎ は本文へ移る操作にする
+      titleInput.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter' && !event.isComposing) {
+          event.preventDefault();
+          input.focus();
+        }
+      });
+
+      // 「本文から生成」。本文を確定させてからサーバへ頼み、返ってきた題を欄へ入れる
+      // （サーバ側でも保存済みだが、以後の編集と足並みを揃えるため保存経路を通し直す）。
+      var titleButton = document.getElementById('title-generate');
+      titleButton.addEventListener('click', function () {
+        if (titleButton.disabled) return;
+        titleButton.disabled = true;
+        titleButton.textContent = '生成中…';
+        save().then(function () {
+          return fetch(titleUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        }).then(function (res) {
+          return res.json().then(function (data) {
+            if (!res.ok) throw new Error(data.error || 'title failed');
+            return data;
+          });
+        }).then(function (data) {
+          titleInput.value = data.title;
+          dirty = true;
+          save();
+        }).catch(function (error) {
+          status.textContent = 'タイトルを生成できませんでした: ' + error.message;
+        }).finally(function () {
+          titleButton.disabled = false;
+          titleButton.textContent = '本文から生成';
+        });
+      });
 
       document.addEventListener('keydown', function (event) {
         if ((event.metaKey || event.ctrlKey) && event.key === 's') {

@@ -1,5 +1,20 @@
 # DONE
 
+- [x] 2026-08-02 管理画面の作文に記事タイトルを付けられるようにした
+      [plan](docs/plans/archive/composition-title.md)
+      一覧の見出しが本文の書き出し頼みで、書き溜めるほど記事を判別しづらかったので
+      `compositions.title`（既存 DB は起動時 `ALTER TABLE` で移行）を足し、執筆画面の紙の
+      一番上で編集できるようにした。タイトル行の高さは行送りの整数倍（2行分）に固定し、
+      本文入力欄と綴りの下敷きを `.paper-area` で包み直して、罫線・赤い波線のズレを防ぐ。
+      入力は本文と同じ自動保存（`/save` に `title` を相乗り）で、手入力も生成結果も
+      `sanitizeCompositionTitle()`（改行・囲みの引用符・末尾ピリオドを落として 120 字で切る）
+      を通してから保存する。「本文から生成」は本文の保存を確定させてから
+      `POST /admin/writing/:id/title` を叩き、haiku（`ANTHROPIC_WRITING_TITLE_MODEL`）へ
+      「英語・5〜8語・ピリオド無し」で作らせる。呼び出しは成否とも
+      `composition_title_requests` に残し、`/admin/usage` に「作文タイトル」として集計する。
+      タイトルが空欄のときの一覧・読書ページの見出しは従来どおり本文の先頭
+      （`compositionListTitle()` が判定）。タイトルを付けた行には本文の先頭を下に添える。
+
 - [x] 2026-08-01 AI 返信の英文ブロックにコピーボタンを表示
       [plan](docs/plans/archive/writing-chat-copy-button.md)
       執筆画面のチャットで、修正後の英文をボタン一つで紙へ写せるようにした。返信は自由な

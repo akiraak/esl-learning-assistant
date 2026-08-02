@@ -43,6 +43,26 @@ test("updateCompositionDraft: 存在しない ID は false（削除済みへの�
   assert.equal(db.updateCompositionDraft(999999, "x", "y"), false);
 });
 
+test("insertComposition: タイトルは空文字で始まる（空欄なら一覧は本文の先頭を出す）", () => {
+  assert.equal(db.getComposition(db.insertComposition("ja"))!.title, "");
+});
+
+test("updateCompositionTitle: タイトルだけを更新し、本文には触らない", () => {
+  const id = db.insertComposition("ja");
+  db.updateCompositionDraft(id, "I went to school.", "学校へ行った。");
+
+  assert.equal(db.updateCompositionTitle(id, "A Day at School"), true);
+
+  const row = db.getComposition(id)!;
+  assert.equal(row.title, "A Day at School");
+  assert.equal(row.english_text, "I went to school.");
+  assert.equal(row.japanese_text, "学校へ行った。");
+});
+
+test("updateCompositionTitle: 存在しない ID は false", () => {
+  assert.equal(db.updateCompositionTitle(999999, "title"), false);
+});
+
 test("insertCompositionRound: round_index が 1 から採番され、古い順に取り出せる", () => {
   const id = db.insertComposition("ja");
 

@@ -21,6 +21,9 @@ export const config = {
   // 執筆画面（/admin/writing/:id）で書いている英文について相談するチャット。
   // 添削と同じく質の影響が大きいので sonnet を既定にする。
   writingChatModel: process.env.ANTHROPIC_WRITING_CHAT_MODEL ?? "claude-sonnet-5",
+  // 本文から作文のタイトルを付ける（/admin/writing/:id の「本文から生成」）。
+  // 短い1タスクなので単語正規化と同じく安価・高速な haiku 単発で足りる。
+  writingTitleModel: process.env.ANTHROPIC_WRITING_TITLE_MODEL ?? "claude-haiku-4-5",
   // 音声→英文の文字起こしは音声入力ネイティブ対応の Gemini で行う（Claude は音声入力不可）。
   // TTS とは別モデル（テキスト出力）なので TTS 用変数とは分ける。
   transcriptionModel: process.env.GEMINI_TRANSCRIPTION_MODEL ?? "gemini-2.5-flash",

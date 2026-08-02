@@ -134,11 +134,39 @@ db.exec(`
 db.exec(`
   CREATE TABLE IF NOT EXISTS compositions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL DEFAULT '',
     english_text TEXT NOT NULL DEFAULT '',
     japanese_text TEXT NOT NULL DEFAULT '',
     explanation_language TEXT NOT NULL,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
+  )
+`);
+
+// タイトル導入前のDBには title 列が無いため後方互換マイグレーション（docs/plans/composition-title.md）
+const compositionColumns = new Set(
+  (db.prepare("PRAGMA table_info(compositions)").all() as { name: string }[]).map((c) => c.name)
+);
+if (!compositionColumns.has("title")) {
+  db.exec("ALTER TABLE compositions ADD COLUMN title TEXT NOT NULL DEFAULT ''");
+}
+
+// 本文からのタイトル生成（POST /admin/writing/:id/title）の通信・課金ログ。
+// タイトル本体の保存先は compositions.title で、ここは料金集計用の追記ログとして役割を分ける
+// （writing_feedback_requests と composition_rounds の関係と同じ）。
+db.exec(`
+  CREATE TABLE IF NOT EXISTS composition_title_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    composition_id INTEGER NOT NULL,
+    title TEXT,
+    model TEXT NOT NULL,
+    input_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    cost_usd REAL NOT NULL DEFAULT 0,
+    status TEXT NOT NULL,
+    error_message TEXT,
+    latency_ms INTEGER NOT NULL DEFAULT 0
   )
 `);
 
@@ -683,6 +711,44 @@ export function getWordNormalizeLog(id: number): WordNormalizeLogRow | undefined
     .get(id) as WordNormalizeLogRow | undefined;
 }
 
+export interface CompositionTitleLogInput {
+  compositionId: number;
+  title: string | null;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+  status: "success" | "error";
+  errorMessage: string | null;
+  latencyMs: number;
+}
+
+const insertCompositionTitleStmt = db.prepare(`
+  INSERT INTO composition_title_requests (
+    created_at, composition_id, title, model,
+    input_tokens, output_tokens, cost_usd, status, error_message, latency_ms
+  ) VALUES (
+    @createdAt, @compositionId, @title, @model,
+    @inputTokens, @outputTokens, @costUsd, @status, @errorMessage, @latencyMs
+  )
+`);
+
+/// タイトル生成の呼び出しを1件記録する（成功・失敗とも）。/admin/usage の "作文タイトル" はここを集計する。
+export function insertCompositionTitleLog(input: CompositionTitleLogInput): void {
+  insertCompositionTitleStmt.run({
+    createdAt: new Date().toISOString(),
+    compositionId: input.compositionId,
+    title: input.title,
+    model: input.model,
+    inputTokens: input.inputTokens,
+    outputTokens: input.outputTokens,
+    costUsd: input.costUsd,
+    status: input.status,
+    errorMessage: input.errorMessage,
+    latencyMs: input.latencyMs,
+  });
+}
+
 export interface WritingFeedbackLogInput {
   englishText: string;
   japaneseText: string;
@@ -758,6 +824,8 @@ export function getWritingFeedbackLog(id: number): WritingFeedbackLogRow | undef
 
 export interface CompositionRow {
   id: number;
+  /// 任意の記事タイトル。空文字なら一覧・読書ページは本文の先頭から見出しを作る
+  title: string;
   english_text: string;
   japanese_text: string;
   explanation_language: string;
@@ -822,6 +890,15 @@ export function updateCompositionDraft(id: number, englishText: string, japanese
   const result = db
     .prepare("UPDATE compositions SET english_text = ?, japanese_text = ?, updated_at = ? WHERE id = ?")
     .run(englishText, japaneseText, new Date().toISOString(), id);
+  return result.changes > 0;
+}
+
+/// タイトルだけを上書きする。本文の保存とは別 UPDATE にして、片方だけの保存要求
+/// （自動保存 / AI 生成）が他方を巻き戻さないようにする。該当行が無ければ false。
+export function updateCompositionTitle(id: number, title: string): boolean {
+  const result = db
+    .prepare("UPDATE compositions SET title = ?, updated_at = ? WHERE id = ?")
+    .run(title, new Date().toISOString(), id);
   return result.changes > 0;
 }
 
@@ -1804,6 +1881,7 @@ export type UsageFeature =
   | "word-normalize"
   | "writing-feedback"
   | "writing-chat"
+  | "writing-title"
   | "tts"
   | "illustrations"
   | "quiz";
@@ -2047,6 +2125,13 @@ function collectUsageEvents(): UsageEvent[] {
     .all() as { created_at: string; model: string; input_tokens: number; output_tokens: number; cost_usd: number }[];
   for (const r of chatReplies) {
     push("writing-chat", r.model, r.created_at, r.cost_usd, r.input_tokens, r.output_tokens);
+  }
+
+  const titles = db
+    .prepare(`SELECT created_at, model, input_tokens, output_tokens, cost_usd FROM composition_title_requests`)
+    .all() as { created_at: string; model: string; input_tokens: number; output_tokens: number; cost_usd: number }[];
+  for (const r of titles) {
+    push("writing-title", r.model, r.created_at, r.cost_usd, r.input_tokens, r.output_tokens);
   }
 
   // tts_audio.model は tier キー（"flash" / "pro"）で保存されるため、キャリア判定・モデル表示は

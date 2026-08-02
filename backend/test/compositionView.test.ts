@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   canReviewComposition,
+  compositionListTitle,
   compositionParagraphsHtml,
   compositionPreview,
   compositionStatus,
@@ -84,13 +85,32 @@ test("compositionPreview: 英文優先・空なら意図、超過分は…で切
   assert.equal(compositionPreview({ englishText: "abcdefghij", japaneseText: "" }, 5), "abcde…");
 });
 
+test("compositionListTitle: タイトルがあればタイトル、空欄なら本文の先頭", () => {
+  const draft = { englishText: "Last weekend I visited my grandmother.", japaneseText: "先週末は祖母を訪ねた。" };
+
+  assert.equal(compositionListTitle({ ...draft, title: "A Visit to My Grandmother" }), "A Visit to My Grandmother");
+  assert.equal(compositionListTitle({ ...draft, title: "   " }), "Last weekend I visited my grandmother.");
+  // 本文もタイトルも空なら意図、どちらも無ければ空文字（呼び出し側が「(空の作文)」に落とす）
+  assert.equal(compositionListTitle({ englishText: "", japaneseText: "先週末の話。", title: "" }), "先週末の話。");
+  assert.equal(compositionListTitle({ englishText: "", japaneseText: "", title: "" }), "");
+});
+
+test("compositionListTitle: 長いタイトルは…で切り、改行は1行にまとめる", () => {
+  assert.equal(compositionListTitle({ englishText: "", japaneseText: "", title: "abcdefghij" }, 5), "abcde…");
+  assert.equal(compositionListTitle({ englishText: "", japaneseText: "", title: "A  Visit\nHome" }), "A Visit Home");
+});
+
 function editorPage(
   text: string,
   messages: CompositionChatMessageView[] = [],
-  misspellings: EditorMisspelling[] = []
+  misspellings: EditorMisspelling[] = [],
+  title = ""
 ) {
   return renderCompositionEditorPageHtml({
     id: 7,
+    title,
+    titleMaxLength: 120,
+    titleUrl: "/admin/writing/7/title",
     text,
     misspellings,
     spellcheckUrl: "/admin/writing/7/spellcheck",
@@ -113,6 +133,26 @@ test("執筆ページ: 本文を textarea に入れ、保存・削除・戻り�
   assert.match(html, /"\/admin\/writing\/7\/save"/);
   assert.match(html, /action="\/admin\/writing\/7\/delete"/);
   assert.match(html, /href="\/admin\/writing"/);
+});
+
+test("執筆ページ: 紙の上部にタイトル入力欄と本文からの生成ボタンを置く", () => {
+  const html = editorPage("Last weekend I visited my grandmother.", [], [], 'A Visit to "Grandma"');
+
+  assert.match(html, /<input id="title" class="title-input" type="text" maxlength="120"/);
+  assert.match(html, /value="A Visit to &quot;Grandma&quot;"/);
+  assert.match(html, /<button type="button" class="title-gen" id="title-generate">本文から生成<\/button>/);
+  assert.match(html, /"\/admin\/writing\/7\/title"/);
+  // タイトルは本文と同じ自動保存に相乗りする
+  assert.match(html, /JSON\.stringify\(\{ englishText: input\.value, title: titleInput\.value \}\)/);
+  // 罫線と本文行がずれないよう、タイトル行の高さは行送りの整数倍にする
+  assert.match(html, /\.title-row \{[\s\S]*?height: 68px;/);
+});
+
+test("執筆ページ: タイトルが空欄なら空の入力欄と案内のプレースホルダを出す", () => {
+  const html = editorPage("Last weekend I visited my grandmother.");
+
+  assert.match(html, /placeholder="タイトル（空欄なら一覧に本文の先頭が出ます）"/);
+  assert.match(html, /value=""/);
 });
 
 test("執筆ページ: 紙を横いっぱいに広げ、AI 欄との境界を掴んで動かせるようにする", () => {
