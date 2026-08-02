@@ -144,8 +144,12 @@ test("執筆ページ: 紙の上部にタイトル入力欄と本文からの生
   assert.match(html, /"\/admin\/writing\/7\/title"/);
   // タイトルは本文と同じ自動保存に相乗りする
   assert.match(html, /JSON\.stringify\(\{ englishText: input\.value, title: titleInput\.value \}\)/);
-  // 罫線と本文行がずれないよう、タイトル行の高さは行送りの整数倍にする
-  assert.match(html, /\.title-row \{[\s\S]*?height: 68px;/);
+  // タイトルは罫線紙の中ではなく、紙の外（上）に独立した見出しとして置く
+  assert.match(html, /<div class="title-row">[\s\S]*?<\/div>\s*<div class="sheet">/);
+  assert.doesNotMatch(html, /<div class="sheet">[\s\S]*?class="title-input"/);
+  // 左右の位置は紙の本文と揃え（紙と同じ --pad-x）、紙と同じ地色のもう一枚の紙として浮かせる
+  assert.match(html, /\.title-row \{[\s\S]*?padding: 14px var\(--pad-x\);/);
+  assert.match(html, /\.title-row \{[\s\S]*?background-color: #FFFDF7;[\s\S]*?box-shadow:/);
 });
 
 test("執筆ページ: タイトルが空欄なら空の入力欄と案内のプレースホルダを出す", () => {
@@ -160,7 +164,7 @@ test("執筆ページ: 紙を横いっぱいに広げ、AI 欄との境界を掴
 
   // 紙はペイン幅いっぱい（中央寄せの max-width を持たない）。左右には少しだけ余白を残す
   assert.doesNotMatch(html, /\.sheet \{[\s\S]*?max-width: 44em;/);
-  assert.match(html, /\.sheet \{[\s\S]*?margin: 28px 24px 64px;/);
+  assert.match(html, /\.sheet \{[\s\S]*?margin: 0 24px 64px;/);
   // 仕切りには掴めることが分かるつまみ（左右の矢印）を出す
   assert.match(html, /\.resizer::after \{[\s\S]*?background-image: url\("data:image\/svg\+xml,/);
   assert.match(html, /cursor: col-resize;/);

@@ -202,7 +202,8 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
       --chat-w: 420px;
       grid-template-columns: minmax(0, 1fr) 6px var(--chat-w);
     }
-    .paper-pane { min-width: 0; overflow-y: auto; }
+    /* 紙の左右余白（--pad-x）は紙の外に置くタイトル行とも揃えたいので、ペイン側で持つ。 */
+    .paper-pane { min-width: 0; overflow-y: auto; --pad-x: 56px; }
     /* 紙と AI 欄の間の細い仕切り。掴む余地を持たせるため見た目の線より当たり判定を広くする。 */
     .resizer {
       position: relative; cursor: col-resize; background: #E4DDCE;
@@ -252,8 +253,7 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
        縦の余白線はノートらしさのため、本文の左端から 12px 手前に引く。 */
     .sheet {
       position: relative;
-      --pad-x: 56px;
-      margin: 28px 24px 64px; background-color: ${PAPER_SHEET};
+      margin: 0 24px 64px; background-color: ${PAPER_SHEET};
       box-shadow: 0 1px 2px rgba(60,50,35,0.10), 0 10px 30px rgba(60,50,35,0.12);
       padding: ${lh}px var(--pad-x) ${lh * 2}px;
       background-image:
@@ -267,25 +267,34 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
           transparent 0, transparent ${lh - 1}px, ${PAPER_RULE} ${lh - 1}px, ${PAPER_RULE} ${lh}px
         );
     }
-    /* 紙の一番上に置く記事タイトル。罫線と本文行がずれないよう、この行の高さは
-       行送りの整数倍（2行分）に固定する。題は下側の罫線に載せ、生成ボタンをその右に置く。 */
-    .title-row { display: flex; align-items: flex-end; gap: 12px; height: ${lh * 2}px; }
+    /* 記事タイトルは本文の紙とは別物なので、罫線紙の上にもう一枚の紙（表紙）として置く。
+       紙と同じ地色・同じ左右の位置（外 24px + --pad-x）にして、影だけで本文の紙と分ける。
+       影は本文の紙より浅くし、小さい紙が薄く浮いて見えるようにする。 */
+    .title-row {
+      display: flex; align-items: center; gap: 12px;
+      margin: 24px 24px 12px; padding: 14px var(--pad-x);
+      background-color: ${PAPER_SHEET};
+      box-shadow: 0 1px 2px rgba(60,50,35,0.10), 0 6px 18px rgba(60,50,35,0.10);
+    }
     .title-input {
-      flex: 1; min-width: 0; height: ${lh}px; padding: 0; margin: 0; border: none;
+      flex: 1; min-width: 0; padding: 2px 0; margin: 0;
+      border: none; border-bottom: 1px solid transparent;
       background: transparent; outline: none; color: ${PAPER_INK};
       font-family: "Iowan Old Style", Georgia, "Hiragino Mincho ProN", "Yu Mincho", "Times New Roman", serif;
-      font-size: 24px; line-height: ${lh}px;
+      font-size: 26px; line-height: 1.3;
     }
-    .title-input::placeholder { color: #C0B8A8; font-size: 15px; }
+    .title-input:hover { border-bottom-color: #DDD5C1; }
+    .title-input:focus { border-bottom-color: #C2B79C; }
+    .title-input::placeholder { color: #BDB5A5; font-size: 15px; }
     .title-gen {
       flex: none; font-family: inherit; font-size: 12px; line-height: 1; padding: 6px 10px;
-      margin-bottom: 5px; border-radius: 6px; cursor: pointer;
+      border-radius: 6px; cursor: pointer;
       background: #F0EADC; color: #5C5445; border: 1px solid #DDD5C1;
     }
     .title-gen:hover { background: #E7E0CF; color: ${PAPER_INK}; }
     .title-gen:disabled { opacity: 0.5; cursor: not-allowed; }
     /* 本文入力欄と下敷きの共通の親。下敷きはここを基準に重ねるので、
-       上にタイトル行が入っても赤線が字の下からずれない。 */
+       紙の外側の作りが変わっても赤線が字の下からずれない。 */
     .paper-area { position: relative; }
     /* 本文入力欄と、その背後に敷く綴り検査の下敷き。折り返し位置が 1px でも違うと
        赤線が字の下から外れるので、字組みに関わる指定は必ずこの 1 か所で両方に当てる。 */
@@ -419,7 +428,10 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
       .paper { min-height: ${lh * 8}px; }
     }
     @media (max-width: 720px) {
-      .sheet { --pad-x: 22px; margin: 0; box-shadow: none; }
+      .paper-pane { --pad-x: 22px; }
+      .sheet { margin: 0; box-shadow: none; }
+      .title-row { margin: 0 0 8px; padding: 12px var(--pad-x); box-shadow: none; }
+      .title-input { font-size: 22px; }
     }
     @media print {
       body { background: #fff; height: auto; overflow: visible; display: block; }
@@ -427,6 +439,8 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
       .split { display: block; }
       .paper-pane { overflow: visible; }
       .sheet { margin: 0; padding: 0; box-shadow: none; max-width: none; background-image: none; }
+      .title-row { margin: 0 0 10px; padding: 0; background: none; box-shadow: none; }
+      .title-input { border-bottom: none; }
       .paper { font-size: 12pt; min-height: 0; }
       /* 印刷物に赤線は要らない */
       .paper-backdrop { display: none; }
@@ -445,13 +459,13 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
   </div>
   <div class="split">
     <div class="paper-pane">
+      <div class="title-row">
+        <input id="title" class="title-input" type="text" maxlength="${page.titleMaxLength}"
+               placeholder="タイトル（空欄なら一覧に本文の先頭が出ます）"
+               value="${escapeHtml(page.title)}">
+        <button type="button" class="title-gen" id="title-generate">本文から生成</button>
+      </div>
       <div class="sheet">
-        <div class="title-row">
-          <input id="title" class="title-input" type="text" maxlength="${page.titleMaxLength}"
-                 placeholder="タイトル（空欄なら一覧に本文の先頭が出ます）"
-                 value="${escapeHtml(page.title)}">
-          <button type="button" class="title-gen" id="title-generate">本文から生成</button>
-        </div>
         <div class="paper-area">
           <div class="paper-backdrop" id="backdrop" aria-hidden="true"></div>
           <textarea id="body" class="paper" spellcheck="false" autofocus
