@@ -149,6 +149,16 @@ export function chatMessageHtml(message: CompositionChatMessageView): string {
   return `<div class="msg msg-${message.role}"><div class="bubble">${body}</div></div>`;
 }
 
+/// 紙と AI 欄の仕切りのつまみに描く左右の矢印（CSS の url() へ直接埋める data URI 用）。
+/// 外部ファイルを増やさずに済むよう SVG をそのまま持ち、CSS で壊れる文字だけ退避する。
+function resizeGripSvg(): string {
+  const svg =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 10 10" ' +
+    'fill="none" stroke="#4E4636" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">' +
+    '<path d="M4 2 1.5 5 4 8"/><path d="M6 2 8.5 5 6 8"/></svg>';
+  return encodeURIComponent(svg);
+}
+
 /// 執筆画面（/admin/writing/:id）の HTML。左に机の上の罫線紙、右に AI との相談チャットを置く
 /// 2ペイン構成で、管理画面のダークテーマ・サイドバーは使わない単独ページ。
 /// 本文は自動保存し、チャットの質問には常に「いま書かれている英文」がプロンプトへ含まれる。
@@ -171,8 +181,40 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
       font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Segoe UI", sans-serif;
       height: 100dvh; overflow: hidden; display: flex; flex-direction: column;
     }
-    .split { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 420px; }
+    /* 右の AI 欄の幅は仕切りのドラッグで変わる。既定値はここ、実際の値は script が
+       --chat-w を書き換えて反映する（localStorage に覚えた幅を復元する）。 */
+    .split {
+      flex: 1; min-height: 0; display: grid;
+      --chat-w: 420px;
+      grid-template-columns: minmax(0, 1fr) 6px var(--chat-w);
+    }
     .paper-pane { min-width: 0; overflow-y: auto; }
+    /* 紙と AI 欄の間の細い仕切り。掴む余地を持たせるため見た目の線より当たり判定を広くする。 */
+    .resizer {
+      position: relative; cursor: col-resize; background: #E4DDCE;
+      border-left: 1px solid #D9D3C5; border-right: 1px solid #D9D3C5;
+      touch-action: none;
+    }
+    .resizer::before {
+      content: ''; position: absolute; top: 0; bottom: 0; left: -4px; right: -4px;
+    }
+    /* 掴んで左右に動かせることが一目で分かるよう、中ほどに縦長のつまみ（左右向きの矢印付き）を置く。
+       つまみは仕切りより幅広なので、はみ出した分は両側の面へ少し重なる。 */
+    .resizer::after {
+      content: ''; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      width: 14px; height: 56px; border-radius: 7px;
+      background-color: #D3C9B2; border: 1px solid #C2B79C;
+      box-shadow: 0 1px 2px rgba(60,50,35,0.12);
+      background-repeat: no-repeat; background-position: center;
+      background-image: url("data:image/svg+xml,${resizeGripSvg()}");
+    }
+    .resizer:hover::after, .resizer:focus-visible::after, .resizer.dragging::after {
+      background-color: #C0B394; border-color: #A99C7E;
+    }
+    .resizer:focus-visible { outline: none; }
+    .resizer:hover, .resizer:focus-visible, .resizer.dragging { background: #D9CFB8; }
+    /* ドラッグ中に本文が選択されてしまうのを止める */
+    body.resizing { cursor: col-resize; user-select: none; }
     /* 書く面積を最優先にした細いバー（高さ約 36px） */
     .toolbar {
       display: flex; align-items: center; gap: 14px; padding: 4px 16px;
@@ -189,13 +231,15 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
       background: transparent; color: #A3392F; border: 1px solid rgba(163,57,47,0.35); cursor: pointer;
     }
     .toolbar button:hover { background: rgba(163,57,47,0.07); }
-    /* 机の上に置いた1枚の罫線紙。影で紙らしく浮かせ、罫線は紙の端から端まで引く。
+    /* 机の上に置いた1枚の罫線紙。書ける幅を最優先にペイン幅いっぱいへ広げ、
+       紙の縁が窓の縁に貼り付かないよう左右に少しだけ余白を残す。
+       影で紙らしく浮かせ、罫線は紙の端から端まで引く。
        上下の padding を行送りの倍数にしてあるので、罫線と本文の行がぴったり重なる。
        縦の余白線はノートらしさのため、本文の左端から 12px 手前に引く。 */
     .sheet {
       position: relative;
       --pad-x: 56px;
-      max-width: 44em; margin: 28px auto 64px; background-color: ${PAPER_SHEET};
+      margin: 28px 24px 64px; background-color: ${PAPER_SHEET};
       box-shadow: 0 1px 2px rgba(60,50,35,0.10), 0 10px 30px rgba(60,50,35,0.12);
       padding: ${lh}px var(--pad-x) ${lh * 2}px;
       background-image:
@@ -317,6 +361,7 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
     @media (max-width: 900px) {
       body { height: auto; overflow: visible; }
       .split { grid-template-columns: 1fr; }
+      .resizer { display: none; }
       .chat-pane { border-left: none; border-top: 1px solid #D9D3C5; height: 80vh; }
       .paper-pane { overflow: visible; }
       .paper { min-height: ${lh * 8}px; }
@@ -326,7 +371,7 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
     }
     @media print {
       body { background: #fff; height: auto; overflow: visible; display: block; }
-      .toolbar, .chat-pane { display: none; }
+      .toolbar, .chat-pane, .resizer { display: none; }
       .split { display: block; }
       .paper-pane { overflow: visible; }
       .sheet { margin: 0; padding: 0; box-shadow: none; max-width: none; background-image: none; }
@@ -355,6 +400,8 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
       </div>
       <div class="spell-pop" id="spell-pop"></div>
     </div>
+    <div class="resizer" id="resizer" role="separator" aria-orientation="vertical"
+         tabindex="0" title="ドラッグで幅を変える" aria-label="紙と AI 欄の境界"></div>
     <aside class="chat-pane">
       <div class="chat-head">AI に相談<span class="model">${escapeHtml(page.chatModel)}</span></div>
       <div class="chat-log" id="chat-log">
@@ -657,6 +704,80 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
       window.addEventListener('resize', closePopover);
 
       renderMarks();
+
+      // --- 紙と AI 欄の境界（ドラッグで幅を変え、ブラウザに覚えさせる） -------
+      var split = document.querySelector('.split');
+      var resizer = document.getElementById('resizer');
+      var WIDTH_KEY = 'composition.chatWidth';
+      var MIN_CHAT = 280;
+      var MIN_PAPER = 360;
+
+      // 画面が狭くなっても紙が潰れないよう、覚えた幅も含めて必ずここを通す
+      function clampWidth(px) {
+        var max = Math.max(MIN_CHAT, window.innerWidth - MIN_PAPER);
+        return Math.round(Math.min(Math.max(px, MIN_CHAT), Math.min(720, max)));
+      }
+
+      function applyWidth(px) {
+        split.style.setProperty('--chat-w', clampWidth(px) + 'px');
+        // 幅が変わると本文の折り返しが変わるので、紙の丈を取り直す
+        autogrow();
+        closePopover();
+      }
+
+      function currentWidth() {
+        return document.querySelector('.chat-pane').getBoundingClientRect().width;
+      }
+
+      try {
+        var saved = parseFloat(localStorage.getItem(WIDTH_KEY) || '');
+        if (saved > 0) split.style.setProperty('--chat-w', clampWidth(saved) + 'px');
+      } catch (err) { /* localStorage が使えない環境では既定幅のまま */ }
+
+      function remember(px) {
+        try { localStorage.setItem(WIDTH_KEY, String(clampWidth(px))); } catch (err) {}
+      }
+
+      var dragWidth = 0;
+      resizer.addEventListener('pointerdown', function (event) {
+        event.preventDefault();
+        resizer.setPointerCapture(event.pointerId);
+        resizer.classList.add('dragging');
+        document.body.classList.add('resizing');
+        dragWidth = currentWidth();
+      });
+      resizer.addEventListener('pointermove', function (event) {
+        if (!resizer.classList.contains('dragging')) return;
+        // 右端からの距離がそのまま AI 欄の幅
+        dragWidth = window.innerWidth - event.clientX;
+        applyWidth(dragWidth);
+      });
+      function endDrag() {
+        if (!resizer.classList.contains('dragging')) return;
+        resizer.classList.remove('dragging');
+        document.body.classList.remove('resizing');
+        remember(dragWidth);
+      }
+      resizer.addEventListener('pointerup', endDrag);
+      resizer.addEventListener('pointercancel', endDrag);
+
+      // キーボードでも動かせるように（← で AI 欄を広げ、→ で紙を広げる）
+      resizer.addEventListener('keydown', function (event) {
+        var step = event.shiftKey ? 40 : 12;
+        if (event.key === 'ArrowLeft') { event.preventDefault(); }
+        else if (event.key === 'ArrowRight') { event.preventDefault(); step = -step; }
+        else return;
+        var next = currentWidth() + step;
+        applyWidth(next);
+        remember(next);
+      });
+
+      // ウィンドウが狭くなったときに覚えた幅がはみ出さないようにする
+      window.addEventListener('resize', function () {
+        // 縦積みのときは幅の指定が効かないので、覚えた値を上書きしないよう触らない
+        if (window.matchMedia('(max-width: 900px)').matches) return;
+        applyWidth(currentWidth());
+      });
 
       // --- AI との相談チャット ---------------------------------------------
       var log = document.getElementById('chat-log');

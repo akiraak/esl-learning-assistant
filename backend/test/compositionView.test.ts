@@ -115,6 +115,24 @@ test("執筆ページ: 本文を textarea に入れ、保存・削除・戻り�
   assert.match(html, /href="\/admin\/writing"/);
 });
 
+test("執筆ページ: 紙を横いっぱいに広げ、AI 欄との境界を掴んで動かせるようにする", () => {
+  const html = editorPage("Last weekend I visited my grandmother.");
+
+  // 紙はペイン幅いっぱい（中央寄せの max-width を持たない）。左右には少しだけ余白を残す
+  assert.doesNotMatch(html, /\.sheet \{[\s\S]*?max-width: 44em;/);
+  assert.match(html, /\.sheet \{[\s\S]*?margin: 28px 24px 64px;/);
+  // 仕切りには掴めることが分かるつまみ（左右の矢印）を出す
+  assert.match(html, /\.resizer::after \{[\s\S]*?background-image: url\("data:image\/svg\+xml,/);
+  assert.match(html, /cursor: col-resize;/);
+  // 紙 / 仕切り / AI 欄の 3 列。AI 欄の幅は --chat-w で動かす
+  assert.match(html, /grid-template-columns: minmax\(0, 1fr\) 6px var\(--chat-w\);/);
+  assert.match(html, /<div class="resizer" id="resizer" role="separator"/);
+  assert.match(html, /resizer\.addEventListener\('pointerdown'/);
+  // 動かした幅はブラウザに覚えさせる
+  assert.match(html, /localStorage\.setItem\(WIDTH_KEY/);
+  assert.match(html, /var WIDTH_KEY = 'composition\.chatWidth';/);
+});
+
 test("執筆ページ: 綴りの下敷きを紙の背後に敷き、標準のスペルチェックは止める", () => {
   const html = editorPage("I recieve a letter.", [], [{ start: 2, end: 9, word: "recieve" }]);
 

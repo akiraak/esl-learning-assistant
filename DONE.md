@@ -1,5 +1,19 @@
 # DONE
 
+- [x] 2026-08-01 執筆画面の紙を横いっぱいに広げ、AI 欄との境界をドラッグで動かせるようにした
+      [plan](docs/plans/archive/writing-pane-resizer.md)
+      `.sheet` の `max-width: 44em`（中央寄せ）を外して紙をペイン幅いっぱいに広げ（縁が窓に
+      貼り付かないよう左右に 24px だけ余白を残す）、`.split` を「紙 / 仕切り 6px / AI 欄」の
+      3列にした。AI 欄の幅は `--chat-w` で持ち、仕切りを Pointer Events でドラッグして更新する。
+      仕切りには掴めることが一目で分かる縦長のつまみ（左右の矢印を描いた SVG の data URI、
+      `.resizer::after`）を置き、hover / focus / ドラッグ中は濃くする。幅は `280px 〜 min(720px, ウィンドウ幅 - 360px)` に必ず
+      クランプするので、覚えた幅のまま画面を狭くしても紙が潰れない。確定した幅は
+      `localStorage['composition.chatWidth']` に保存し、次回表示時に復元する（保存値も同じ
+      クランプを通す）。幅が変わると本文の折り返しが変わるため、変更のたびに `autogrow()` を
+      呼び直して紙の丈を取り直し、綴りのポップオーバーは閉じる。縦積みになる狭い画面
+      （`max-width: 900px`）と印刷時は仕切りを隠し、縦積み中のウィンドウ変更では覚えた幅を
+      上書きしない。キーボード（← →、Shift で大きく）でも動かせる。
+
 - [x] 2026-08-01 管理画面の作文でスペルミスを強調表示
       [plan](docs/plans/archive/writing-spellcheck-highlight.md)
       執筆画面（`/admin/writing/:id`）で、綴りの誤りに紙のペン跡のような赤い波線を引くようにした。
