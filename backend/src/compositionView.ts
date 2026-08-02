@@ -337,7 +337,7 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
        影は本文の紙より浅くし、小さい紙が薄く浮いて見えるようにする。 */
     .title-row {
       display: flex; align-items: center; gap: 12px;
-      margin: 24px 24px 12px; padding: 14px var(--pad-x);
+      margin: 16px 24px 12px; padding: 8px var(--pad-x);
       background-color: ${PAPER_SHEET};
       box-shadow: 0 1px 2px rgba(60,50,35,0.10), 0 6px 18px rgba(60,50,35,0.10);
     }
@@ -346,7 +346,7 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
       border: none; border-bottom: 1px solid transparent;
       background: transparent; outline: none; color: ${PAPER_INK};
       font-family: "Iowan Old Style", Georgia, "Hiragino Mincho ProN", "Yu Mincho", "Times New Roman", serif;
-      font-size: 26px; line-height: 1.3;
+      font-size: 26px; line-height: 1.2;
     }
     .title-input:hover { border-bottom-color: #DDD5C1; }
     .title-input:focus { border-bottom-color: #C2B79C; }
@@ -495,7 +495,7 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
     @media (max-width: 720px) {
       .paper-pane { --pad-x: 22px; }
       .paper-stack { margin: 0; box-shadow: none; }
-      .title-row { margin: 0 0 8px; padding: 12px var(--pad-x); box-shadow: none; }
+      .title-row { margin: 0 0 8px; padding: 8px var(--pad-x); box-shadow: none; }
       .title-input { font-size: 22px; }
     }
     @media print {

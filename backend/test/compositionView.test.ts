@@ -111,8 +111,8 @@ test("執筆ページ: 紙の上部にタイトル入力欄と本文からの生
   assert.match(html, /<div class="title-row">[\s\S]*?<\/div>\s*<div class="paper-stack">/);
   assert.doesNotMatch(html, /<div class="sheet">[\s\S]*?class="title-input"/);
   // 左右の位置は紙の本文と揃え（紙と同じ --pad-x）、紙と同じ地色のもう一枚の紙として浮かせる
-  assert.match(html, /\.title-row \{[\s\S]*?padding: 14px var\(--pad-x\);/);
-  assert.match(html, /\.title-row \{[\s\S]*?background-color: #FFFDF7;[\s\S]*?box-shadow:/);
+  assert.match(html, /\.title-row \{[^}]*padding: 8px var\(--pad-x\);/);
+  assert.match(html, /\.title-row \{[^}]*background-color: #FFFDF7;[^}]*box-shadow:/);
 });
 
 test("執筆ページ: タイトルが空欄なら空の入力欄と案内のプレースホルダを出す", () => {
