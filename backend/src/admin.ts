@@ -14,6 +14,7 @@ import {
   deleteTranscriptionLog,
   deleteTtsAudio,
   deleteWordIllustration,
+  CompositionPageRow,
   DocumentLogRow,
   getAudioTitlesByFilename,
   getComposition,
@@ -31,11 +32,15 @@ import {
   getWordIllustrationById,
   getWordInfoLog,
   getWordNormalizeLog,
+  deleteCompositionPage,
+  getCompositionPage,
   insertComposition,
   insertCompositionChatMessage,
+  insertCompositionPage,
   insertCompositionTitleLog,
   insertWordInfoLog,
   listCompositionChatMessages,
+  listCompositionPages,
   listCompositions,
   listIllustratedWords,
   listQuizQuestions,
@@ -58,7 +63,9 @@ import {
   RequestLogRow,
   StoredWordRow,
   TranscriptionLogRow,
-  updateCompositionDraft,
+  renameCompositionPage,
+  updateCompositionJapaneseText,
+  updateCompositionPageText,
   updateCompositionTitle,
   upsertStoredWord,
   upsertWordIllustration,
@@ -69,7 +76,13 @@ import {
 } from "./db";
 import { config } from "./config";
 import { generateWordInfo, type WordInfo } from "./wordInfo";
-import { DEFAULT_EXPLANATION_LANGUAGE, WRITING_TEXT_MAX_LENGTH } from "./composition";
+import {
+  COMPOSITION_PAGES_MAX,
+  DEFAULT_EXPLANATION_LANGUAGE,
+  PAGE_NAME_MAX_LENGTH,
+  sanitizePageName,
+  WRITING_TEXT_MAX_LENGTH,
+} from "./composition";
 import {
   compositionListTitle,
   compositionPreview,
@@ -913,6 +926,22 @@ function compositionNotFound(res: Response): void {
     );
 }
 
+/// リクエストの `pageId` から書き込み・読み出し対象のページを引く。
+/// 執筆画面は常に選択中のページ ID を送るので、欠けているのは画面側の不具合とみなして 400 にする
+/// （黙って先頭ページへ落とすと、別のページの本文で上書きしてしまう）。
+function resolvePage(compositionId: number, raw: unknown, res: Response): CompositionPageRow | undefined {
+  if (typeof raw !== "number" || !Number.isInteger(raw)) {
+    res.status(400).json({ error: "pageId is required" });
+    return undefined;
+  }
+  const page = getCompositionPage(compositionId, raw);
+  if (!page) {
+    res.status(404).json({ error: "page not found" });
+    return undefined;
+  }
+  return page;
+}
+
 adminRouter.get("/writing", (_req, res) => {
   const compositions = listCompositions(200);
 
@@ -981,8 +1010,9 @@ adminRouter.post("/writing/new", (_req, res) => {
 });
 
 // 書くことに集中する画面。紙に文字を書く体裁の単独ページ（管理画面のダークテーマ・
-// サイドバーは使わない）で、置くのは本文入力欄と削除だけ。添削（Review）・意図欄・
-// 添削履歴はここには出さない。入力は自動保存し、状態だけツールバーに小さく示す。
+// サイドバーは使わない）で、置くのは本文入力欄と削除だけ。入力は自動保存し、
+// 状態だけツールバーに小さく示す。紙の上のタブが 1 作文の中のページで、
+// 全ページの本文と綴り誤りをまとめて渡して切り替えを通信なしで済ませる。
 adminRouter.get("/writing/:id", (req, res) => {
   const id = Number(req.params.id);
   const composition = getComposition(id);
@@ -991,18 +1021,32 @@ adminRouter.get("/writing/:id", (req, res) => {
     return;
   }
 
+  // 移行前に開かれた作文でもここでページが 1 枚は揃う（起動時の移行を取りこぼした場合の保険）
+  const rows = listCompositionPages(id);
+  const pageRows = rows.length > 0 ? rows : [insertCompositionPage(id)];
+  const ignored = spellIgnoredWords();
+
   res.type("html").send(
     renderCompositionEditorPageHtml({
       id: composition.id,
       title: composition.title,
       titleMaxLength: COMPOSITION_TITLE_MAX_LENGTH,
       titleUrl: `/admin/writing/${composition.id}/title`,
-      text: composition.english_text,
+      pages: pageRows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        position: row.position,
+        text: row.english_text,
+        misspellings: findMisspellings(row.english_text, ignored),
+      })),
+      activePageId: pageRows[0].id,
+      pagesUrl: `/admin/writing/${composition.id}/pages`,
+      pageNameMaxLength: PAGE_NAME_MAX_LENGTH,
+      maxPages: COMPOSITION_PAGES_MAX,
       saveUrl: `/admin/writing/${composition.id}/save`,
       spellcheckUrl: `/admin/writing/${composition.id}/spellcheck`,
       spellSuggestUrl: "/admin/writing/spell-suggest",
       spellIgnoreUrl: "/admin/writing/spell-ignore",
-      misspellings: findMisspellings(composition.english_text, spellIgnoredWords()),
       deleteUrl: `/admin/writing/${composition.id}/delete`,
       chatUrl: `/admin/writing/${composition.id}/chat`,
       backHref: "/admin/writing",
@@ -1015,8 +1059,9 @@ adminRouter.get("/writing/:id", (req, res) => {
   );
 });
 
-// 執筆画面の相談チャット。質問には常に「いま保存されている本文」をプロンプトへ含める
-// （画面側は送信前に自動保存を確定させてからここを叩く）。
+// 執筆画面の相談チャット。質問には常に「選択中のページのいま保存されている本文」をプロンプトへ含める
+// （画面側は送信前に自動保存を確定させてからここを叩く）。スレッドはページごとには分けず
+// 1作文に1本のままで、どのページの話かは同梱する本文で表す。
 // 発言は composition_chat_messages に積み、assistant 行が課金ログも兼ねる。
 adminRouter.post("/writing/:id/chat", async (req, res) => {
   const id = Number(req.params.id);
@@ -1026,7 +1071,7 @@ adminRouter.post("/writing/:id/chat", async (req, res) => {
     return;
   }
 
-  const { message } = (req.body ?? {}) as Record<string, unknown>;
+  const { message, pageId } = (req.body ?? {}) as Record<string, unknown>;
   if (typeof message !== "string" || !message.trim()) {
     res.status(400).json({ error: "message is required" });
     return;
@@ -1035,6 +1080,8 @@ adminRouter.post("/writing/:id/chat", async (req, res) => {
     res.status(400).json({ error: `message must be ${CHAT_MESSAGE_MAX_LENGTH} characters or fewer` });
     return;
   }
+  const page = resolvePage(id, pageId, res);
+  if (!page) return;
 
   const question = message.trim();
   const history = listCompositionChatMessages(id).map((row) => ({
@@ -1044,12 +1091,12 @@ adminRouter.post("/writing/:id/chat", async (req, res) => {
 
   const startedAt = Date.now();
   logger.info(
-    `composition-chat: start composition=#${id} questionLen=${question.length} ` +
-      `historyMessages=${history.length} compositionLen=${composition.english_text.length} model=${config.writingChatModel}`
+    `composition-chat: start composition=#${id} page=#${page.id} questionLen=${question.length} ` +
+      `historyMessages=${history.length} pageLen=${page.english_text.length} model=${config.writingChatModel}`
   );
 
   try {
-    const result = await generateChatReply(composition.english_text, history, question);
+    const result = await generateChatReply(page.english_text, history, question);
     // 生成が成功したときだけ質問も残す（失敗時に片側だけ残ると次回の文脈が壊れるため）
     insertCompositionChatMessage({ compositionId: id, role: "user", content: question });
     insertCompositionChatMessage({
@@ -1074,7 +1121,8 @@ adminRouter.post("/writing/:id/chat", async (req, res) => {
 });
 
 // 本文・タイトルの自動保存（エディタからの fetch）。単一ユーザー運用のため楽観ロックは持たず最終書き込み優先。
-// japaneseText は編集画面に無いので省略でき、その場合は保存済みの値をそのまま残す（title も同じ）。
+// 本文の宛先は作文ではなく `pageId` のページ。タイトルは作文に1つなので省略でき、
+// その場合は保存済みの値をそのまま残す（japaneseText も同じ）。
 adminRouter.post("/writing/:id/save", (req, res) => {
   const id = Number(req.params.id);
   const composition = getComposition(id);
@@ -1083,7 +1131,7 @@ adminRouter.post("/writing/:id/save", (req, res) => {
     return;
   }
 
-  const { englishText, japaneseText, title } = (req.body ?? {}) as Record<string, unknown>;
+  const { englishText, japaneseText, title, pageId } = (req.body ?? {}) as Record<string, unknown>;
   if (typeof englishText !== "string") {
     res.status(400).json({ error: "englishText is required" });
     return;
@@ -1105,14 +1153,17 @@ adminRouter.post("/writing/:id/save", (req, res) => {
     res.status(400).json({ error: `title must be ${COMPOSITION_TITLE_MAX_LENGTH} characters or fewer` });
     return;
   }
+  const page = resolvePage(id, pageId, res);
+  if (!page) return;
 
-  updateCompositionDraft(id, englishText, japanese);
+  updateCompositionPageText(page.id, englishText);
+  if (typeof japaneseText === "string") updateCompositionJapaneseText(id, japanese);
   // 手入力も生成結果と同じ整形（改行・余分な空白を落とす）を通してから保存する
   if (typeof title === "string") updateCompositionTitle(id, sanitizeCompositionTitle(title));
   res.json({ ok: true });
 });
 
-// 「本文から生成」。保存済みの本文からタイトルを作って保存し、生成結果を返す
+// 「本文から生成」。選択中ページの保存済みの本文からタイトルを作って保存し、生成結果を返す
 // （画面側は送信前に自動保存を確定させてからここを叩く＝相談チャットと同じ約束）。
 // 成否のどちらも composition_title_requests に1行残す（/admin/usage の "作文タイトル"）。
 adminRouter.post("/writing/:id/title", async (req, res) => {
@@ -1122,19 +1173,22 @@ adminRouter.post("/writing/:id/title", async (req, res) => {
     res.status(404).json({ error: "composition not found" });
     return;
   }
-  if (!composition.english_text.trim()) {
+  const { pageId } = (req.body ?? {}) as Record<string, unknown>;
+  const page = resolvePage(id, pageId, res);
+  if (!page) return;
+  if (!page.english_text.trim()) {
     res.status(400).json({ error: "本文がまだ空です" });
     return;
   }
 
   const startedAt = Date.now();
   logger.info(
-    `composition-title: start composition=#${id} compositionLen=${composition.english_text.length} ` +
+    `composition-title: start composition=#${id} page=#${page.id} pageLen=${page.english_text.length} ` +
       `model=${config.writingTitleModel}`
   );
 
   try {
-    const result = await generateCompositionTitle(composition.english_text);
+    const result = await generateCompositionTitle(page.english_text);
     updateCompositionTitle(id, result.title);
     insertCompositionTitleLog({
       compositionId: id,
@@ -1170,6 +1224,93 @@ adminRouter.post("/writing/:id/title", async (req, res) => {
   }
 });
 
+// --- ページ（タブ）の追加・リネーム・削除 ------------------------------------
+// docs/plans/composition-pages-tabs.md: 執筆画面のタブ1枚が1ページ。返す `pages` は
+// 画面がタブ列を描き直すのにそのまま使えるよう、並び順そのままの一覧にする。
+
+/// タブ列を描くために画面へ渡す1枚分（本文は含めない。切り替え時に別途取りに行く）。
+function pageSummaries(compositionId: number) {
+  return listCompositionPages(compositionId).map((page) => ({
+    id: page.id,
+    name: page.name,
+    position: page.position,
+  }));
+}
+
+// ページを末尾に足す。上限まで埋まっていたら 409（画面側も「＋」を無効化している）。
+adminRouter.post("/writing/:id/pages", (req, res) => {
+  const id = Number(req.params.id);
+  if (!getComposition(id)) {
+    res.status(404).json({ error: "composition not found" });
+    return;
+  }
+
+  const { name } = (req.body ?? {}) as Record<string, unknown>;
+  if (name !== undefined && typeof name !== "string") {
+    res.status(400).json({ error: "name must be a string" });
+    return;
+  }
+  if (listCompositionPages(id).length >= COMPOSITION_PAGES_MAX) {
+    res.status(409).json({ error: `ページは ${COMPOSITION_PAGES_MAX} 枚までです` });
+    return;
+  }
+
+  const page = insertCompositionPage(id, sanitizePageName(typeof name === "string" ? name : ""));
+  logger.info(`admin: composition #${id} page #${page.id} added (position ${page.position})`);
+  res.json({ page: { id: page.id, name: page.name, position: page.position }, pages: pageSummaries(id) });
+});
+
+// タブ名の変更。空欄も許し（画面は「ページ N」に落とす）、整形後の名前を返す。
+adminRouter.post("/writing/:id/pages/:pageId/rename", (req, res) => {
+  const id = Number(req.params.id);
+  if (!getComposition(id)) {
+    res.status(404).json({ error: "composition not found" });
+    return;
+  }
+
+  const { name } = (req.body ?? {}) as Record<string, unknown>;
+  if (typeof name !== "string") {
+    res.status(400).json({ error: "name is required" });
+    return;
+  }
+  if (name.length > PAGE_NAME_MAX_LENGTH * 4) {
+    res.status(400).json({ error: `name must be ${PAGE_NAME_MAX_LENGTH} characters or fewer` });
+    return;
+  }
+  const page = getCompositionPage(id, Number(req.params.pageId));
+  if (!page) {
+    res.status(404).json({ error: "page not found" });
+    return;
+  }
+
+  const sanitized = sanitizePageName(name);
+  renameCompositionPage(page.id, sanitized);
+  res.json({ name: sanitized, pages: pageSummaries(id) });
+});
+
+// ページの削除。最後の1枚は消せない（409）。
+adminRouter.post("/writing/:id/pages/:pageId/delete", (req, res) => {
+  const id = Number(req.params.id);
+  if (!getComposition(id)) {
+    res.status(404).json({ error: "composition not found" });
+    return;
+  }
+
+  const pageId = Number(req.params.pageId);
+  const result = deleteCompositionPage(id, pageId);
+  if (result === "not-found") {
+    res.status(404).json({ error: "page not found" });
+    return;
+  }
+  if (result === "last-page") {
+    res.status(409).json({ error: "最後のページは削除できません" });
+    return;
+  }
+
+  logger.info(`admin: composition #${id} page #${pageId} deleted`);
+  res.json({ pages: pageSummaries(id) });
+});
+
 // 綴り検査の例外語。単語帳に入れている語（学習者が意図して使う語）と、
 // 画面から「辞書に追加」した語（固有名詞など）は辞書に無くても赤くしない。
 function spellIgnoredWords(): string[] {
@@ -1179,6 +1320,8 @@ function spellIgnoredWords(): string[] {
 // 執筆画面の綴り検査（辞書ベース・AI を呼ばないので /admin/usage には計上しない）。
 // 返すのは本文中のオフセットだけで、修正候補は赤い語をクリックしたときに別途求める
 // （suggest は 1 語 1 秒級で、本文全体にかけると入力のたびに待たされるため）。
+// 検査するのは送られてきた `text` そのものなので、どのページの本文かは問わない
+// （画面側が選択中のページの本文を送る）。
 adminRouter.post("/writing/:id/spellcheck", (req, res) => {
   const id = Number(req.params.id);
   if (!getComposition(id)) {

@@ -59,13 +59,22 @@ function editorPage(
   misspellings: EditorMisspelling[] = [],
   title = ""
 ) {
+  return editorPageWith({ pages: [{ id: 11, name: "", position: 1, text, misspellings }], messages, title });
+}
+
+/// タブまわりを見るとき用。ページ一覧・選択中のページ・上限を差し替えられる。
+function editorPageWith(overrides: Partial<Parameters<typeof renderCompositionEditorPageHtml>[0]>) {
+  const pages = overrides.pages ?? [{ id: 11, name: "", position: 1, text: "", misspellings: [] }];
   return renderCompositionEditorPageHtml({
     id: 7,
-    title,
+    title: "",
     titleMaxLength: 120,
     titleUrl: "/admin/writing/7/title",
-    text,
-    misspellings,
+    pages,
+    activePageId: pages[0].id,
+    pagesUrl: "/admin/writing/7/pages",
+    pageNameMaxLength: 40,
+    maxPages: 20,
     spellcheckUrl: "/admin/writing/7/spellcheck",
     spellSuggestUrl: "/admin/writing/spell-suggest",
     spellIgnoreUrl: "/admin/writing/spell-ignore",
@@ -73,8 +82,9 @@ function editorPage(
     deleteUrl: "/admin/writing/7/delete",
     chatUrl: "/admin/writing/7/chat",
     backHref: "/admin/writing",
-    messages,
+    messages: [],
     chatModel: "claude-sonnet-5",
+    ...overrides,
   });
 }
 
@@ -96,9 +106,9 @@ test("執筆ページ: 紙の上部にタイトル入力欄と本文からの生
   assert.match(html, /<button type="button" class="title-gen" id="title-generate">本文から生成<\/button>/);
   assert.match(html, /"\/admin\/writing\/7\/title"/);
   // タイトルは本文と同じ自動保存に相乗りする
-  assert.match(html, /JSON\.stringify\(\{ englishText: input\.value, title: titleInput\.value \}\)/);
+  assert.match(html, /englishText: input\.value, title: titleInput\.value/);
   // タイトルは罫線紙の中ではなく、紙の外（上）に独立した見出しとして置く
-  assert.match(html, /<div class="title-row">[\s\S]*?<\/div>\s*<div class="sheet">/);
+  assert.match(html, /<div class="title-row">[\s\S]*?<\/div>\s*<div class="paper-stack">/);
   assert.doesNotMatch(html, /<div class="sheet">[\s\S]*?class="title-input"/);
   // 左右の位置は紙の本文と揃え（紙と同じ --pad-x）、紙と同じ地色のもう一枚の紙として浮かせる
   assert.match(html, /\.title-row \{[\s\S]*?padding: 14px var\(--pad-x\);/);
@@ -117,7 +127,7 @@ test("執筆ページ: 紙を横いっぱいに広げ、AI 欄との境界を掴
 
   // 紙はペイン幅いっぱい（中央寄せの max-width を持たない）。左右には少しだけ余白を残す
   assert.doesNotMatch(html, /\.sheet \{[\s\S]*?max-width: 44em;/);
-  assert.match(html, /\.sheet \{[\s\S]*?margin: 0 24px 64px;/);
+  assert.match(html, /\.paper-stack \{[^}]*margin: 0 24px 64px;/);
   // 仕切りには掴めることが分かるつまみ（左右の矢印）を出す
   assert.match(html, /\.resizer::after \{[\s\S]*?background-image: url\("data:image\/svg\+xml,/);
   assert.match(html, /cursor: col-resize;/);
@@ -157,7 +167,9 @@ test("執筆ページ: 綴りの下敷きを紙の背後に敷き、標準のス
   // 折り返し位置がずれないよう、字組みは textarea と下敷きへ同時に当てる
   assert.match(html, /\.paper, \.paper-backdrop \{[\s\S]*?white-space: pre-wrap;/);
   assert.match(html, /"\/admin\/writing\/7\/spellcheck"/);
-  assert.match(html, /var spans = \[\{"start":2,"end":9,"word":"recieve"\}\];/);
+  // 赤線の位置はページごとに持つ（タブを切り替えても混ざらない）
+  assert.match(html, /"spans":\[\{"start":2,"end":9,"word":"recieve"\}\]/);
+  assert.match(html, /var spans = currentPage\(\)\.spans;/);
 });
 
 test("執筆ページ: 初期の綴り誤りを埋め込んでも <script> を閉じさせない", () => {
@@ -177,7 +189,7 @@ test("執筆ページ: 修正候補のポップオーバーと送信先を置く
 });
 
 test("執筆ページ: 綴り誤りが無ければ空配列を埋め込む", () => {
-  assert.match(editorPage("I received a letter."), /var spans = \[\];/);
+  assert.match(editorPage("I received a letter."), /"spans":\[\]/);
 });
 
 test("執筆ページ: 左の紙と右のチャット欄・送信先・モデル名を置く", () => {
@@ -220,6 +232,122 @@ test("執筆ページ: 添削（Review）の UI は置かない", () => {
   assert.doesNotMatch(html, /Review/);
   assert.doesNotMatch(html, /japaneseText/);
   assert.doesNotMatch(html, /Round \d/);
+});
+
+// --- 紙のタブ（docs/plans/composition-pages-tabs.md）--------------------------
+
+function tabbedPage(overrides: Partial<Parameters<typeof renderCompositionEditorPageHtml>[0]> = {}) {
+  return editorPageWith({
+    pages: [
+      { id: 11, name: "下書き", position: 1, text: "First.", misspellings: [] },
+      { id: 12, name: "", position: 2, text: "Second.", misspellings: [] },
+    ],
+    activePageId: 11,
+    ...overrides,
+  });
+}
+
+test("タブ: タイトルカードと紙の間にタブ列を置き、選択中のタブに aria-selected を付ける", () => {
+  const html = tabbedPage();
+
+  assert.match(html, /<div class="tabs" id="tabs" role="tablist">/);
+  assert.match(html, /<div class="tab is-active" data-page-id="11"[^>]*aria-selected="true"/);
+  assert.match(html, /<div class="tab" data-page-id="12"[^>]*aria-selected="false"/);
+  // タブ列は紙の上（タイトルカードの下）
+  assert.match(html, /<div class="tabs"[\s\S]*?<div class="sheet">/);
+  // 選択中のページの本文が紙に載る
+  assert.match(html, /<textarea id="body"[\s\S]*?>First\.<\/textarea>/);
+});
+
+test("タブ: 名前が空のタブは並び順から「ページ N」を出す", () => {
+  const html = tabbedPage();
+
+  assert.match(html, /<span class="tab-name">下書き<\/span>/);
+  assert.match(html, /<span class="tab-name">ページ 2<\/span>/);
+  // スクリプト側の描き直しも同じ規則
+  assert.match(html, /'ページ ' \+ item\.position/);
+});
+
+test("タブ: タブ名の HTML 特殊文字をエスケープする", () => {
+  const html = editorPageWith({
+    pages: [{ id: 11, name: '<img src=x> & "y"', position: 1, text: "", misspellings: [] }],
+    activePageId: 11,
+  });
+
+  assert.doesNotMatch(html, /<span class="tab-name"><img src=x>/);
+  assert.match(html, /&lt;img src=x&gt; &amp; &quot;y&quot;/);
+});
+
+test("タブ: 選択中のタブは紙と同じ地色で下辺が無く、影は親にまとめて 1 つだけ落とす", () => {
+  const html = tabbedPage();
+
+  // 選択中＝紙そのもの（同じ地色・紙へつながるよう下辺の線は消す）
+  assert.match(html, /\.tab\.is-active \{[^}]*background: #FFFDF7;[^}]*border-bottom-color: transparent;/);
+  // 非選択＝一段沈んだ色と境界線で、後ろに重なった別紙に見せる
+  assert.match(html, /\.tab \{[^}]*background: #F5EFE1;[^}]*border: 1px solid #DFDACB;/);
+  // 影はタブ列と紙を包む親に 1 つだけ。紙の側からは外す
+  assert.match(html, /\.paper-stack \{[^}]*box-shadow: 0 1px 2px/);
+  assert.doesNotMatch(html, /\.sheet \{[^}]*box-shadow:/);
+  assert.match(html, /\.tabs \{[^}]*margin-bottom: 0;/);
+  // タブの字は UI 部品ではなく紙の一部に見せる（本文と同じセリフ体）
+  assert.match(html, /\.tab \{[^}]*"Iowan Old Style", Georgia/);
+  // 狭いときは折り返さず横スクロール
+  assert.match(html, /\.tabs \{[^}]*overflow-x: auto;/);
+});
+
+test("タブ: 削除の「×」は選択中のタブにだけ出し、最後の 1 枚では押せない", () => {
+  const many = tabbedPage();
+  assert.match(many, /<div class="tab is-active" data-page-id="11"[\s\S]*?<button type="button" class="tab-del" data-page-id="11"[^>]*>×<\/button>/);
+  assert.doesNotMatch(many, /class="tab-del" data-page-id="12"/);
+  assert.doesNotMatch(many, /class="tab-del"[^>]*disabled/);
+
+  const single = editorPage("text");
+  assert.match(single, /class="tab-del"[^>]*disabled/);
+});
+
+test("タブ: 「＋」はページ数が上限に達したら押せない", () => {
+  assert.doesNotMatch(tabbedPage(), /class="tab-add"[^>]*disabled/);
+  assert.match(tabbedPage({ maxPages: 2 }), /class="tab-add"[^>]*disabled/);
+});
+
+test("タブ: 切り替えは自動保存を確定させてから本文を差し替える", () => {
+  const html = tabbedPage();
+
+  assert.match(html, /function switchTo\(id\) \{[\s\S]*?save\(\)\.then\(function \(\) \{\s*showPage\(id\);/);
+  // 保存は「いま選択中のページ」宛て
+  assert.match(html, /JSON\.stringify\(\{ pageId: activeId, englishText: input\.value/);
+  // 本文と赤線はページごとに持つ
+  assert.match(html, /var pages = \[\{"id":11/);
+  assert.match(html, /"text":"First\.","spans":\[\]/);
+});
+
+test("タブ: 選択中のページはブラウザに覚えさせ、次に開いたときに復元する", () => {
+  const html = tabbedPage();
+
+  assert.match(html, /var ACTIVE_KEY = 'writing:' \+ 7 \+ ':activePage';/);
+  assert.match(html, /localStorage\.setItem\(ACTIVE_KEY/);
+  // 消えたページを指していたらサーバの既定（先頭）のままにする
+  assert.match(html, /if \(remembered && remembered !== activeId && pageById\(remembered\)\) showPage\(remembered\);/);
+});
+
+test("タブ: 追加・リネーム・削除の送信先を持つ", () => {
+  const html = tabbedPage();
+
+  assert.match(html, /var pagesUrl = "\/admin\/writing\/7\/pages";/);
+  assert.match(html, /pagesUrl \+ '\/' \+ id \+ '\/rename'/);
+  assert.match(html, /pagesUrl \+ '\/' \+ id \+ '\/delete'/);
+  // ダブルクリック（と F2）でその場が入力欄になる
+  assert.match(html, /tabsEl\.addEventListener\('dblclick'/);
+  assert.match(html, /if \(event\.key === 'F2'\)/);
+  // 本文の入ったページを消すときは確認する
+  assert.match(html, /if \(target\.text\.trim\(\) && !confirm\(/);
+});
+
+test("タブ: チャットとタイトル生成には選択中のページを伝える", () => {
+  const html = tabbedPage();
+
+  assert.match(html, /JSON\.stringify\(\{ message: text, pageId: activeId \}\)/);
+  assert.match(html, /JSON\.stringify\(\{ pageId: activeId \}\)/);
 });
 
 test("執筆ページ: 本文の HTML 特殊文字をエスケープする", () => {

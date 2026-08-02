@@ -777,12 +777,12 @@ export function insertComposition(explanationLanguage: string): number {
   return insertCompositionTx(explanationLanguage);
 }
 
-/// 下書き（英文・意図）を上書きする。単一ユーザー運用のため楽観ロックは持たず最終書き込み優先。
-/// 該当行が無ければ false（削除済みの作文への保存要求）。
-export function updateCompositionDraft(id: number, englishText: string, japaneseText: string): boolean {
+/// 意図（japanese_text）だけを上書きする。本文はページ側が持つので、こちらを触らずに済ませる
+/// （まとめて UPDATE すると、直前にミラーした english_text を古い値へ巻き戻してしまう）。
+export function updateCompositionJapaneseText(id: number, japaneseText: string): boolean {
   const result = db
-    .prepare("UPDATE compositions SET english_text = ?, japanese_text = ?, updated_at = ? WHERE id = ?")
-    .run(englishText, japaneseText, new Date().toISOString(), id);
+    .prepare("UPDATE compositions SET japanese_text = ?, updated_at = ? WHERE id = ?")
+    .run(japaneseText, new Date().toISOString(), id);
   return result.changes > 0;
 }
 

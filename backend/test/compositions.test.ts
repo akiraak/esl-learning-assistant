@@ -35,20 +35,16 @@ test("insertComposition: 1枚目のページが一緒に作られる（作文は
   assert.equal(pages[0].english_text, "");
 });
 
-test("updateCompositionDraft: 本文を上書きし updated_at を進める", () => {
+test("updateCompositionJapaneseText: 意図だけを上書きし、本文のミラーには触らない", () => {
   const id = db.insertComposition("ja");
-  const before = db.getComposition(id)!;
+  db.updateCompositionPageText(db.listCompositionPages(id)[0].id, "I go to school.");
 
-  assert.equal(db.updateCompositionDraft(id, "I go to school.", "学校へ行く。"), true);
+  assert.equal(db.updateCompositionJapaneseText(id, "学校へ行く。"), true);
 
-  const after = db.getComposition(id)!;
-  assert.equal(after.english_text, "I go to school.");
-  assert.equal(after.japanese_text, "学校へ行く。");
-  assert.ok(after.updated_at >= before.updated_at);
-});
-
-test("updateCompositionDraft: 存在しない ID は false（削除済みへの保存要求）", () => {
-  assert.equal(db.updateCompositionDraft(999999, "x", "y"), false);
+  const row = db.getComposition(id)!;
+  assert.equal(row.japanese_text, "学校へ行く。");
+  assert.equal(row.english_text, "I go to school.");
+  assert.equal(db.updateCompositionJapaneseText(999999, "x"), false);
 });
 
 test("insertComposition: タイトルは空文字で始まる（空欄なら一覧は本文の先頭を出す）", () => {
@@ -57,7 +53,8 @@ test("insertComposition: タイトルは空文字で始まる（空欄なら一�
 
 test("updateCompositionTitle: タイトルだけを更新し、本文には触らない", () => {
   const id = db.insertComposition("ja");
-  db.updateCompositionDraft(id, "I went to school.", "学校へ行った。");
+  db.updateCompositionPageText(db.listCompositionPages(id)[0].id, "I went to school.");
+  db.updateCompositionJapaneseText(id, "学校へ行った。");
 
   assert.equal(db.updateCompositionTitle(id, "A Day at School"), true);
 
@@ -73,9 +70,9 @@ test("updateCompositionTitle: 存在しない ID は false", () => {
 
 test("listCompositions: 更新日時の新しい順に並ぶ", () => {
   const older = db.insertComposition("ja");
-  db.updateCompositionDraft(older, "Older draft.", "古い方。");
+  db.updateCompositionPageText(db.listCompositionPages(older)[0].id, "Older draft.");
   const newer = db.insertComposition("ja");
-  db.updateCompositionDraft(newer, "Newer draft.", "新しい方。");
+  db.updateCompositionPageText(db.listCompositionPages(newer)[0].id, "Newer draft.");
 
   const rows = db.listCompositions(100);
   const newerRow = rows.find((row) => row.id === newer)!;
@@ -247,10 +244,10 @@ test("deleteCompositionPage: 無いページ・他の作文のページは not-f
 
 test("migrateCompositionsToPages: ページが0件の作文に1枚作って本文を移す", () => {
   const id = db.insertComposition("ja");
-  db.updateCompositionDraft(id, "Legacy body.", "移行前の本文。");
-  // ページ導入前の状態を作る（この作文だけページを持たない）。
-  // db.ts は削除 API を公開していないので、同じ SQLite ファイルを別接続で開いて直接消す。
+  // ページ導入前の状態を作る（本文は compositions 側にあり、ページは 1 枚も無い）。
+  // db.ts はこの形を作る API を持たないので、同じ SQLite ファイルを別接続で開いて直接書く。
   const raw = new (require("better-sqlite3"))(path.join(dataDir, "db.sqlite"));
+  raw.prepare("UPDATE compositions SET english_text = ? WHERE id = ?").run("Legacy body.", id);
   raw.prepare("DELETE FROM composition_pages WHERE composition_id = ?").run(id);
   raw.close();
   assert.equal(db.listCompositionPages(id).length, 0);
