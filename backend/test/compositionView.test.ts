@@ -437,7 +437,9 @@ test("執筆ページ: 選択範囲の翻訳の紙片と POST 先を持つ", () 
   assert.match(html, /var translateUrl = "\/admin\/writing\/7\/translate";/);
   // 選択が確定してから投げる（引きずっている最中に何度も叩かない）
   assert.match(html, /input\.addEventListener\('select', onSelectionChanged\)/);
-  assert.match(html, /setTimeout\(runTranslate, 250\)/);
+  // 選択が固定されてから1秒後に投げる（docs/plans/archive/writing-translate-delay.md）
+  assert.match(html, /var TRANSLATE_DELAY_MS = 1000;/);
+  assert.match(html, /transTimer = setTimeout\(runTranslate, TRANSLATE_DELAY_MS\)/);
   // 位置決めは下敷きの選択マークから取る（textarea 自体からは座標が取れない）
   assert.match(html, /backdrop\.querySelector\('mark\[data-sel="1"\]'\)/);
 });

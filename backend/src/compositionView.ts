@@ -1031,6 +1031,9 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
       var translateUrl = ${jsonForScript(page.translateUrl)};
       var TRANSLATE_MAX_LENGTH = ${WRITING_TRANSLATE_MAX_LENGTH};
       var TRANSLATE_CONTEXT_CHARS = ${WRITING_TRANSLATE_CONTEXT_CHARS};
+      // 選択が固定されたと見なすまでの待ち。選択が動くたびに数え直すので、
+      // 読み返しながら範囲を伸ばしている途中では投げない
+      var TRANSLATE_DELAY_MS = 1000;
       var transPop = document.getElementById('trans-pop');
       var transTimer = null;
       var transAbort = null;
@@ -1153,7 +1156,7 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
       }
 
       /// 選択が変わったときの入口。選択があれば翻訳、無ければ従来どおり綴り候補。
-      /// 引きずっている最中に何度も投げないよう 250ms 待つ。
+      /// 引きずっている最中に何度も投げないよう、選択が止まってから TRANSLATE_DELAY_MS 待つ。
       function onSelectionChanged() {
         var start = input.selectionStart;
         var end = input.selectionEnd;
@@ -1168,7 +1171,7 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
         selRange = { start: start, end: end };
         typing = false;
         renderMarks();
-        transTimer = setTimeout(runTranslate, 250);
+        transTimer = setTimeout(runTranslate, TRANSLATE_DELAY_MS);
       }
 
       input.addEventListener('select', onSelectionChanged);

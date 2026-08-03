@@ -1,5 +1,12 @@
 # DONE
 
+- [x] 2026-08-02 選択翻訳を始めるのを、選択が固定されてから1秒後にした
+      [plan](docs/plans/archive/writing-translate-delay.md)
+      待ちが 250ms と短く、読み返しながら範囲を伸ばしている途中で投げてしまい、使わない訳のために
+      モデルを呼んでいた。`compositionView.ts` の待ちを `TRANSLATE_DELAY_MS = 1000` として
+      名前を付け、1 秒に伸ばした。数え方は今までどおり「最後に選択が変わってから」で、選択が
+      動くたびにタイマーを引き直す（ドラッグ中や shift+矢印で伸ばしている間は始まらない）。
+
 - [x] 2026-08-02 選択翻訳の和訳をコピーできるようにした
       [plan](docs/plans/archive/writing-translate-copy.md)
       和訳の紙片（`.trans-pop`）に、チャットの英文カードと同じ `.copy-btn` を添えた。
