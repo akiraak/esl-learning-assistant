@@ -6,6 +6,7 @@ import {
   compositionParagraphsHtml,
   compositionPreview,
   renderCompositionEditorPageHtml,
+  wordCountLabel,
   type CompositionChatMessageView,
   type EditorMisspelling,
 } from "../src/compositionView";
@@ -466,4 +467,32 @@ test("執筆ページ: 和訳のときだけコピーボタンを添える", () 
   assert.match(html, /button\.className = 'copy-btn';[\s\S]*?copyText\(text\)/);
   // 押しても本文の選択が解けないよう mousedown で拾って既定動作を止める
   assert.match(html, /button\.addEventListener\('mousedown', function \(event\) \{\s*event\.preventDefault\(\);/);
+});
+
+// docs/plans/writing-word-count.md: ツールバーの右上に語数を出す。
+test("wordCountLabel: 1語のときだけ単数形、選択中は「選択」を前に付ける", () => {
+  assert.equal(wordCountLabel(0), "0 words");
+  assert.equal(wordCountLabel(1), "1 word");
+  assert.equal(wordCountLabel(12), "12 words");
+  assert.equal(wordCountLabel(12, true), "選択 12 words");
+});
+
+test("執筆ページ: ツールバーに語数を出し、本文と選択に追随させる", () => {
+  const html = editorPage("Last weekend I visited my grandmother.");
+
+  // 初期表示はサーバが数えて埋める（開いた直後にちらつかせない）
+  assert.match(html, /<span class="status" id="word-count">6 words<\/span>/);
+  assert.match(html, /<span class="status" id="save-status">保存済み<\/span>/);
+  // 画面側もサーバと同じ規則で数える
+  assert.match(html, /var WORD_RE = new RegExp\("\[\\\\p\{L\}/);
+  // 選択中はその範囲の語数に切り替える
+  assert.match(html, /var text = selected \? input\.value\.slice\(selRange\.start, selRange\.end\) : input\.value;/);
+  // 本文か選択が動けば必ず通る renderMarks で数え直す
+  assert.match(html, /backdrop\.replaceChildren\(fragment\);\s*\/\/[^\n]*\n\s*updateWordCount\(\);/);
+});
+
+test("執筆ページ: ページを切り替えたら前のページの選択を持ち越さない", () => {
+  const html = editorPage("Last weekend I visited my grandmother.");
+
+  assert.match(html, /closePopover\(\);\s*\/\/[^\n]*\n\s*clearSelectionMark\(\);\s*\n\s*renderTabs\(\);/);
 });

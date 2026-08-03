@@ -1,5 +1,10 @@
 import { marked } from "marked";
-import { WRITING_TRANSLATE_CONTEXT_CHARS, WRITING_TRANSLATE_MAX_LENGTH } from "./composition";
+import {
+  WORD_PATTERN_SOURCE,
+  WRITING_TRANSLATE_CONTEXT_CHARS,
+  WRITING_TRANSLATE_MAX_LENGTH,
+  countWords,
+} from "./composition";
 
 // 作文（compositions）の表示ロジック。admin.ts は db.ts を読み込むためテストから import できない。
 // 見出し・プレビューの整形と執筆画面の HTML 生成といった純粋な部分をここに置き、
@@ -195,6 +200,12 @@ function tabsHtml(page: CompositionEditorPage, activeId: number): string {
   );
 }
 
+/// ツールバー右上に出す語数の文言。1 語のときだけ単数形にする。
+/// 選択中はその範囲の語数に切り替わるので、どちらの数かが分かるよう「選択」を前に付ける。
+export function wordCountLabel(count: number, selected = false): string {
+  return `${selected ? "選択 " : ""}${count} ${count === 1 ? "word" : "words"}`;
+}
+
 /// 紙と AI 欄の仕切りのつまみに描く左右の矢印（CSS の url() へ直接埋める data URI 用）。
 /// 外部ファイルを増やさずに済むよう SVG をそのまま持ち、CSS で壊れる文字だけ退避する。
 function resizeGripSvg(): string {
@@ -283,6 +294,8 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
     .toolbar a:hover { text-decoration: underline; }
     .toolbar .spacer { flex: 1; }
     .toolbar .status { color: ${PAPER_FAINT}; font-size: 11.5px; }
+    /* 語数と保存状態の区切り。間隔は .toolbar の gap より詰める（ひと続きの表示に見せる） */
+    .toolbar .sep { margin: 0 -8px; }
     .toolbar form { margin: 0; display: flex; }
     .toolbar button {
       font: inherit; font-size: 12px; padding: 3px 11px; min-height: 28px; border-radius: 5px;
@@ -582,6 +595,8 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
   <div class="toolbar">
     <a href="${escapeHtml(page.backHref)}">← 作文一覧</a>
     <span class="spacer"></span>
+    <span class="status" id="word-count">${wordCountLabel(countWords(activeTab.text))}</span>
+    <span class="status sep" aria-hidden="true">・</span>
     <span class="status" id="save-status">保存済み</span>
     <form method="post" action="${escapeHtml(page.deleteUrl)}"
           onsubmit="return confirm('この作文を削除します。よろしいですか？')">
@@ -844,6 +859,8 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
         // 末尾の改行が潰れて下の行がずれないよう、最後に空白を1つ足す
         fragment.appendChild(document.createTextNode(text.slice(cursor) + ' '));
         backdrop.replaceChildren(fragment);
+        // 本文か選択が動けば必ずここを通るので、語数の更新もまとめてここで行う
+        updateWordCount();
       }
 
       /// 判定はサーバ側。返答待ちの間に打鍵が進んでいたらオフセットが食い違うので、
@@ -1176,6 +1193,23 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
 
       input.addEventListener('select', onSelectionChanged);
 
+      // --- ワード数 ---------------------------------------------------------
+      // 数え方はサーバと同じ規則（composition.ts の WORD_PATTERN_SOURCE）を使い回す。
+      // 普段は見ているページ1枚の語数、英文を選んでいる間はその選択範囲の語数を出す。
+      var wordCountEl = document.getElementById('word-count');
+      var WORD_RE = new RegExp(${jsonForScript(WORD_PATTERN_SOURCE)}, 'gu');
+
+      function countWords(text) {
+        return (text.match(WORD_RE) || []).length;
+      }
+
+      function updateWordCount() {
+        var selected = !!selRange;
+        var text = selected ? input.value.slice(selRange.start, selRange.end) : input.value;
+        var count = countWords(text);
+        wordCountEl.textContent = (selected ? '選択 ' : '') + count + ' ' + (count === 1 ? 'word' : 'words');
+      }
+
       // 書き続ける・別の場所を触る・紙をスクロールしたら閉じる（浮いたまま残さない）
       input.addEventListener('input', closePopover);
       input.addEventListener('input', clearSelectionMark);
@@ -1263,6 +1297,8 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
         spans = next.spans;
         typing = false;
         closePopover();
+        // 前のページで選んでいた範囲は持ち越さない（和訳の紙片も閉じる）
+        clearSelectionMark();
         renderTabs();
         renderMarks();
         autogrow();

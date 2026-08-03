@@ -21,6 +21,16 @@ export const WRITING_TRANSLATE_MAX_LENGTH = 1000;
 /// 選択範囲の翻訳でモデルへ添える前後の文脈の長さ（各方向）。
 export const WRITING_TRANSLATE_CONTEXT_CHARS = 200;
 
+/// 語数の数え方（執筆画面の右上に出すワード数）。文字か数字のかたまりを1語とし、
+/// 語中のアポストロフィ・ハイフンは繋いだままにする（don't / well-known は 1 語）。
+/// 画面側の JS もこの正規表現の source をそのまま使うので、規則はここだけにある。
+export const WORD_PATTERN_SOURCE = "[\\p{L}\\p{N}]+(?:['’\\-][\\p{L}\\p{N}]+)*";
+
+/// 英文の語数。句読点や記号だけのかたまりは数えない。
+export function countWords(text: string): number {
+  return (text.match(new RegExp(WORD_PATTERN_SOURCE, "gu")) ?? []).length;
+}
+
 /// タブ名の整形（改行は空白に潰し、前後の空白を落とし、上限で切る）。
 /// 空文字も許す（そのときタブには「ページ N」を出す）。
 export function sanitizePageName(raw: string): string {
