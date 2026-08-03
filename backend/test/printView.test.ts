@@ -50,6 +50,9 @@ test("renderPrintPageHtml: lang・タイトル・meta・本文・戻りリンク
   assert.match(html, /@media print[\s\S]*\.toolbar \{ display: none; \}/);
   // 印刷時のみのページ番号（@page マージンボックス）が入っていること
   assert.match(html, /@bottom-center[\s\S]*counter\(page\) " \/ " counter\(pages\)/);
+  // 印刷時は画面より小さく組む（本文 10.5pt）。画面用の px 指定は据え置き
+  assert.match(html, /@media print[\s\S]*\.body p, \.body li \{ font-size: 10\.5pt; \}/);
+  assert.match(html, /\.body p, \.body li \{ font-size: 16px; line-height: 1\.9; \}/);
 });
 
 test("renderPrintPageHtml: タイトル・meta はエスケープし、本文HTMLはそのまま通す", () => {

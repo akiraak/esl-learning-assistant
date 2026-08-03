@@ -1,5 +1,14 @@
 # DONE
 
+- [x] 2026-08-02 管理画面の印刷用ページで、印刷時の文字を一段小さくした
+      [plan](docs/plans/archive/print-view-font-size.md)
+      紙に出すと本文 12pt が大きすぎ、ページ数も無駄に増えていたので、`printView.ts` の
+      `@media print` のサイズだけを下げた（本文 12pt → 10.5pt、見出しも比例して 13.5/12.5/11.5/11pt）。
+      画面表示の px 指定は据え置きなので「印刷時だけ小さい」状態になる。行間 `line-height: 1.9` は
+      相対値なので触っていない（行送りも文字と同じ比率で詰まる）。あわせてページ番号のノンブルを
+      10pt → 9pt にした（本文と同等以上だと紙面で目立ちすぎるため）。フォント指定
+      （Georgia + Hiragino Mincho ProN / Yu Mincho のフォールバック）は変更していない。
+
 - [x] 2026-08-02 執筆画面のチャットで AI の返答を生成に合わせて逐次表示するようにした
       [plan](docs/plans/archive/chat-streaming-survey.md)
       返答が出来上がるまで「考え中…」のままだったので、`client.messages.stream()` に切り替え、

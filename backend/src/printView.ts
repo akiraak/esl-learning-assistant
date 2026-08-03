@@ -91,18 +91,20 @@ export function renderPrintPageHtml(page: PrintPage): string {
       @bottom-center {
         content: counter(page) " / " counter(pages);
         font-family: Georgia, "Hiragino Mincho ProN", "Yu Mincho", "Times New Roman", serif;
-        font-size: 10pt;
+        font-size: 9pt;
         color: #6B7280;
       }
     }
+    /* 印刷時は画面より一段小さく組む（本文 10.5pt）。行間は相対値のまま
+       （line-height: 1.9）なので、行送りも文字と同じ比率で詰まる。 */
     @media print {
       .toolbar { display: none; }
       article { max-width: none; padding: 0; }
-      article > h1 { font-size: 16pt; }
-      .body p, .body li { font-size: 12pt; }
-      .body h1 { font-size: 14pt; }
-      .body h2 { font-size: 13pt; }
-      .body h3 { font-size: 12.5pt; }
+      article > h1 { font-size: 13.5pt; }
+      .body p, .body li { font-size: 10.5pt; }
+      .body h1 { font-size: 12.5pt; }
+      .body h2 { font-size: 11.5pt; }
+      .body h3 { font-size: 11pt; }
     }
     ${page.extraStyle ?? ""}
   </style>
