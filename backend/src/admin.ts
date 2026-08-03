@@ -90,7 +90,7 @@ import {
   renderCompositionEditorPageHtml,
   renderCompositionMarkdown,
 } from "./compositionView";
-import { CHAT_MESSAGE_MAX_LENGTH, generateChatReply } from "./compositionChat";
+import { CHAT_MESSAGE_MAX_LENGTH, generateChatReplyStream } from "./compositionChat";
 import {
   COMPOSITION_TITLE_MAX_LENGTH,
   generateCompositionTitle,
@@ -1118,8 +1118,33 @@ adminRouter.post("/writing/:id/chat", async (req, res) => {
       `historyMessages=${history.length} pageLen=${page.english_text.length} model=${config.writingChatModel}`
   );
 
+  // 返答は chunked の NDJSON（1行1JSON）で流す。1行は
+  //   {"t":"delta","html":...} 途中経過 / {"t":"done","html":...} 確定 / {"t":"error","message":...}
+  // Markdown → HTML の変換はここ（サーバ）でしか持っていないので、途中経過も
+  // 「そこまでの全文」を毎回 marked に通した HTML を送り、画面側は丸ごと差し替える。
+  res.status(200);
+  res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("X-Accel-Buffering", "no"); // プロキシに溜め込ませない
+  res.flushHeaders();
+
+  // タブを閉じられたら生成も止める（課金を続けない）。中断時は保存もしない。
+  // 見るのは res 側。req の close はボディを読み終えた時点で出るので切断の合図にならない。
+  const controller = new AbortController();
+  res.on("close", () => {
+    if (!res.writableEnded) controller.abort();
+  });
+
+  const writeEvent = (event: Record<string, unknown>) => {
+    if (res.writableEnded) return;
+    res.write(`${JSON.stringify(event)}\n`);
+  };
+
   try {
-    const result = await generateChatReply(page.english_text, history, question);
+    const result = await generateChatReplyStream(page.english_text, history, question, {
+      signal: controller.signal,
+      onText: (fullText) => writeEvent({ t: "delta", html: renderCompositionMarkdown(fullText) }),
+    });
     // 生成が成功したときだけ質問も残す（失敗時に片側だけ残ると次回の文脈が壊れるため）
     insertCompositionChatMessage({ compositionId: id, role: "user", content: question });
     insertCompositionChatMessage({
@@ -1133,13 +1158,18 @@ adminRouter.post("/writing/:id/chat", async (req, res) => {
     });
 
     logger.info(`composition-chat: success composition=#${id} latencyMs=${Date.now() - startedAt}`);
-    res.json({ replyHtml: renderCompositionMarkdown(result.text) });
+    writeEvent({ t: "done", html: renderCompositionMarkdown(result.text) });
+    res.end();
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    logger.error(
-      `composition-chat: failed composition=#${id} latencyMs=${Date.now() - startedAt} error=${errorMessage}`
+    const aborted = controller.signal.aborted;
+    logger[aborted ? "info" : "error"](
+      `composition-chat: ${aborted ? "aborted" : "failed"} composition=#${id} ` +
+        `latencyMs=${Date.now() - startedAt} error=${errorMessage}`
     );
-    res.status(500).json({ error: errorMessage });
+    // ヘッダはもう送っているので、エラーもストリームの1行として伝える
+    if (!aborted) writeEvent({ t: "error", message: errorMessage });
+    res.end();
   }
 });
 

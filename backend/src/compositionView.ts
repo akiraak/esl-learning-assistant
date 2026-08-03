@@ -1455,6 +1455,46 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
         return wrap;
       }
 
+      // 返答は NDJSON（1行1JSON）で少しずつ届く。1行は
+      //   {"t":"delta","html":...} 途中経過 / {"t":"done","html":...} 確定 / {"t":"error","message":...}
+      // html は毎回「そこまでの全文」を整形したものなので、吹き出しごと差し替えれば良い。
+      // コピーボタンは done のときだけ付ける（途中で付けると差し替えのたびに増える）。
+      function applyStreamEvent(pending, line) {
+        if (!line) return;
+        var event;
+        try { event = JSON.parse(line); } catch (err) { return; }
+        if (event.t === 'error') throw new Error(event.message || 'chat failed');
+        if (typeof event.html !== 'string') return;
+        pending.classList.remove('pending');
+        pending.querySelector('.bubble').innerHTML = event.html;
+        if (event.t === 'done') decorateCopyTargets(pending);
+        scrollLog();
+      }
+
+      /// バッファを行に切って反映し、未完了の末尾（改行がまだ来ていない分）を返す
+      function consumeStream(pending, buffer, isEnd) {
+        var lines = buffer.split('\\n');
+        var rest = isEnd ? '' : lines.pop();
+        for (var i = 0; i < lines.length; i++) applyStreamEvent(pending, lines[i].trim());
+        return rest;
+      }
+
+      function readStream(reader, pending) {
+        var decoder = new TextDecoder();
+        var buffer = '';
+        function step() {
+          return reader.read().then(function (chunk) {
+            if (chunk.done) {
+              consumeStream(pending, buffer + decoder.decode(), true);
+              return;
+            }
+            buffer = consumeStream(pending, buffer + decoder.decode(chunk.value, { stream: true }), false);
+            return step();
+          });
+        }
+        return step();
+      }
+
       function ask() {
         var text = question.value.trim();
         if (!text || sending) return;
@@ -1473,15 +1513,17 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
             body: JSON.stringify({ message: text, pageId: activeId })
           });
         }).then(function (res) {
-          return res.json().then(function (data) {
-            if (!res.ok) throw new Error(data.error || 'chat failed');
-            return data;
-          });
-        }).then(function (data) {
-          pending.classList.remove('pending');
-          pending.querySelector('.bubble').innerHTML = data.replyHtml;
-          decorateCopyTargets(pending);
-          scrollLog();
+          // 入口の検証エラー（404/400）だけは JSON がそのまま返る
+          if (!res.ok) {
+            return res.json().catch(function () { return {}; }).then(function (data) {
+              throw new Error(data.error || 'chat failed');
+            });
+          }
+          if (!res.body || !res.body.getReader) {
+            // ストリームを読めない環境では、届いた全文を最後にまとめて反映する
+            return res.text().then(function (body) { return consumeStream(pending, body, true); });
+          }
+          return readStream(res.body.getReader(), pending);
         }).catch(function (error) {
           pending.remove();
           var note = document.createElement('p');

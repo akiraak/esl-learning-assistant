@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   buildChatSystemPrompt,
+  createTextFlusher,
   sanitizeChatHistory,
   CHAT_COMPOSITION_MAX_LENGTH,
   CHAT_HISTORY_MAX_MESSAGES,
@@ -79,4 +80,64 @@ test("履歴: 先頭が assistant のときはそれを落とす（API は user 
 
 test("履歴: 空配列はそのまま空（初回の質問）", () => {
   assert.deepEqual(sanitizeChatHistory([]), []);
+});
+
+// --- 逐次表示の間引き（createTextFlusher）---------------------------------
+// 生成中は delta が細かく届くが、1つごとに Markdown を組み直して送るのは無駄なので間引く。
+// 「最初の1回はすぐ出る」「間隔内は溜める」「最後は必ず出る」が守れているかを見る。
+
+function flusherWithClock(intervalMs = 80) {
+  const emitted: string[] = [];
+  let clock = 1000;
+  const flusher = createTextFlusher((text) => emitted.push(text), {
+    intervalMs,
+    now: () => clock,
+  });
+  return { emitted, flusher, advance: (ms: number) => (clock += ms) };
+}
+
+test("間引き: 最初の push はすぐ通知する（待たせない）", () => {
+  const { emitted, flusher } = flusherWithClock();
+
+  flusher.push("こん");
+
+  assert.deepEqual(emitted, ["こん"]);
+});
+
+test("間引き: 間隔内の push は溜め、間隔が空けば最新の全文を通知する", () => {
+  const { emitted, flusher, advance } = flusherWithClock(80);
+
+  flusher.push("こん");
+  advance(10);
+  flusher.push("こんに");
+  advance(10);
+  flusher.push("こんにち");
+  assert.deepEqual(emitted, ["こん"], "間隔内は溜めるだけ");
+
+  advance(80);
+  flusher.push("こんにちは");
+
+  // 途中の "こんに" / "こんにち" は飛ばし、最新の全文だけを送る
+  assert.deepEqual(emitted, ["こん", "こんにちは"]);
+});
+
+test("間引き: flush で溜まっている分を必ず出す（最後の1回を落とさない）", () => {
+  const { emitted, flusher, advance } = flusherWithClock(80);
+
+  flusher.push("こん");
+  advance(10);
+  flusher.push("こんにちは");
+  flusher.flush();
+
+  assert.deepEqual(emitted, ["こん", "こんにちは"]);
+});
+
+test("間引き: 溜まっていなければ flush しても重複して出さない", () => {
+  const { emitted, flusher } = flusherWithClock(80);
+
+  flusher.push("こんにちは");
+  flusher.flush();
+  flusher.flush();
+
+  assert.deepEqual(emitted, ["こんにちは"]);
 });

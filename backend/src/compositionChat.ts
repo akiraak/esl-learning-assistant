@@ -61,41 +61,106 @@ export interface ChatReplyResult {
   outputTokens: number;
 }
 
-export async function generateChatReply(
-  compositionText: string,
-  history: ChatMessage[],
-  question: string
-): Promise<ChatReplyResult> {
-  const messages: Anthropic.Messages.MessageParam[] = [
+/// 逐次表示で途中経過を通知する間隔。delta 1つごとに Markdown を組み直すのは無駄なので、
+/// この間隔まで通知を間引く（最後の1回は flush() で必ず流す）。
+export const CHAT_STREAM_FLUSH_INTERVAL_MS = 80;
+
+export interface TextFlusher {
+  /// 最新の全文を渡す。前回の通知から間隔が空いていれば emit する
+  push(text: string): void;
+  /// 間引きで保留になっている分があれば emit する
+  flush(): void;
+}
+
+/// push された全文を一定間隔でだけ emit する間引き器。
+/// now を差し替えられるようにしてあるのはテストのため。
+export function createTextFlusher(
+  emit: (text: string) => void,
+  options: { intervalMs?: number; now?: () => number } = {}
+): TextFlusher {
+  const intervalMs = options.intervalMs ?? CHAT_STREAM_FLUSH_INTERVAL_MS;
+  const now = options.now ?? Date.now;
+  let lastEmittedAt = Number.NEGATIVE_INFINITY;
+  let pending: string | null = null;
+
+  return {
+    push(text: string) {
+      if (now() - lastEmittedAt < intervalMs) {
+        pending = text;
+        return;
+      }
+      lastEmittedAt = now();
+      pending = null;
+      emit(text);
+    },
+    flush() {
+      if (pending === null) return;
+      const text = pending;
+      pending = null;
+      lastEmittedAt = now();
+      emit(text);
+    },
+  };
+}
+
+export interface ChatReplyStreamOptions {
+  /// 途中経過。そこまでに届いた全文が渡る（間引き済み）
+  onText: (fullText: string) => void;
+  /// 画面が閉じられたときなど、生成を打ち切るための signal
+  signal?: AbortSignal;
+}
+
+function buildChatMessages(history: ChatMessage[], question: string): Anthropic.Messages.MessageParam[] {
+  return [
     ...sanitizeChatHistory(history).map((message) => ({
       role: message.role,
       content: message.content,
     })),
     { role: "user" as const, content: question },
   ];
+}
 
-  const response = await client.messages.create({
-    model: config.writingChatModel,
-    max_tokens: 2048,
-    thinking: { type: "disabled" },
-    system: buildChatSystemPrompt(compositionText),
-    messages,
+/// 生成の進みに合わせて onText へ「そこまでの全文」を渡し、
+/// 完了したら ChatReplyResult（保存・課金ログ用）を返す。
+/// 途中で signal が中断されたら例外になるので、呼び出し側は保存しないこと。
+export async function generateChatReplyStream(
+  compositionText: string,
+  history: ChatMessage[],
+  question: string,
+  options: ChatReplyStreamOptions
+): Promise<ChatReplyResult> {
+  const messages = buildChatMessages(history, question);
+
+  const stream = client.messages.stream(
+    {
+      model: config.writingChatModel,
+      max_tokens: 2048,
+      thinking: { type: "disabled" },
+      system: buildChatSystemPrompt(compositionText),
+      messages,
+    },
+    { signal: options.signal }
+  );
+
+  let text = "";
+  const flusher = createTextFlusher(options.onText);
+  stream.on("text", (delta) => {
+    text += delta;
+    flusher.push(text);
   });
 
-  const text = response.content
-    .filter((block): block is Anthropic.Messages.TextBlock => block.type === "text")
-    .map((block) => block.text)
-    .join("\n")
-    .trim();
+  const final = await stream.finalMessage();
+  flusher.flush();
 
-  if (!text) {
+  const trimmed = text.trim();
+  if (!trimmed) {
     throw new Error("Claude APIからテキスト応答が得られませんでした");
   }
 
   return {
-    text,
+    text: trimmed,
     model: config.writingChatModel,
-    inputTokens: response.usage.input_tokens,
-    outputTokens: response.usage.output_tokens,
+    inputTokens: final.usage.input_tokens,
+    outputTokens: final.usage.output_tokens,
   };
 }

@@ -1,5 +1,16 @@
 # DONE
 
+- [x] 2026-08-02 執筆画面のチャットで AI の返答を生成に合わせて逐次表示するようにした
+      [plan](docs/plans/archive/chat-streaming-survey.md)
+      返答が出来上がるまで「考え中…」のままだったので、`client.messages.stream()` に切り替え、
+      `POST /admin/writing/:id/chat` を chunked の NDJSON（`delta` / `done` / `error` の1行1JSON）に変えた。
+      Markdown → HTML の変換はサーバにしか無いので、途中経過も「そこまでの全文」を毎回 `marked` に
+      通した HTML を送り、画面側は吹き出しごと差し替える（パーサを増やさずに済み、書きかけの
+      ``` フェンスも閉じたものとして整形されるので途中で崩れない）。delta ごとの再変換は無駄なので
+      80ms 間隔に間引き、最後の1回は必ず流す。コピーボタンは `done` のときだけ付ける（途中で付けると
+      差し替えのたびに増える）。タブを閉じたら `res.on("close")` で生成を中断し、その場合は保存もしない
+      （`req` の close はボディを読み終えた時点で出るため切断の合図に使えない）。
+
 - [x] 2026-08-02 執筆画面のタブ列の「＋」を小さいサイズにした
       [plan](docs/plans/archive/tab-add-size.md)
       `.tab-add` が幅の指定なしでタブ列の末尾に置かれていたため、hover の地色と枠線が右端まで
