@@ -449,3 +449,19 @@ test("執筆ページ: 選択が長すぎるときは通信せず注意文を出
   assert.match(html, /var TRANSLATE_CONTEXT_CHARS = 200;/);
   assert.match(html, /text\.length > TRANSLATE_MAX_LENGTH/);
 });
+
+// docs/plans/writing-translate-copy.md: 和訳はチャットの英文ブロックと同じ .copy-btn で持ち出せる。
+test("執筆ページ: 和訳のときだけコピーボタンを添える", () => {
+  const html = editorPage("Last weekend I visited my grandmother.");
+
+  // 案内文（.note）には付けず、和訳のときだけ付ける
+  assert.match(html, /if \(!isNote\) \{[\s\S]*?transCopyButton\(message\)/);
+  // 紙片は幅が狭いので、右上に重ねず訳文の下へ1段置く（「コピーしました」で訳文に被らない）
+  assert.match(html, /\.trans-pop \.copy-row \{ display: flex; justify-content: flex-end;/);
+  assert.match(html, /\.trans-pop \.copy-btn \{ position: static; \}/);
+  assert.match(html, /row\.className = 'copy-row';/);
+  // チャットの英文ブロックと同じ見た目・同じクリップボード処理を使い回す
+  assert.match(html, /button\.className = 'copy-btn';[\s\S]*?copyText\(text\)/);
+  // 押しても本文の選択が解けないよう mousedown で拾って既定動作を止める
+  assert.match(html, /button\.addEventListener\('mousedown', function \(event\) \{\s*event\.preventDefault\(\);/);
+});

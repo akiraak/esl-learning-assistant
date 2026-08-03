@@ -1,5 +1,15 @@
 # DONE
 
+- [x] 2026-08-02 選択翻訳の和訳をコピーできるようにした
+      [plan](docs/plans/archive/writing-translate-copy.md)
+      和訳の紙片（`.trans-pop`）に、チャットの英文カードと同じ `.copy-btn` を添えた。
+      クリップボード処理は既存の `copyText()` をそのまま使う（`navigator.clipboard` が
+      使えない環境では `execCommand('copy')` に落ちる）。押下は `click` ではなく
+      `mousedown` + `preventDefault` で拾い、本文の選択とフォーカスを保つ。
+      紙片は幅が狭く「コピーしました」が訳文に被るため、チャット側と違ってボタンは
+      右上に重ねず訳文の下に1段（`.copy-row`）置く。「翻訳しています…」「選択が長すぎます」
+      などの案内文には付けない。
+
 - [x] 2026-08-02 管理画面の作文で、英文を選択したら和訳を表示するようにした
       [plan](docs/plans/archive/writing-selection-translate.md)
       執筆画面（`/admin/writing/:id`）で英文を選ぶと 250ms 後に自動で和訳を取りに行き、選択の

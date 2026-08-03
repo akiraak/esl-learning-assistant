@@ -459,6 +459,7 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
        .spell-pop と同じ紙片だが、文章が入るぶん幅を広く・行間を空ける。 */
     .trans-pop {
       position: fixed; z-index: 5; display: none;
+      /* 右上に重ねるコピーボタンの基準。訳文が下に潜らないよう右へ余白を足す */
       background: ${PAPER_SHEET}; border: 1px solid #DDD5C1; border-radius: 8px;
       box-shadow: 0 2px 4px rgba(60,50,35,0.10), 0 8px 20px rgba(60,50,35,0.16);
       padding: 8px 12px; min-width: 160px; max-width: 380px;
@@ -467,6 +468,10 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
       white-space: pre-wrap; word-wrap: break-word; overflow-wrap: break-word;
     }
     .trans-pop.open { display: block; }
+    /* 紙片は幅が狭く、押した後の「コピーしました」は「コピー」より広い。右上に重ねると
+       訳文に被るので、チャットの英文カードと違ってボタンは訳文の下に1段置く。 */
+    .trans-pop .copy-row { display: flex; justify-content: flex-end; margin-top: 6px; }
+    .trans-pop .copy-btn { position: static; }
     .trans-pop .note { font-size: 12.5px; color: ${PAPER_FAINT}; }
 
     /* 右ペイン: 書いている英文について相談するチャット（ChatGPT 風に上が履歴、下が入力欄） */
@@ -1058,12 +1063,44 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
         return true;
       }
 
+      /// 和訳の右上に置く「コピー」ボタン。押しても本文の選択が解けないよう、click ではなく
+      /// mousedown で拾って既定の動作（フォーカス移動）を止める（綴り候補の popButton と同じ）。
+      function transCopyButton(text) {
+        var button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'copy-btn';
+        button.textContent = 'コピー';
+        button.addEventListener('mousedown', function (event) {
+          event.preventDefault();
+          copyText(text).then(function () {
+            button.textContent = 'コピーしました';
+            button.classList.add('done');
+            setTimeout(function () {
+              button.textContent = 'コピー';
+              button.classList.remove('done');
+            }, 1400);
+          }).catch(function () {
+            button.textContent = 'コピーできません';
+            setTimeout(function () { button.textContent = 'コピー'; }, 1400);
+          });
+        });
+        return button;
+      }
+
+      /// 紙片の中身を入れ替える。和訳のときだけコピーボタンを添える
+      /// （「翻訳しています…」などの案内文には付けない）。
       function showTransText(message, isNote) {
         transPop.replaceChildren();
         var box = document.createElement('div');
         if (isNote) box.className = 'note';
         box.textContent = message;
         transPop.appendChild(box);
+        if (!isNote) {
+          var row = document.createElement('div');
+          row.className = 'copy-row';
+          row.appendChild(transCopyButton(message));
+          transPop.appendChild(row);
+        }
         transPop.classList.add('open');
         placeTransPop();
       }
