@@ -303,16 +303,19 @@ test("タブ: タブ名の HTML 特殊文字をエスケープする", () => {
   assert.match(html, /&lt;img src=x&gt; &amp; &quot;y&quot;/);
 });
 
-test("タブ: 選択中のタブは紙と同じ地色で下辺が無く、影は親にまとめて 1 つだけ落とす", () => {
+test("タブ: 選択中のタブは紙と同じ地色で下辺が無く、影は紙だけが落とす", () => {
   const html = tabbedPage();
 
   // 選択中＝紙そのもの（同じ地色・紙へつながるよう下辺の線は消す）
   assert.match(html, /\.tab\.is-active \{[^}]*background: #FFFDF7;[^}]*border-bottom-color: transparent;/);
   // 非選択＝一段沈んだ色と境界線で、後ろに重なった別紙に見せる
   assert.match(html, /\.tab \{[^}]*background: #F5EFE1;[^}]*border: 1px solid #DFDACB;/);
-  // 影はタブ列と紙を包む親に 1 つだけ。紙の側からは外す
-  assert.match(html, /\.paper-stack \{[^}]*box-shadow: 0 1px 2px/);
-  assert.doesNotMatch(html, /\.sheet \{[^}]*box-shadow:/);
+  // 影は紙に 1 つだけ。親（タブ列を含む四角）に持たせると、タブが無い右側まで
+  // 影の落ちない帯が広がって地色より明るく浮くので持たせない
+  assert.match(html, /\.sheet \{[^}]*box-shadow: 0 1px 2px/);
+  assert.doesNotMatch(html, /\.paper-stack \{[^}]*box-shadow:/);
+  // 紙の影がタブの下辺に掛からないよう、タブ列は紙より前に描く
+  assert.match(html, /\.tabs \{[^}]*z-index: 1;/);
   assert.match(html, /\.tabs \{[^}]*margin-bottom: 0;/);
   // タブの字は UI 部品ではなく紙の一部に見せる（本文と同じセリフ体）
   assert.match(html, /\.tab \{[^}]*"Iowan Old Style", Georgia/);

@@ -1,5 +1,13 @@
 # DONE
 
+- [x] 2026-08-02 執筆画面のタブ列の「＋」を小さいサイズにした
+      [plan](docs/plans/archive/tab-add-size.md)
+      `.tab-add` が幅の指定なしでタブ列の末尾に置かれていたため、hover の地色と枠線が右端まで
+      伸びて帯のように見えていた。26px 角に固定して「＋」を中央へ置き、`margin-right: auto` で
+      タブ列の余りをマージン側に吸わせた。あわせて、タブが無い右側に残っていた明るい帯
+      （`.paper-stack` が持つ影の「落ちない四角」がタブ列の右まで広がっていたもの）を消すため、
+      `box-shadow` を `.sheet` へ移し、`.tabs` を `z-index: 1` で紙より前に描くようにした。
+
 - [x] 2026-08-02 執筆画面のチャットで AI の返答の右に残る余白をなくした
       [plan](docs/plans/archive/chat-bubble-width.md)
       `.msg .bubble` の `max-width: 92%` が左寄せの AI 側にも掛かっていて、右端に常に

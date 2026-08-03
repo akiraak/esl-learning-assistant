@@ -286,18 +286,20 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
       background: transparent; color: #A3392F; border: 1px solid rgba(163,57,47,0.35); cursor: pointer;
     }
     .toolbar button:hover { background: rgba(163,57,47,0.07); }
-    /* タブ列と罫線紙は「1つのかたまり」。影はこの親にまとめて1つだけ落とし、
-       子の .sheet 側からは外す（タブと紙の間に影の切れ目を作らないため）。 */
+    /* タブ列と罫線紙を積むだけの入れ物。影は紙（.sheet）が持つ。
+       ここで影を持つと、タブが無い右側まで「影の落ちない四角」が広がって
+       タブ列の帯が地色より明るく浮いて見えてしまう。 */
     .paper-stack {
       margin: 0 24px 64px;
-      box-shadow: 0 1px 2px rgba(60,50,35,0.10), 0 10px 30px rgba(60,50,35,0.12);
       /* ペインの余りを埋めるだけで、本文が伸びたら縮まずに押し出す（1 0 auto の 0 が縮まない指定）。
          伸ばすのは紙（.sheet）まで。入力欄自身を伸ばすと autogrow が自分の伸びた丈を測ってしまい、
          打つたびに紙が伸び続ける（罫線の余白をクリックしたときの書き始めはスクリプト側で入力欄へ送る）。 */
       display: flex; flex-direction: column; flex: 1 0 auto;
     }
-    /* ノートに貼った見出しインデックスの体裁。紙の左端から並べ、狭ければ横スクロールさせる。 */
+    /* ノートに貼った見出しインデックスの体裁。紙の左端から並べ、狭ければ横スクロールさせる。
+       紙より前に描いて（z-index）、紙の影がタブの下辺に掛からないようにする。 */
     .tabs {
+      position: relative; z-index: 1;
       display: flex; align-items: flex-end; gap: 2px; margin-bottom: 0;
       overflow-x: auto; scrollbar-width: none;
     }
@@ -332,8 +334,12 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
     }
     .tab-del:hover { color: #A3392F; }
     .tab-del:disabled { opacity: 0.25; cursor: not-allowed; }
+    /* 「＋」は文字ぶんだけの小さな正方形。右の余りを margin-right: auto で吸わせて、
+       hover の地色がタブ列の右端まで伸びないようにする。 */
     .tab-add {
-      flex: none; align-self: flex-end; margin: 0 0 2px 6px; padding: 4px 9px;
+      flex: 0 0 auto; align-self: flex-end; box-sizing: border-box;
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 26px; height: 26px; margin: 0 auto 2px 6px; padding: 0;
       font: inherit; font-size: 14px; line-height: 1; border-radius: 5px; cursor: pointer;
       background: transparent; border: 1px solid transparent; color: ${PAPER_FAINT};
     }
@@ -341,12 +347,13 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
     .tab-add:disabled { opacity: 0.35; cursor: not-allowed; background: transparent; border-color: transparent; }
     /* 机の上に置いた1枚の罫線紙。書ける幅を最優先にペイン幅いっぱいへ広げ、
        紙の縁が窓の縁に貼り付かないよう左右に少しだけ余白を残す。
-       浮かせる影は親（.paper-stack）が持ち、罫線は紙の端から端まで引く。
+       浮かせる影はこの紙が持つ（タブ列は影の外）。罫線は紙の端から端まで引く。
        上下の padding を行送りの倍数にしてあるので、罫線と本文の行がぴったり重なる。
        縦の余白線はノートらしさのため、本文の左端から 12px 手前に引く。 */
     .sheet {
       position: relative; flex: 1 0 auto;
       margin: 0; background-color: ${PAPER_SHEET};
+      box-shadow: 0 1px 2px rgba(60,50,35,0.10), 0 10px 30px rgba(60,50,35,0.12);
       padding: ${lh}px var(--pad-x) ${lh * 2}px;
       background-image:
         linear-gradient(
@@ -524,7 +531,8 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
     }
     @media (max-width: 720px) {
       .paper-pane { --pad-x: 22px; }
-      .paper-stack { margin: 0; box-shadow: none; }
+      .paper-stack { margin: 0; }
+      .sheet { box-shadow: none; }
       .title-row { margin: 0 0 8px; padding: 8px var(--pad-x); box-shadow: none; }
       .title-input { font-size: 22px; }
     }
@@ -533,8 +541,8 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
       .toolbar, .chat-pane, .resizer, .copy-btn, .title-gen, .tabs { display: none; }
       .split { display: block; }
       .paper-pane { overflow: visible; }
-      .paper-stack { margin: 0; box-shadow: none; }
-      .sheet { margin: 0; padding: 0; max-width: none; background-image: none; }
+      .paper-stack { margin: 0; }
+      .sheet { margin: 0; padding: 0; max-width: none; background-image: none; box-shadow: none; }
       .title-row { margin: 0 0 10px; padding: 0; background: none; box-shadow: none; }
       .title-input { border-bottom: none; }
       .paper { font-size: 12pt; min-height: 0; }
