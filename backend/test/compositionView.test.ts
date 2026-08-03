@@ -107,6 +107,7 @@ function editorPageWith(overrides: Partial<Parameters<typeof renderCompositionEd
     saveUrl: "/admin/writing/7/save",
     deleteUrl: "/admin/writing/7/delete",
     chatUrl: "/admin/writing/7/chat",
+    translateUrl: "/admin/writing/7/translate",
     backHref: "/admin/writing",
     iconHref: "/admin/icon.png",    messages: [],
     chatModel: "claude-sonnet-5",
@@ -426,4 +427,25 @@ test("執筆ページ: 罫線の間隔と本文の行送りが一致する（ズ
   );
   // 自動リサイズも同じ行送りの倍数に丸める
   assert.match(html, new RegExp(`input\\.scrollHeight / ${lineHeight}`));
+});
+
+// docs/plans/writing-selection-translate.md: 英文を選ぶと、その真下に和訳の紙片を出す。
+test("執筆ページ: 選択範囲の翻訳の紙片と POST 先を持つ", () => {
+  const html = editorPage("Last weekend I visited my grandmother.");
+
+  assert.match(html, /<div class="trans-pop" id="trans-pop"/);
+  assert.match(html, /var translateUrl = "\/admin\/writing\/7\/translate";/);
+  // 選択が確定してから投げる（引きずっている最中に何度も叩かない）
+  assert.match(html, /input\.addEventListener\('select', onSelectionChanged\)/);
+  assert.match(html, /setTimeout\(runTranslate, 250\)/);
+  // 位置決めは下敷きの選択マークから取る（textarea 自体からは座標が取れない）
+  assert.match(html, /backdrop\.querySelector\('mark\[data-sel="1"\]'\)/);
+});
+
+test("執筆ページ: 選択が長すぎるときは通信せず注意文を出す", () => {
+  const html = editorPage("text");
+
+  assert.match(html, /var TRANSLATE_MAX_LENGTH = 1000;/);
+  assert.match(html, /var TRANSLATE_CONTEXT_CHARS = 200;/);
+  assert.match(html, /text\.length > TRANSLATE_MAX_LENGTH/);
 });

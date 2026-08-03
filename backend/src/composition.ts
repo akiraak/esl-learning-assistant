@@ -14,6 +14,13 @@ export const COMPOSITION_PAGES_MAX = 20;
 /// タブ名の上限文字数。
 export const PAGE_NAME_MAX_LENGTH = 40;
 
+/// 選択範囲の翻訳（docs/plans/writing-selection-translate.md）で 1 回に訳せる上限文字数。
+/// 画面はこれを超える選択では通信せず注意文を出し、サーバも同じ値で弾く。
+export const WRITING_TRANSLATE_MAX_LENGTH = 1000;
+
+/// 選択範囲の翻訳でモデルへ添える前後の文脈の長さ（各方向）。
+export const WRITING_TRANSLATE_CONTEXT_CHARS = 200;
+
 /// タブ名の整形（改行は空白に潰し、前後の空白を落とし、上限で切る）。
 /// 空文字も許す（そのときタブには「ページ N」を出す）。
 export function sanitizePageName(raw: string): string {

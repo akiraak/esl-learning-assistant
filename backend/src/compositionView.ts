@@ -1,4 +1,5 @@
 import { marked } from "marked";
+import { WRITING_TRANSLATE_CONTEXT_CHARS, WRITING_TRANSLATE_MAX_LENGTH } from "./composition";
 
 // 作文（compositions）の表示ロジック。admin.ts は db.ts を読み込むためテストから import できない。
 // 見出し・プレビューの整形と執筆画面の HTML 生成といった純粋な部分をここに置き、
@@ -140,6 +141,8 @@ export interface CompositionEditorPage {
   deleteUrl: string;
   /// チャット送信の POST 先
   chatUrl: string;
+  /// 選択範囲の翻訳の POST 先（英文を選ぶたびに自動で叩く）
+  translateUrl: string;
   /// ツールバーの戻り先
   backHref: string;
   /// ブラウザタブに出すアイコン（favicon）の URL
@@ -426,6 +429,11 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
       text-decoration-color: rgba(163,57,47,0.75);
       text-decoration-skip-ink: none;
     }
+    /* 翻訳ポップの位置決めに使う、選択範囲と同じ形の印。見た目は付けない
+       （選択の色はブラウザが本文入力欄側に描くので、ここで重ねると濁る）。 */
+    .paper-backdrop mark.sel {
+      text-decoration: none;
+    }
 
     /* 赤い語にカーソルを置いたときに出る小さな紙片。修正候補と「辞書に追加」を置く。
        紙の上に浮かせるので z-index は本文入力欄より上。 */
@@ -446,6 +454,20 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
     .spell-pop .none { padding: 6px 10px; font-size: 12.5px; color: ${PAPER_FAINT}; }
     .spell-pop .sep { border-top: 1px solid #E9E2D2; margin: 4px 0; }
     .spell-pop .ignore { color: ${PAPER_FAINT}; font-size: 12px; }
+
+    /* 英文を選択したときに、その真下へ出す和訳の紙片。読むだけなのでボタンは持たない。
+       .spell-pop と同じ紙片だが、文章が入るぶん幅を広く・行間を空ける。 */
+    .trans-pop {
+      position: fixed; z-index: 5; display: none;
+      background: ${PAPER_SHEET}; border: 1px solid #DDD5C1; border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(60,50,35,0.10), 0 8px 20px rgba(60,50,35,0.16);
+      padding: 8px 12px; min-width: 160px; max-width: 380px;
+      font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Segoe UI", sans-serif;
+      font-size: 13.5px; line-height: 1.6; color: ${PAPER_INK};
+      white-space: pre-wrap; word-wrap: break-word; overflow-wrap: break-word;
+    }
+    .trans-pop.open { display: block; }
+    .trans-pop .note { font-size: 12.5px; color: ${PAPER_FAINT}; }
 
     /* 右ペイン: 書いている英文について相談するチャット（ChatGPT 風に上が履歴、下が入力欄） */
     .chat-pane {
@@ -580,6 +602,7 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
         </div>
       </div>
       <div class="spell-pop" id="spell-pop"></div>
+      <div class="trans-pop" id="trans-pop" role="status" aria-live="polite"></div>
     </div>
     <div class="resizer" id="resizer" role="separator" aria-orientation="vertical"
          tabindex="0" title="ドラッグで幅を変える" aria-label="紙と AI 欄の境界"></div>
@@ -767,24 +790,51 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
       var typing = false;
       var spellTimer = null;
 
-      /// 本文と同じ字を下敷きに敷き直し、spans の範囲だけ <mark> で包む。
+      /// 選択範囲（翻訳ポップの位置決めに使う）。無ければ null。
+      var selRange = null;
+
+      /// 下敷きに包む範囲を、綴りの誤り＋選択範囲から前から順に組む。
+      /// 入れ子にはできないので、選択に重なる綴りの誤りは選択が消えるまで譲る
+      /// （その間は選択の色が乗っているので、波線が消えてもほとんど見えない）。
+      function markEntries(text, caret) {
+        var entries = [];
+        for (var i = 0; i < spans.length; i += 1) {
+          var span = spans[i];
+          if (span.end > text.length) continue;
+          if (text.slice(span.start, span.end) !== span.word) continue;
+          if (typing && caret >= span.start && caret <= span.end) continue;
+          if (selRange && span.start < selRange.end && span.end > selRange.start) continue;
+          entries.push({ start: span.start, end: span.end, index: i, sel: false });
+        }
+        if (selRange) {
+          entries.push({ start: selRange.start, end: selRange.end, index: -1, sel: true });
+        }
+        entries.sort(function (a, b) { return a.start - b.start; });
+        return entries;
+      }
+
+      /// 本文と同じ字を下敷きに敷き直し、綴りの誤りと選択範囲を <mark> で包む。
       /// 本文は textContent として入れるので HTML としては解釈されない。
       function renderMarks() {
         var text = input.value;
         var caret = input.selectionStart;
         var fragment = document.createDocumentFragment();
         var cursor = 0;
-        for (var i = 0; i < spans.length; i += 1) {
-          var span = spans[i];
-          if (span.start < cursor || span.end > text.length) continue;
-          if (text.slice(span.start, span.end) !== span.word) continue;
-          if (typing && caret >= span.start && caret <= span.end) continue;
-          fragment.appendChild(document.createTextNode(text.slice(cursor, span.start)));
+        var entries = markEntries(text, caret);
+        for (var i = 0; i < entries.length; i += 1) {
+          var entry = entries[i];
+          if (entry.start < cursor) continue;
+          fragment.appendChild(document.createTextNode(text.slice(cursor, entry.start)));
           var mark = document.createElement('mark');
-          mark.dataset.index = String(i);
-          mark.textContent = span.word;
+          if (entry.sel) {
+            mark.className = 'sel';
+            mark.dataset.sel = '1';
+          } else {
+            mark.dataset.index = String(entry.index);
+          }
+          mark.textContent = text.slice(entry.start, entry.end);
           fragment.appendChild(mark);
-          cursor = span.end;
+          cursor = entry.end;
         }
         // 末尾の改行が潰れて下の行がずれないよう、最後に空白を1つ足す
         fragment.appendChild(document.createTextNode(text.slice(cursor) + ' '));
@@ -825,16 +875,17 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
       var CARET_KEYS = [
         'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'
       ];
+      // クリックやカーソル移動の後は選択の有無で行き先が変わる（選択あり＝翻訳、無し＝綴り候補）
       input.addEventListener('click', function () {
         typing = false;
         renderMarks();
-        syncPopover();
+        onSelectionChanged();
       });
       input.addEventListener('keyup', function (event) {
         if (CARET_KEYS.indexOf(event.key) === -1) return;
         typing = false;
         renderMarks();
-        syncPopover();
+        onSelectionChanged();
       });
       input.addEventListener('blur', function () {
         typing = false;
@@ -969,16 +1020,143 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
         });
       }
 
+      // --- 選択範囲の翻訳 ---------------------------------------------------
+      // 英文を選ぶたびに自動で和訳を取りに行き、選択の末尾行の下へ出す
+      // （docs/plans/writing-selection-translate.md）。
+      var translateUrl = ${jsonForScript(page.translateUrl)};
+      var TRANSLATE_MAX_LENGTH = ${WRITING_TRANSLATE_MAX_LENGTH};
+      var TRANSLATE_CONTEXT_CHARS = ${WRITING_TRANSLATE_CONTEXT_CHARS};
+      var transPop = document.getElementById('trans-pop');
+      var transTimer = null;
+      var transAbort = null;
+      // 同じ選択（テキスト＋前後の文脈）を選び直したときに通信しないための控え
+      var transCache = Object.create(null);
+
+      function closeTransPop() {
+        clearTimeout(transTimer);
+        if (transAbort) { transAbort.abort(); transAbort = null; }
+        transPop.classList.remove('open');
+        transPop.replaceChildren();
+      }
+
+      /// 選択範囲を消して下敷きを描き直す（ポップも閉じる）。
+      function clearSelectionMark() {
+        closeTransPop();
+        if (!selRange) return;
+        selRange = null;
+        renderMarks();
+      }
+
+      /// 選択の末尾行の下にポップを置く。複数行なら最後の矩形に合わせる。
+      function placeTransPop() {
+        var mark = backdrop.querySelector('mark[data-sel="1"]');
+        if (!mark) return false;
+        var rects = mark.getClientRects();
+        var rect = rects.length > 0 ? rects[rects.length - 1] : mark.getBoundingClientRect();
+        transPop.style.top = (rect.bottom + 4) + 'px';
+        transPop.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - transPop.offsetWidth - 8)) + 'px';
+        return true;
+      }
+
+      function showTransText(message, isNote) {
+        transPop.replaceChildren();
+        var box = document.createElement('div');
+        if (isNote) box.className = 'note';
+        box.textContent = message;
+        transPop.appendChild(box);
+        transPop.classList.add('open');
+        placeTransPop();
+      }
+
+      /// 選択が確定したら和訳を取りに行く。選択が変わった後に遅れて届いた応答は捨てる。
+      function runTranslate() {
+        if (!selRange) return;
+        var range = selRange;
+        var body = input.value;
+        var text = body.slice(range.start, range.end).trim();
+        if (!text) { closeTransPop(); return; }
+        if (text.length > TRANSLATE_MAX_LENGTH) {
+          showTransText('選択が長すぎます（' + TRANSLATE_MAX_LENGTH + '文字まで）', true);
+          return;
+        }
+
+        var contextBefore = body.slice(Math.max(0, range.start - TRANSLATE_CONTEXT_CHARS), range.start);
+        var contextAfter = body.slice(range.end, range.end + TRANSLATE_CONTEXT_CHARS);
+        var key = contextBefore + '\\u0000' + text + '\\u0000' + contextAfter;
+        if (transCache[key]) { showTransText(transCache[key], false); return; }
+
+        showTransText('翻訳しています…', true);
+        if (transAbort) transAbort.abort();
+        var controller = new AbortController();
+        transAbort = controller;
+        fetch(translateUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: text, contextBefore: contextBefore, contextAfter: contextAfter }),
+          signal: controller.signal
+        }).then(function (res) {
+          return res.json().then(function (data) {
+            if (!res.ok) throw new Error(data.error || '翻訳に失敗しました');
+            return data;
+          });
+        }).then(function (data) {
+          if (transAbort !== controller) return;
+          transAbort = null;
+          // 待っている間に選択が動いていたら描かない（次の選択の訳が来る）
+          if (!selRange || selRange !== range) return;
+          transCache[key] = data.translatedText;
+          showTransText(data.translatedText, false);
+        }).catch(function (error) {
+          if (error && error.name === 'AbortError') return;
+          if (transAbort !== controller) return;
+          transAbort = null;
+          if (!selRange || selRange !== range) return;
+          showTransText('翻訳できませんでした', true);
+        });
+      }
+
+      /// 選択が変わったときの入口。選択があれば翻訳、無ければ従来どおり綴り候補。
+      /// 引きずっている最中に何度も投げないよう 250ms 待つ。
+      function onSelectionChanged() {
+        var start = input.selectionStart;
+        var end = input.selectionEnd;
+        if (end <= start) {
+          clearSelectionMark();
+          syncPopover();
+          return;
+        }
+        if (selRange && selRange.start === start && selRange.end === end) return;
+        closePopover();
+        closeTransPop();
+        selRange = { start: start, end: end };
+        typing = false;
+        renderMarks();
+        transTimer = setTimeout(runTranslate, 250);
+      }
+
+      input.addEventListener('select', onSelectionChanged);
+
       // 書き続ける・別の場所を触る・紙をスクロールしたら閉じる（浮いたまま残さない）
       input.addEventListener('input', closePopover);
+      input.addEventListener('input', clearSelectionMark);
       document.addEventListener('keydown', function (event) {
-        if (event.key === 'Escape') closePopover();
+        if (event.key !== 'Escape') return;
+        closePopover();
+        clearSelectionMark();
       });
       document.addEventListener('mousedown', function (event) {
         if (!pop.contains(event.target)) closePopover();
+        // 紙の上で押し始めた時点で前の選択は無効になる（離したところで選び直しになる）
+        if (!transPop.contains(event.target)) clearSelectionMark();
       });
-      document.querySelector('.paper-pane').addEventListener('scroll', closePopover);
-      window.addEventListener('resize', closePopover);
+      document.querySelector('.paper-pane').addEventListener('scroll', function () {
+        closePopover();
+        closeTransPop();
+      });
+      window.addEventListener('resize', function () {
+        closePopover();
+        closeTransPop();
+      });
 
       renderMarks();
 

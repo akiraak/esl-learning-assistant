@@ -1,5 +1,16 @@
 # DONE
 
+- [x] 2026-08-02 管理画面の作文で、英文を選択したら和訳を表示するようにした
+      [plan](docs/plans/archive/writing-selection-translate.md)
+      執筆画面（`/admin/writing/:id`）で英文を選ぶと 250ms 後に自動で和訳を取りに行き、選択の
+      末尾行の下に紙片（`.trans-pop`）で出す。位置決めは綴り検査の下敷きに選択範囲の
+      `<mark class="sel">` を足して実寸から取っているので、折り返しても複数行でも選択の真下に出る。
+      選択が短くて文脈依存が強いため、前後 200 文字を添えて `<selection>` で囲んだ部分だけを
+      訳させる（`compositionTranslate.ts`、モデルは `config.translateModel` = claude-haiku-4-5）。
+      呼び出しは `composition_translate_requests` に記録し、同じ英文・文脈・言語なら過去の訳を
+      使い回す（cache_hit=1 はコスト 0 で `/admin/usage` の「作文翻訳」から外れる）。
+      キャレットだけのときは従来どおり綴り候補が出て、翻訳ポップとは同時に開かない。
+
 - [x] 2026-08-02 管理画面の印刷用ページで、印刷時の文字を一段小さくした
       [plan](docs/plans/archive/print-view-font-size.md)
       紙に出すと本文 12pt が大きすぎ、ページ数も無駄に増えていたので、`printView.ts` の

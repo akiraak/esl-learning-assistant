@@ -171,6 +171,36 @@ db.exec(`
   )
 `);
 
+// 執筆画面で英文を選択したときの和訳（POST /admin/writing/:id/translate）の通信・課金ログ。
+// docs/plans/writing-selection-translate.md: 訳の保存先を別に持たず、この追記ログ自体を
+// キャッシュとして引く（text_hash に文脈と言語も含めてあるので、同じ状況の再選択だけが当たる）。
+// cache_hit=1 の行は API を呼んでいない＝コスト 0 で、/admin/usage の集計からは外す。
+db.exec(`
+  CREATE TABLE IF NOT EXISTS composition_translate_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    composition_id INTEGER NOT NULL,
+    text_hash TEXT NOT NULL,
+    target_language TEXT NOT NULL,
+    source_text TEXT NOT NULL,
+    context_before TEXT NOT NULL DEFAULT '',
+    context_after TEXT NOT NULL DEFAULT '',
+    translated_text TEXT,
+    model TEXT NOT NULL,
+    input_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    cost_usd REAL NOT NULL DEFAULT 0,
+    status TEXT NOT NULL,
+    error_message TEXT,
+    latency_ms INTEGER NOT NULL DEFAULT 0,
+    cache_hit INTEGER NOT NULL DEFAULT 0
+  )
+`);
+db.exec(
+  `CREATE INDEX IF NOT EXISTS idx_composition_translate_lookup
+     ON composition_translate_requests(text_hash, target_language, status)`
+);
+
 // 執筆画面の右ペインで交わす、作文についての相談チャット。1作文につき1本のスレッド。
 // assistant 行は生成コストの記録も兼ねる（/admin/usage の "作文チャット" はここを集計する）。
 db.exec(`
@@ -730,6 +760,77 @@ export function insertCompositionTitleLog(input: CompositionTitleLogInput): void
     errorMessage: input.errorMessage,
     latencyMs: input.latencyMs,
   });
+}
+
+// --- 選択範囲の翻訳ログ（composition_translate_requests）---------------------
+
+export interface CompositionTranslateLogInput {
+  compositionId: number;
+  textHash: string;
+  targetLanguage: string;
+  sourceText: string;
+  contextBefore: string;
+  contextAfter: string;
+  translatedText: string | null;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+  status: "success" | "error";
+  errorMessage: string | null;
+  latencyMs: number;
+  cacheHit: boolean;
+}
+
+const insertCompositionTranslateStmt = db.prepare(`
+  INSERT INTO composition_translate_requests (
+    created_at, composition_id, text_hash, target_language, source_text,
+    context_before, context_after, translated_text, model,
+    input_tokens, output_tokens, cost_usd, status, error_message, latency_ms, cache_hit
+  ) VALUES (
+    @createdAt, @compositionId, @textHash, @targetLanguage, @sourceText,
+    @contextBefore, @contextAfter, @translatedText, @model,
+    @inputTokens, @outputTokens, @costUsd, @status, @errorMessage, @latencyMs, @cacheHit
+  )
+`);
+
+/// 選択翻訳の呼び出しを1件記録する（成功・失敗・キャッシュヒットとも）。
+export function insertCompositionTranslateLog(input: CompositionTranslateLogInput): void {
+  insertCompositionTranslateStmt.run({
+    createdAt: new Date().toISOString(),
+    compositionId: input.compositionId,
+    textHash: input.textHash,
+    targetLanguage: input.targetLanguage,
+    sourceText: input.sourceText,
+    contextBefore: input.contextBefore,
+    contextAfter: input.contextAfter,
+    translatedText: input.translatedText,
+    model: input.model,
+    inputTokens: input.inputTokens,
+    outputTokens: input.outputTokens,
+    costUsd: input.costUsd,
+    status: input.status,
+    errorMessage: input.errorMessage,
+    latencyMs: input.latencyMs,
+    cacheHit: input.cacheHit ? 1 : 0,
+  });
+}
+
+const findCompositionTranslateStmt = db.prepare(`
+  SELECT translated_text FROM composition_translate_requests
+  WHERE text_hash = ? AND target_language = ? AND status = 'success' AND translated_text IS NOT NULL
+  ORDER BY id DESC LIMIT 1
+`);
+
+/// 同じ英文・同じ文脈・同じ言語の訳が既にあれば返す（作文はまたいでよい。同じ英文なら訳も同じ）。
+export function findCompositionTranslation(
+  textHash: string,
+  targetLanguage: string
+): string | null {
+  const row = findCompositionTranslateStmt.get(textHash, targetLanguage) as
+    | { translated_text: string }
+    | undefined;
+  return row ? row.translated_text : null;
 }
 
 // --- 作文本体（compositions）------------------------------------------------
@@ -1906,6 +2007,7 @@ export type UsageFeature =
   | "word-normalize"
   | "writing-chat"
   | "writing-title"
+  | "writing-translate"
   | "tts"
   | "illustrations"
   | "quiz";
@@ -2149,6 +2251,17 @@ function collectUsageEvents(): UsageEvent[] {
     .all() as { created_at: string; model: string; input_tokens: number; output_tokens: number; cost_usd: number }[];
   for (const r of titles) {
     push("writing-title", r.model, r.created_at, r.cost_usd, r.input_tokens, r.output_tokens);
+  }
+
+  // 選択翻訳は cache_hit=1 の行が API 未使用（コスト 0）なので、実際に呼んだ行だけ数える
+  const translates = db
+    .prepare(
+      `SELECT created_at, model, input_tokens, output_tokens, cost_usd
+         FROM composition_translate_requests WHERE cache_hit = 0`
+    )
+    .all() as { created_at: string; model: string; input_tokens: number; output_tokens: number; cost_usd: number }[];
+  for (const r of translates) {
+    push("writing-translate", r.model, r.created_at, r.cost_usd, r.input_tokens, r.output_tokens);
   }
 
   // tts_audio.model は tier キー（"flash" / "pro"）で保存されるため、キャリア判定・モデル表示は

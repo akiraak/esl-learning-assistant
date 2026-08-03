@@ -38,6 +38,8 @@ import {
   insertCompositionChatMessage,
   insertCompositionPage,
   insertCompositionTitleLog,
+  insertCompositionTranslateLog,
+  findCompositionTranslation,
   insertWordInfoLog,
   listCompositionChatMessages,
   listCompositionPages,
@@ -96,6 +98,13 @@ import {
   generateCompositionTitle,
   sanitizeCompositionTitle,
 } from "./compositionTitle";
+import {
+  WRITING_TRANSLATE_MAX_LENGTH,
+  clampContext,
+  normalizeSelection,
+  selectionHash,
+  translateSelection,
+} from "./compositionTranslate";
 import { findMisspellings, suggestCorrections } from "./spellcheck";
 
 // 綴り検査の 1 語あたりの上限（辞書の語より十分長い値。長大な文字列を投げられないためのガード）
@@ -1071,6 +1080,7 @@ adminRouter.get("/writing/:id", (req, res) => {
       spellIgnoreUrl: "/admin/writing/spell-ignore",
       deleteUrl: `/admin/writing/${composition.id}/delete`,
       chatUrl: `/admin/writing/${composition.id}/chat`,
+      translateUrl: `/admin/writing/${composition.id}/translate`,
       backHref: "/admin/writing",
       iconHref: ADMIN_ICON_URL,
       messages: listCompositionChatMessages(composition.id).map((row) => ({
@@ -1272,6 +1282,116 @@ adminRouter.post("/writing/:id/title", async (req, res) => {
     });
     logger.error(
       `composition-title: failed composition=#${id} latencyMs=${Date.now() - startedAt} error=${errorMessage}`
+    );
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// 執筆画面で英文を選択したときの和訳（docs/plans/writing-selection-translate.md）。
+// 選択が確定するたび自動で叩かれるので、同じ英文・同じ文脈・同じ言語の訳が既にあれば
+// API を呼ばずに使い回す（cache_hit=1 として記録し、コスト集計からは外れる）。
+adminRouter.post("/writing/:id/translate", async (req, res) => {
+  const id = Number(req.params.id);
+  const composition = getComposition(id);
+  if (!composition) {
+    res.status(404).json({ error: "composition not found" });
+    return;
+  }
+
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const text = normalizeSelection(typeof body.text === "string" ? body.text : "");
+  if (!text) {
+    res.status(400).json({ error: "選択が空です" });
+    return;
+  }
+  if (text.length > WRITING_TRANSLATE_MAX_LENGTH) {
+    res.status(400).json({ error: `選択が長すぎます（${WRITING_TRANSLATE_MAX_LENGTH}文字まで）` });
+    return;
+  }
+
+  // 文脈は画面が切り出して送ってくるが、長さはサーバでも詰める（クライアントを信用しない）
+  const { before: contextBefore, after: contextAfter } = clampContext(
+    typeof body.contextBefore === "string" ? body.contextBefore : "",
+    typeof body.contextAfter === "string" ? body.contextAfter : ""
+  );
+  const targetLanguage = composition.explanation_language.trim() || "ja";
+  const textHash = selectionHash(text, targetLanguage, contextBefore, contextAfter);
+
+  const startedAt = Date.now();
+  const cached = findCompositionTranslation(textHash, targetLanguage);
+  if (cached !== null) {
+    insertCompositionTranslateLog({
+      compositionId: id,
+      textHash,
+      targetLanguage,
+      sourceText: text,
+      contextBefore,
+      contextAfter,
+      translatedText: cached,
+      model: config.translateModel,
+      inputTokens: 0,
+      outputTokens: 0,
+      costUsd: 0,
+      status: "success",
+      errorMessage: null,
+      latencyMs: Date.now() - startedAt,
+      cacheHit: true,
+    });
+    logger.info(`composition-translate: cache hit composition=#${id} len=${text.length}`);
+    res.json({ translatedText: cached, cached: true });
+    return;
+  }
+
+  logger.info(
+    `composition-translate: start composition=#${id} len=${text.length} ` +
+      `context=${contextBefore.length}/${contextAfter.length} lang=${targetLanguage} ` +
+      `model=${config.translateModel}`
+  );
+
+  try {
+    const result = await translateSelection({ text, targetLanguage, contextBefore, contextAfter });
+    insertCompositionTranslateLog({
+      compositionId: id,
+      textHash,
+      targetLanguage,
+      sourceText: text,
+      contextBefore,
+      contextAfter,
+      translatedText: result.text,
+      model: result.model,
+      inputTokens: result.inputTokens,
+      outputTokens: result.outputTokens,
+      costUsd: estimateCostUsd(result.model, result.inputTokens, result.outputTokens),
+      status: "success",
+      errorMessage: null,
+      latencyMs: Date.now() - startedAt,
+      cacheHit: false,
+    });
+    logger.info(
+      `composition-translate: success composition=#${id} latencyMs=${Date.now() - startedAt}`
+    );
+    res.json({ translatedText: result.text, cached: false });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    insertCompositionTranslateLog({
+      compositionId: id,
+      textHash,
+      targetLanguage,
+      sourceText: text,
+      contextBefore,
+      contextAfter,
+      translatedText: null,
+      model: config.translateModel,
+      inputTokens: 0,
+      outputTokens: 0,
+      costUsd: 0,
+      status: "error",
+      errorMessage,
+      latencyMs: Date.now() - startedAt,
+      cacheHit: false,
+    });
+    logger.error(
+      `composition-translate: failed composition=#${id} latencyMs=${Date.now() - startedAt} error=${errorMessage}`
     );
     res.status(500).json({ error: errorMessage });
   }
@@ -1983,6 +2103,7 @@ const USAGE_FEATURE_META: Record<UsageFeature, { label: string; href: string }> 
   "word-normalize": { label: "単語正規化", href: "/admin/word-normalize" },
   "writing-chat": { label: "作文チャット", href: "/admin/writing" },
   "writing-title": { label: "作文タイトル", href: "/admin/writing" },
+  "writing-translate": { label: "作文翻訳", href: "/admin/writing" },
   tts: { label: "TTS音声", href: "/admin/tts" },
   illustrations: { label: "単語イラスト", href: "/admin/illustrations" },
   quiz: { label: "単語クイズ", href: "/admin/quiz-questions" },
