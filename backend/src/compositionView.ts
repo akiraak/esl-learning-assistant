@@ -605,7 +605,7 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
 </head>
 <body>
   <div class="toolbar">
-    <a href="${escapeHtml(page.backHref)}">← 作文一覧</a>
+    <a href="${escapeHtml(page.backHref)}">← Go Back</a>
     <span class="spacer"></span>
     <span class="status" id="word-count">${wordCountLabel(countWords(activeTab.text))}</span>
     <span class="status sep" aria-hidden="true">・</span>
