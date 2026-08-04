@@ -496,7 +496,19 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
       flex: none; padding: 12px 18px; border-bottom: 1px solid #E4DDCE;
       font-size: 13px; font-weight: 600; display: flex; align-items: baseline; gap: 8px;
     }
-    .chat-head .model { font-weight: 400; font-size: 11.5px; color: ${PAPER_FAINT}; }
+    /* 幅を詰めたときは、切り替えを残してモデル名の方を省略する */
+    .chat-head .model {
+      font-weight: 400; font-size: 11.5px; color: ${PAPER_FAINT};
+      min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    /* 「AI に何を渡すか」の切り替え。モデル名と同じ行に置き、送信前に必ず目に入るようにする */
+    .chat-head .spacer { flex: 1; }
+    .chat-scope {
+      flex: none; align-self: center; display: flex; align-items: center; gap: 5px; white-space: nowrap;
+      font-weight: 400; font-size: 11.5px; color: ${PAPER_FAINT}; cursor: pointer;
+    }
+    .chat-scope input { margin: 0; cursor: pointer; }
+    .chat-scope:hover { color: ${PAPER_INK}; }
     .chat-log { flex: 1; min-height: 0; overflow-y: auto; padding: 18px; }
     .chat-empty { color: ${PAPER_FAINT}; font-size: 13px; line-height: 1.8; }
     .chat-empty code { background: #EDE7DA; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
@@ -627,7 +639,13 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
     <div class="resizer" id="resizer" role="separator" aria-orientation="vertical"
          tabindex="0" title="ドラッグで幅を変える" aria-label="紙と AI 欄の境界"></div>
     <aside class="chat-pane">
-      <div class="chat-head">AI に相談<span class="model">${escapeHtml(page.chatModel)}</span></div>
+      <div class="chat-head">
+        AI に相談<span class="model">${escapeHtml(page.chatModel)}</span>
+        <span class="spacer"></span>
+        <label class="chat-scope" title="質問に、いま開いているページだけでなく全ページの英文を添えます">
+          <input type="checkbox" id="chat-all-pages">全ページを含める
+        </label>
+      </div>
       <div class="chat-log" id="chat-log">
         ${
           log ||
@@ -1628,7 +1646,16 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
       var form = document.getElementById('chat-form');
       var question = document.getElementById('chat-input');
       var send = document.getElementById('chat-send');
+      var allPages = document.getElementById('chat-all-pages');
       var sending = false;
+
+      // 「全ページを含める」は会話全体にかかる設定。作文をまたいで同じ書き方をすることが多いので、
+      // ペイン幅と同じくブラウザ側（localStorage）に覚える。
+      var ALL_PAGES_KEY = 'composition.chatAllPages';
+      try { allPages.checked = localStorage.getItem(ALL_PAGES_KEY) === '1'; } catch (err) {}
+      allPages.addEventListener('change', function () {
+        try { localStorage.setItem(ALL_PAGES_KEY, allPages.checked ? '1' : '0'); } catch (err) {}
+      });
 
       function scrollLog() { log.scrollTop = log.scrollHeight; }
 
@@ -1764,7 +1791,7 @@ export function renderCompositionEditorPageHtml(page: CompositionEditorPage): st
           return fetch(chatUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: text, pageId: activeId })
+            body: JSON.stringify({ message: text, pageId: activeId, includeAllPages: allPages.checked })
           });
         }).then(function (res) {
           // 入口の検証エラー（404/400）だけは JSON がそのまま返る

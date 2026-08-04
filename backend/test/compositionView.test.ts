@@ -389,8 +389,16 @@ test("タブ: ドラッグで並べ替えられ、落ちる位置に目印を出
 test("タブ: チャットとタイトル生成には選択中のページを伝える", () => {
   const html = tabbedPage();
 
-  assert.match(html, /JSON\.stringify\(\{ message: text, pageId: activeId \}\)/);
+  assert.match(html, /JSON\.stringify\(\{ message: text, pageId: activeId, includeAllPages: allPages\.checked \}\)/);
   assert.match(html, /JSON\.stringify\(\{ pageId: activeId \}\)/);
+});
+
+test("チャット: 「全ページを含める」の切り替えをヘッダに置き、ブラウザに覚えさせる", () => {
+  const html = tabbedPage();
+
+  assert.match(html, /<input type="checkbox" id="chat-all-pages">全ページを含める/);
+  // 会話全体にかかる設定なので、送信のたびではなくブラウザ側に残す
+  assert.match(html, /composition\.chatAllPages/);
 });
 
 test("執筆ページ: 本文の HTML 特殊文字をエスケープする", () => {

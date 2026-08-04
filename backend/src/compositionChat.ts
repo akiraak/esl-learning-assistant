@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { pageDisplayName } from "./composition";
 import { config } from "./config";
 
 // 執筆画面（/admin/writing/:id）の右ペインで動く、書いている英文についての相談チャット。
@@ -19,19 +20,82 @@ export const CHAT_HISTORY_MAX_MESSAGES = 20;
 /// プロンプトに載せる英文の上限（本文と同じ上限。これを超える分は末尾を切る）
 export const CHAT_COMPOSITION_MAX_LENGTH = 5000;
 
+/// 全ページを同梱するとき、プロンプトに載せる本文の合計上限。
+/// 1ページあたりは従来どおり CHAT_COMPOSITION_MAX_LENGTH で切り、合計がこれを超える分は
+/// ページ単位で落とす（docs/plans/writing-chat-all-pages.md）。
+export const CHAT_ALL_PAGES_MAX_LENGTH = 20000;
+
 const NO_TEXT_PLACEHOLDER = "(まだ何も書かれていません)";
+const EMPTY_PAGE_PLACEHOLDER = "(このページはまだ空です)";
+const ACTIVE_PAGE_MARK = "← いま開いているページ";
+const OMITTED_NOTE = "(長さの上限のため、上記以外のページは省略しました)";
+/// 複数ページを並べたときの前置き。指示語（「この文は」）が開いているページに向くようにする。
+const MULTI_PAGE_LEAD =
+  `この作文は複数のページに分かれています。` +
+  `特に断りがなければ「${ACTIVE_PAGE_MARK}」と印の付いたページについての質問として答えてください` +
+  `（他のページは前後の流れを見るための材料です）。`;
+
+/// 全ページ同梱のときにプロンプトへ渡す1ページ分。
+export interface ChatPage {
+  /// タブ名。空文字なら position から「ページ N」を作る
+  name: string;
+  /// 1 始まりのタブの並び順
+  position: number;
+  english_text: string;
+  /// いま開いている（質問の主語になる）ページか
+  active: boolean;
+}
+
+/// 複数ページを、プロンプトに載せる1つの本文へ畳む。
+/// 1ページだけのときは見出しを付けず、従来の「本文そのまま」と同じ形にする。
+/// 上限を超えた分はページ単位で落とし、落としたことを本文の末尾に明記する（黙って切らない）。
+/// 開いているページは、それが末尾にあっても落ちないよう先に枠を取る。
+export function buildChatPagesText(pages: ChatPage[]): string {
+  if (pages.length <= 1) {
+    return (pages[0]?.english_text ?? "").trim().slice(0, CHAT_COMPOSITION_MAX_LENGTH);
+  }
+
+  const sections = pages.map((page) => {
+    const heading = `## ${pageDisplayName(page.name, page.position)}${page.active ? ` ${ACTIVE_PAGE_MARK}` : ""}`;
+    const text = page.english_text.trim().slice(0, CHAT_COMPOSITION_MAX_LENGTH);
+    return { active: page.active, block: `${heading}\n${text || EMPTY_PAGE_PLACEHOLDER}` };
+  });
+
+  // 開いているページの分を先に引いてから、残りを上から詰める
+  const activeLength = sections.find((section) => section.active)?.block.length ?? 0;
+  let budget = CHAT_ALL_PAGES_MAX_LENGTH - activeLength;
+  const kept: string[] = [];
+  let omitted = false;
+  for (const section of sections) {
+    if (section.active) {
+      kept.push(section.block);
+      continue;
+    }
+    if (section.block.length > budget) {
+      omitted = true;
+      continue;
+    }
+    budget -= section.block.length;
+    kept.push(section.block);
+  }
+
+  const blocks = omitted ? [...kept, OMITTED_NOTE] : kept;
+  return [MULTI_PAGE_LEAD, ...blocks].join("\n\n");
+}
 
 /// システムプロンプト。学習者が書いている英文を常に同梱するのがこのチャットの肝。
-/// 本文が空でもプレースホルダを入れ、「まだ書いていない」ことを AI に伝える。
-export function buildChatSystemPrompt(compositionText: string): string {
-  const trimmed = compositionText.trim().slice(0, CHAT_COMPOSITION_MAX_LENGTH);
+/// 渡すページは1枚（開いているページだけ）でも全ページでもよく、本文の組み立ては
+/// buildChatPagesText に任せる。全ページが空でもプレースホルダを入れ、
+/// 「まだ書いていない」ことを AI に伝える。
+export function buildChatSystemPrompt(pages: ChatPage[]): string {
+  const body = buildChatPagesText(pages);
   return [
     `あなたはESL学習者の英作文を隣で手伝うライティング講師です。`,
     `学習者はいま次の英文を書いています（書きかけのこともあります）。`,
     `学習者の質問は、特に断りがなければこの英文についてのものとして答えてください。`,
     ``,
     `【学習者が書いている英文】`,
-    trimmed || NO_TEXT_PLACEHOLDER,
+    body || NO_TEXT_PLACEHOLDER,
     ``,
     `回答の方針:`,
     `- 日本語で、短く具体的に答える（要点が複数あるときは Markdown の箇条書き）`,
@@ -124,7 +188,7 @@ function buildChatMessages(history: ChatMessage[], question: string): Anthropic.
 /// 完了したら ChatReplyResult（保存・課金ログ用）を返す。
 /// 途中で signal が中断されたら例外になるので、呼び出し側は保存しないこと。
 export async function generateChatReplyStream(
-  compositionText: string,
+  pages: ChatPage[],
   history: ChatMessage[],
   question: string,
   options: ChatReplyStreamOptions
@@ -136,7 +200,7 @@ export async function generateChatReplyStream(
       model: config.writingChatModel,
       max_tokens: 2048,
       thinking: { type: "disabled" },
-      system: buildChatSystemPrompt(compositionText),
+      system: buildChatSystemPrompt(pages),
       messages,
     },
     { signal: options.signal }

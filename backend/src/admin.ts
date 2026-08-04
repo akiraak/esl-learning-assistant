@@ -92,7 +92,7 @@ import {
   renderCompositionEditorPageHtml,
   renderCompositionMarkdown,
 } from "./compositionView";
-import { CHAT_MESSAGE_MAX_LENGTH, generateChatReplyStream } from "./compositionChat";
+import { CHAT_MESSAGE_MAX_LENGTH, generateChatReplyStream, type ChatPage } from "./compositionChat";
 import {
   COMPOSITION_TITLE_MAX_LENGTH,
   generateCompositionTitle,
@@ -1093,7 +1093,9 @@ adminRouter.get("/writing/:id", (req, res) => {
 });
 
 // 執筆画面の相談チャット。質問には常に「選択中のページのいま保存されている本文」をプロンプトへ含める
-// （画面側は送信前に自動保存を確定させてからここを叩く）。スレッドはページごとには分けず
+// （画面側は送信前に自動保存を確定させてからここを叩く）。`includeAllPages` が真なら
+// 同じ作文の全ページを添え、どれが開いているページかを印で示す
+// （docs/plans/writing-chat-all-pages.md）。スレッドはページごとには分けず
 // 1作文に1本のままで、どのページの話かは同梱する本文で表す。
 // 発言は composition_chat_messages に積み、assistant 行が課金ログも兼ねる。
 adminRouter.post("/writing/:id/chat", async (req, res) => {
@@ -1104,7 +1106,7 @@ adminRouter.post("/writing/:id/chat", async (req, res) => {
     return;
   }
 
-  const { message, pageId } = (req.body ?? {}) as Record<string, unknown>;
+  const { message, pageId, includeAllPages } = (req.body ?? {}) as Record<string, unknown>;
   if (typeof message !== "string" || !message.trim()) {
     res.status(400).json({ error: "message is required" });
     return;
@@ -1122,10 +1124,21 @@ adminRouter.post("/writing/:id/chat", async (req, res) => {
     content: row.content,
   }));
 
+  // 全ページ同梱でも「開いているページ」は印で分かるようにする。ページが1枚しかない作文なら
+  // どちらでも同じ結果になるので、切り替えの状態は見ないで済む。
+  const allPages = includeAllPages === true;
+  const promptPages: ChatPage[] = (allPages ? listCompositionPages(id) : [page]).map((row) => ({
+    name: row.name,
+    position: row.position,
+    english_text: row.english_text,
+    active: row.id === page.id,
+  }));
+
   const startedAt = Date.now();
   logger.info(
     `composition-chat: start composition=#${id} page=#${page.id} questionLen=${question.length} ` +
-      `historyMessages=${history.length} pageLen=${page.english_text.length} model=${config.writingChatModel}`
+      `historyMessages=${history.length} pageLen=${page.english_text.length} ` +
+      `allPages=${allPages} promptPages=${promptPages.length} model=${config.writingChatModel}`
   );
 
   // 返答は chunked の NDJSON（1行1JSON）で流す。1行は
@@ -1151,7 +1164,7 @@ adminRouter.post("/writing/:id/chat", async (req, res) => {
   };
 
   try {
-    const result = await generateChatReplyStream(page.english_text, history, question, {
+    const result = await generateChatReplyStream(promptPages, history, question, {
       signal: controller.signal,
       onText: (fullText) => writeEvent({ t: "delta", html: renderCompositionMarkdown(fullText) }),
     });

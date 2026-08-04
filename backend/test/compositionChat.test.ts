@@ -1,19 +1,37 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  buildChatPagesText,
   buildChatSystemPrompt,
   createTextFlusher,
   sanitizeChatHistory,
+  CHAT_ALL_PAGES_MAX_LENGTH,
   CHAT_COMPOSITION_MAX_LENGTH,
   CHAT_HISTORY_MAX_MESSAGES,
   type ChatMessage,
+  type ChatPage,
 } from "../src/compositionChat";
 
 // 執筆画面の相談チャット。import は Anthropic クライアントを構築するだけで通信しない
 // （documentExtract.test.ts と同じ扱い）。ここではプロンプト組み立てだけを検証する。
 
+/// 開いているページ1枚だけ（＝「全ページを含める」オフ）のときの渡し方。
+function activePage(text: string): ChatPage[] {
+  return [{ name: "", position: 1, english_text: text, active: true }];
+}
+
+/// タブ名と本文の組から ChatPage[] を作る。active は index 番目。
+function pages(entries: Array<[string, string]>, activeIndex: number): ChatPage[] {
+  return entries.map(([name, english_text], index) => ({
+    name,
+    position: index + 1,
+    english_text,
+    active: index === activeIndex,
+  }));
+}
+
 test("システムプロンプト: 書いている英文を必ず含める（これがこのチャットの肝）", () => {
-  const prompt = buildChatSystemPrompt("  I went to school yesterday and met my friend.  ");
+  const prompt = buildChatSystemPrompt(activePage("  I went to school yesterday and met my friend.  "));
 
   assert.match(prompt, /【学習者が書いている英文】/);
   assert.match(prompt, /I went to school yesterday and met my friend\./);
@@ -22,13 +40,13 @@ test("システムプロンプト: 書いている英文を必ず含める（こ
 });
 
 test("システムプロンプト: 本文が空でも「まだ書かれていない」ことを伝える", () => {
-  const prompt = buildChatSystemPrompt("   \n  ");
+  const prompt = buildChatSystemPrompt(activePage("   \n  "));
 
   assert.match(prompt, /\(まだ何も書かれていません\)/);
 });
 
 test("システムプロンプト: 英文はコピーできるようコードブロックで示させる", () => {
-  const prompt = buildChatSystemPrompt("I go to school yesterday.");
+  const prompt = buildChatSystemPrompt(activePage("I go to school yesterday."));
 
   // 画面側はこのブロックを1つのまとまりと見なしてコピーボタンを出す
   assert.match(prompt, /```/);
@@ -37,10 +55,95 @@ test("システムプロンプト: 英文はコピーできるようコードブ
 
 test("システムプロンプト: 長すぎる本文は上限で切る", () => {
   const long = "a".repeat(CHAT_COMPOSITION_MAX_LENGTH + 500);
-  const prompt = buildChatSystemPrompt(long);
+  const prompt = buildChatSystemPrompt(activePage(long));
 
   assert.equal(prompt.includes("a".repeat(CHAT_COMPOSITION_MAX_LENGTH)), true);
   assert.equal(prompt.includes("a".repeat(CHAT_COMPOSITION_MAX_LENGTH + 1)), false);
+});
+
+// --- 全ページの同梱（buildChatPagesText）----------------------------------
+// 「全ページを含める」スイッチ（docs/plans/writing-chat-all-pages.md）で渡る形。
+
+test("全ページ: 1ページだけなら見出しを付けず、従来どおり本文そのまま", () => {
+  const text = buildChatPagesText(activePage("  I like cats.  "));
+
+  assert.equal(text, "I like cats.");
+});
+
+test("全ページ: 各ページの見出しと本文が並び、開いているページに印が付く", () => {
+  const text = buildChatPagesText(
+    pages(
+      [
+        ["導入", "I have a dog."],
+        ["本論", "He is very big."],
+      ],
+      1
+    )
+  );
+
+  assert.match(text, /## 導入\nI have a dog\./);
+  assert.match(text, /## 本論 ← いま開いているページ\nHe is very big\./);
+  // 印は開いているページだけ
+  assert.equal(text.match(/← いま開いているページ/g)?.length, 2, "前置きと見出しの2箇所だけ");
+  // 前置きで、質問がどのページのものかを伝える
+  assert.match(text, /この作文は複数のページに分かれています/);
+});
+
+test("全ページ: タブ名が空なら「ページ N」を見出しにする", () => {
+  const text = buildChatPagesText(
+    pages(
+      [
+        ["", "First."],
+        ["", "Second."],
+      ],
+      0
+    )
+  );
+
+  assert.match(text, /## ページ 1 ← いま開いているページ/);
+  assert.match(text, /## ページ 2\nSecond\./);
+});
+
+test("全ページ: 空のページも「空」と分かる形で載せる（書き忘れを指摘できるように）", () => {
+  const text = buildChatPagesText(
+    pages(
+      [
+        ["導入", "I have a dog."],
+        ["結び", "   "],
+      ],
+      0
+    )
+  );
+
+  assert.match(text, /## 結び\n\(このページはまだ空です\)/);
+});
+
+test("全ページ: 1ページあたりは CHAT_COMPOSITION_MAX_LENGTH で切る", () => {
+  const long = "a".repeat(CHAT_COMPOSITION_MAX_LENGTH + 500);
+  const text = buildChatPagesText(pages([["長い", long], ["短い", "ok"]], 1));
+
+  assert.equal(text.includes("a".repeat(CHAT_COMPOSITION_MAX_LENGTH)), true);
+  assert.equal(text.includes("a".repeat(CHAT_COMPOSITION_MAX_LENGTH + 1)), false);
+});
+
+test("全ページ: 合計の上限を超えたら以降のページを落とし、省略した旨を書く", () => {
+  const body = "b".repeat(CHAT_COMPOSITION_MAX_LENGTH);
+  // 5000 字 × 6 ページ = 30000 字。合計上限（20000）に収まらない分が出る
+  const entries: Array<[string, string]> = Array.from({ length: 6 }, (_, index) => [`ページ${index + 1}`, body]);
+  const text = buildChatPagesText(pages(entries, 0));
+
+  assert.ok(text.length <= CHAT_ALL_PAGES_MAX_LENGTH + 500, "上限の前後に収まる（前置きと注記の分だけ超える）");
+  assert.match(text, /\(長さの上限のため、上記以外のページは省略しました\)/);
+  assert.equal(text.includes("## ページ6"), false, "後ろのページから落ちる");
+});
+
+test("全ページ: 開いているページは末尾にあっても省略されない", () => {
+  const body = "b".repeat(CHAT_COMPOSITION_MAX_LENGTH);
+  const entries: Array<[string, string]> = Array.from({ length: 6 }, (_, index) => [`ページ${index + 1}`, body]);
+  const text = buildChatPagesText(pages(entries, 5));
+
+  assert.match(text, /## ページ6 ← いま開いているページ/);
+  assert.match(text, /\(長さの上限のため、上記以外のページは省略しました\)/);
 });
 
 test("履歴: 空の発言を落とす", () => {
