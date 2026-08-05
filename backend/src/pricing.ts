@@ -89,6 +89,17 @@ export function estimateCostUsd(model: string, inputTokens: number, outputTokens
   return (inputTokens * pricing.input + outputTokens * pricing.output) / 1_000_000;
 }
 
+// Web 検索（Claude のサーバーツール web_search）の1,000回あたり単価（USD）。
+// トークンとは別建ての課金で、LiteLLM の価格JSONには載らないため手動管理の固定値。
+// 参照: https://platform.claude.com/docs/en/pricing（2026-08-04 確認）
+export const WEB_SEARCH_COST_PER_1K_USD = 10.0;
+
+/// Web 検索の回数ぶんの料金。トークン料金（estimateCostUsd）とは別に足す。
+export function estimateWebSearchCostUsd(requests: number): number {
+  if (!Number.isFinite(requests) || requests <= 0) return 0;
+  return (requests * WEB_SEARCH_COST_PER_1K_USD) / 1_000;
+}
+
 export function getCurrentPricing(): PricingTable {
   return structuredClone(currentPricing);
 }

@@ -212,6 +212,7 @@ db.exec(`
     model TEXT,
     input_tokens INTEGER NOT NULL DEFAULT 0,
     output_tokens INTEGER NOT NULL DEFAULT 0,
+    web_search_requests INTEGER NOT NULL DEFAULT 0,
     cost_usd REAL NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL
   )
@@ -220,6 +221,15 @@ db.exec(
   `CREATE INDEX IF NOT EXISTS idx_composition_chat_messages_composition
      ON composition_chat_messages(composition_id, id)`
 );
+
+// Web 検索の導入前のDBには web_search_requests 列が無いため後方互換マイグレーション。
+// 既存行は 0（＝検索なし）のままでよい。
+const chatMessageColumns = new Set(
+  (db.prepare("PRAGMA table_info(composition_chat_messages)").all() as { name: string }[]).map((c) => c.name)
+);
+if (!chatMessageColumns.has("web_search_requests")) {
+  db.exec("ALTER TABLE composition_chat_messages ADD COLUMN web_search_requests INTEGER NOT NULL DEFAULT 0");
+}
 
 // サーバ合成したTTS音声の保存（実体は data/tts/<text_hash>.wav、ここはメタデータ）。
 // キャッシュキーは sha256("model|text")（voice は生成時ランダム選択のためキーに含めない。
@@ -1092,6 +1102,8 @@ export interface CompositionChatMessageRow {
   model: string | null;
   input_tokens: number;
   output_tokens: number;
+  /// Web 検索（サーバーツール）の実行回数。トークンとは別建ての課金ぶんが cost_usd に含まれる
+  web_search_requests: number;
   cost_usd: number;
   created_at: string;
 }
@@ -1104,6 +1116,7 @@ export interface CompositionChatMessageInput {
   model?: string;
   inputTokens?: number;
   outputTokens?: number;
+  webSearchRequests?: number;
   costUsd?: number;
 }
 
@@ -1119,8 +1132,9 @@ export function insertCompositionChatMessage(input: CompositionChatMessageInput)
   const result = db
     .prepare(
       `INSERT INTO composition_chat_messages (
-         composition_id, role, content, model, input_tokens, output_tokens, cost_usd, created_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+         composition_id, role, content, model, input_tokens, output_tokens,
+         web_search_requests, cost_usd, created_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       input.compositionId,
@@ -1129,6 +1143,7 @@ export function insertCompositionChatMessage(input: CompositionChatMessageInput)
       input.model ?? null,
       input.inputTokens ?? 0,
       input.outputTokens ?? 0,
+      input.webSearchRequests ?? 0,
       input.costUsd ?? 0,
       createdAt
     );

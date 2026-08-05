@@ -25,6 +25,22 @@ export const CHAT_COMPOSITION_MAX_LENGTH = 5000;
 /// ページ単位で落とす（docs/plans/writing-chat-all-pages.md）。
 export const CHAT_ALL_PAGES_MAX_LENGTH = 20000;
 
+/// Web 検索（Anthropic 側で走るサーバーツール）の1回の質問あたりの上限。
+/// 文法・自然さの相談で毎回検索されると待ち時間も課金も無駄なので小さく抑える。
+export const CHAT_WEB_SEARCH_MAX_USES = 3;
+/// web_fetch は「会話にすでに出ている URL」しか取りに行けないので、検索より更に少なくてよい。
+export const CHAT_WEB_FETCH_MAX_USES = 2;
+
+/// 相談チャットに渡すサーバーツール。実行は Anthropic 側で完結するので、こちらに実装は要らない。
+export const CHAT_TOOLS: Anthropic.Messages.ToolUnion[] = [
+  { type: "web_search_20260209", name: "web_search", max_uses: CHAT_WEB_SEARCH_MAX_USES },
+  { type: "web_fetch_20260209", name: "web_fetch", max_uses: CHAT_WEB_FETCH_MAX_USES },
+];
+
+/// stop_reason: "pause_turn"（サーバーツールのループが上限に達した合図）で
+/// アシスタントのターンを積んで再送する回数の上限。無限ループにしないための歯止め。
+export const CHAT_PAUSE_TURN_MAX_RETRIES = 3;
+
 const NO_TEXT_PLACEHOLDER = "(まだ何も書かれていません)";
 const EMPTY_PAGE_PLACEHOLDER = "(このページはまだ空です)";
 const ACTIVE_PAGE_MARK = "← いま開いているページ";
@@ -105,6 +121,10 @@ export function buildChatSystemPrompt(pages: ChatPage[]): string {
     `  （日本語の説明はブロックの外に書く）`,
     `- 全文の書き直しは頼まれたときだけ。まずは直す箇所と理由を示し、学習者が自分で直せるようにする`,
     `- 英文がまだ空のときは、書き出し方や使えそうな表現を提案する`,
+    // Web 検索は Anthropic 側のサーバーツール。文法・自然さの相談で毎回走ると待ち時間と課金が無駄なので、
+    // 「自分の知識で答えられないとき」に絞らせる（docs/plans/writing-chat-web-search.md）。
+    `- 文法・語法・自然さの判断は自分の知識で答える。実際の用例の確認、時事・固有名詞・最新の情報が要るときだけ web_search で調べる`,
+    `- 調べた内容を答えに使ったときは、出典を Markdown リンク（[サイト名](URL)）で答えの末尾に添える`,
   ].join("\n");
 }
 
@@ -121,8 +141,15 @@ export function sanitizeChatHistory(messages: ChatMessage[]): ChatMessage[] {
 export interface ChatReplyResult {
   text: string;
   model: string;
+  /// pause_turn での再送を含めた合計（再送のたびに入力は再課金されるので足し合わせる）
   inputTokens: number;
   outputTokens: number;
+  /// Web 検索の実行回数。トークンとは別建ての課金なので記録する
+  webSearchRequests: number;
+  /// pause_turn で積み直した回数（0 なら1回のリクエストで完結した）
+  resumedTurns: number;
+  /// 上限まで再送しても pause_turn のままだった＝返答が途中で終わっている
+  truncated: boolean;
 }
 
 /// 逐次表示で途中経過を通知する間隔。delta 1つごとに Markdown を組み直すのは無駄なので、
@@ -184,6 +211,65 @@ function buildChatMessages(history: ChatMessage[], question: string): Anthropic.
   ];
 }
 
+/// 1ターン分のストリーム。client.messages.stream のうち、ここで使う分だけを写した形
+/// （テストでスタブに差し替えられるようにインタフェースで切っている）。
+export interface ChatStream {
+  on(event: "text", handler: (delta: string) => void): unknown;
+  finalMessage(): Promise<Pick<Anthropic.Message, "content" | "usage" | "stop_reason">>;
+}
+
+/// messages を渡してストリームを1本張る。pause_turn のたびに呼び直される。
+export type ChatStreamStarter = (messages: Anthropic.Messages.MessageParam[]) => ChatStream;
+
+export type ChatTurnsResult = Omit<ChatReplyResult, "model">;
+
+/// サーバーツール（web_search / web_fetch）は Anthropic 側でループし、上限に達すると
+/// stop_reason: "pause_turn" で止まる。そのままだと返答が途中で切れたまま保存されるので、
+/// アシスタントのターンを messages に積んで再送し、続きを書かせる。
+/// 本文・トークン・検索回数はターンをまたいで足し合わせる。
+export async function runChatStreamTurns(
+  start: ChatStreamStarter,
+  messages: Anthropic.Messages.MessageParam[],
+  onText: (fullText: string) => void
+): Promise<ChatTurnsResult> {
+  const turns = [...messages];
+  const flusher = createTextFlusher(onText);
+  let text = "";
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let webSearchRequests = 0;
+  let resumedTurns = 0;
+  let truncated = false;
+
+  for (;;) {
+    const stream = start(turns);
+    stream.on("text", (delta) => {
+      text += delta;
+      flusher.push(text);
+    });
+
+    const final = await stream.finalMessage();
+    inputTokens += final.usage.input_tokens;
+    outputTokens += final.usage.output_tokens;
+    webSearchRequests += final.usage.server_tool_use?.web_search_requests ?? 0;
+
+    if (final.stop_reason !== "pause_turn") break;
+    if (resumedTurns >= CHAT_PAUSE_TURN_MAX_RETRIES) {
+      // これ以上は付き合わない。途中まででも返し、呼び出し側で分かるよう印を付ける
+      truncated = true;
+      break;
+    }
+
+    resumedTurns += 1;
+    // 応答には server_tool_use / web_search_tool_result のブロックも混ざる。
+    // 続きを書かせるにはそれらも含めてそのまま積み直す必要がある。
+    turns.push({ role: "assistant", content: final.content as Anthropic.Messages.ContentBlockParam[] });
+  }
+
+  flusher.flush();
+  return { text, inputTokens, outputTokens, webSearchRequests, resumedTurns, truncated };
+}
+
 /// 生成の進みに合わせて onText へ「そこまでの全文」を渡し、
 /// 完了したら ChatReplyResult（保存・課金ログ用）を返す。
 /// 途中で signal が中断されたら例外になるので、呼び出し側は保存しないこと。
@@ -193,38 +279,28 @@ export async function generateChatReplyStream(
   question: string,
   options: ChatReplyStreamOptions
 ): Promise<ChatReplyResult> {
-  const messages = buildChatMessages(history, question);
-
-  const stream = client.messages.stream(
-    {
-      model: config.writingChatModel,
-      max_tokens: 2048,
-      thinking: { type: "disabled" },
-      system: buildChatSystemPrompt(pages),
-      messages,
-    },
-    { signal: options.signal }
+  const system = buildChatSystemPrompt(pages);
+  const result = await runChatStreamTurns(
+    (messages) =>
+      client.messages.stream(
+        {
+          model: config.writingChatModel,
+          max_tokens: 2048,
+          thinking: { type: "disabled" },
+          system,
+          tools: CHAT_TOOLS,
+          messages,
+        },
+        { signal: options.signal }
+      ),
+    buildChatMessages(history, question),
+    options.onText
   );
 
-  let text = "";
-  const flusher = createTextFlusher(options.onText);
-  stream.on("text", (delta) => {
-    text += delta;
-    flusher.push(text);
-  });
-
-  const final = await stream.finalMessage();
-  flusher.flush();
-
-  const trimmed = text.trim();
+  const trimmed = result.text.trim();
   if (!trimmed) {
     throw new Error("Claude APIからテキスト応答が得られませんでした");
   }
 
-  return {
-    text: trimmed,
-    model: config.writingChatModel,
-    inputTokens: final.usage.input_tokens,
-    outputTokens: final.usage.output_tokens,
-  };
+  return { ...result, text: trimmed, model: config.writingChatModel };
 }

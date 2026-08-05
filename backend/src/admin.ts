@@ -111,7 +111,7 @@ import { findMisspellings, suggestCorrections } from "./spellcheck";
 const SPELL_WORD_MAX_LENGTH = 80;
 import { generateQuizQuestions, type QuizQuestion } from "./quizQuestions";
 import { generateIllustration, ILLUSTRATION_MODEL } from "./illustration";
-import { DEFAULT_IMAGE_PRICING, DEFAULT_PRICING, DEFAULT_TTS_PRICING, estimateCostUsd, getCurrentPricing, providerLabel, type Provider } from "./pricing";
+import { DEFAULT_IMAGE_PRICING, DEFAULT_PRICING, DEFAULT_TTS_PRICING, estimateCostUsd, estimateWebSearchCostUsd, getCurrentPricing, providerLabel, type Provider } from "./pricing";
 import { fetchAndApplyPricing, fetchAndApplyTtsPricing } from "./pricingSync";
 import { logger } from "./logger";
 import { renderPrintPageHtml, transcriptParagraphsHtml } from "./printView";
@@ -1177,10 +1177,18 @@ adminRouter.post("/writing/:id/chat", async (req, res) => {
       model: result.model,
       inputTokens: result.inputTokens,
       outputTokens: result.outputTokens,
-      costUsd: estimateCostUsd(result.model, result.inputTokens, result.outputTokens),
+      webSearchRequests: result.webSearchRequests,
+      // Web 検索はトークンとは別建ての課金なので、回数ぶんを足して1行の合計にする
+      costUsd:
+        estimateCostUsd(result.model, result.inputTokens, result.outputTokens) +
+        estimateWebSearchCostUsd(result.webSearchRequests),
     });
 
-    logger.info(`composition-chat: success composition=#${id} latencyMs=${Date.now() - startedAt}`);
+    logger.info(
+      `composition-chat: success composition=#${id} latencyMs=${Date.now() - startedAt} ` +
+        `webSearches=${result.webSearchRequests} resumedTurns=${result.resumedTurns}` +
+        (result.truncated ? " truncated=true(pause_turnの再送上限)" : "")
+    );
     writeEvent({ t: "done", html: renderCompositionMarkdown(result.text) });
     res.end();
   } catch (error) {

@@ -4,13 +4,19 @@ import {
   buildChatPagesText,
   buildChatSystemPrompt,
   createTextFlusher,
+  runChatStreamTurns,
   sanitizeChatHistory,
   CHAT_ALL_PAGES_MAX_LENGTH,
   CHAT_COMPOSITION_MAX_LENGTH,
   CHAT_HISTORY_MAX_MESSAGES,
+  CHAT_PAUSE_TURN_MAX_RETRIES,
+  CHAT_TOOLS,
+  CHAT_WEB_SEARCH_MAX_USES,
   type ChatMessage,
   type ChatPage,
+  type ChatStream,
 } from "../src/compositionChat";
+import type Anthropic from "@anthropic-ai/sdk";
 
 // 執筆画面の相談チャット。import は Anthropic クライアントを構築するだけで通信しない
 // （documentExtract.test.ts と同じ扱い）。ここではプロンプト組み立てだけを検証する。
@@ -243,4 +249,114 @@ test("間引き: 溜まっていなければ flush しても重複して出さ�
   flusher.flush();
 
   assert.deepEqual(emitted, ["こんにちは"]);
+});
+
+// --- Web 検索（サーバーツール）--------------------------------------------
+// docs/plans/writing-chat-web-search.md。実行は Anthropic 側なので、こちらで見るのは
+// 「渡している道具」「検索させる方針」「pause_turn で積んで再送する」の3点。
+
+test("検索: web_search / web_fetch をセットで渡す（web_fetch は会話に出た URL しか取れない）", () => {
+  assert.deepEqual(
+    CHAT_TOOLS.map((tool) => tool.type),
+    ["web_search_20260209", "web_fetch_20260209"]
+  );
+  const search = CHAT_TOOLS[0] as Anthropic.Messages.WebSearchTool20260209;
+  assert.equal(search.max_uses, CHAT_WEB_SEARCH_MAX_USES, "検索し放題にはしない");
+});
+
+test("システムプロンプト: 検索は必要なときだけ、使ったら出典を出させる", () => {
+  const prompt = buildChatSystemPrompt(activePage("I went to a Sakura Matsuri last week."));
+
+  assert.match(prompt, /web_search で調べる/);
+  assert.match(prompt, /文法・語法・自然さの判断は自分の知識で答える/);
+  assert.match(prompt, /出典を Markdown リンク/);
+});
+
+// --- pause_turn の積み直し（runChatStreamTurns）----------------------------
+
+interface FakeTurn {
+  text: string;
+  stopReason: Anthropic.Message["stop_reason"];
+  inputTokens?: number;
+  outputTokens?: number;
+  webSearchRequests?: number;
+}
+
+/// turns を順に返すスタブ。何を送ったか（sent）を残して、積み直しを検証できるようにする。
+function fakeStarter(turns: FakeTurn[]) {
+  const sent: Anthropic.Messages.MessageParam[][] = [];
+  let index = 0;
+
+  const start = (messages: Anthropic.Messages.MessageParam[]): ChatStream => {
+    sent.push([...messages]);
+    const turn = turns[Math.min(index, turns.length - 1)];
+    index += 1;
+    return {
+      on(_event: "text", handler: (delta: string) => void) {
+        handler(turn.text);
+        return undefined;
+      },
+      async finalMessage() {
+        return {
+          content: [{ type: "text", text: turn.text, citations: null }] as Anthropic.ContentBlock[],
+          stop_reason: turn.stopReason,
+          usage: {
+            input_tokens: turn.inputTokens ?? 0,
+            output_tokens: turn.outputTokens ?? 0,
+            server_tool_use: { web_search_requests: turn.webSearchRequests ?? 0, web_fetch_requests: 0 },
+          } as Anthropic.Usage,
+        };
+      },
+    };
+  };
+
+  return { start, sent, callCount: () => index };
+}
+
+test("pause_turn: 止まらなければ1回のリクエストで完結する", async () => {
+  const fake = fakeStarter([{ text: "こう直すと自然です。", stopReason: "end_turn", inputTokens: 100, outputTokens: 20 }]);
+
+  const result = await runChatStreamTurns(fake.start, [{ role: "user", content: "質問" }], () => {});
+
+  assert.equal(fake.callCount(), 1);
+  assert.equal(result.text, "こう直すと自然です。");
+  assert.equal(result.resumedTurns, 0);
+  assert.equal(result.truncated, false);
+});
+
+test("pause_turn: アシスタントのターンを積んで再送し、本文をつなげる", async () => {
+  const fake = fakeStarter([
+    { text: "調べています…", stopReason: "pause_turn", inputTokens: 100, outputTokens: 10, webSearchRequests: 3 },
+    { text: "実際に使われている表現です。", stopReason: "end_turn", inputTokens: 400, outputTokens: 30 },
+  ]);
+  const emitted: string[] = [];
+
+  const result = await runChatStreamTurns(fake.start, [{ role: "user", content: "質問" }], (text) =>
+    emitted.push(text)
+  );
+
+  assert.equal(fake.callCount(), 2);
+  assert.equal(result.text, "調べています…実際に使われている表現です。", "ターンをまたいで本文をつなげる");
+  assert.equal(result.resumedTurns, 1);
+  assert.equal(result.truncated, false);
+  // 再送は「元の messages ＋ 途中までのアシスタントのターン」
+  assert.equal(fake.sent[0].length, 1);
+  assert.equal(fake.sent[1].length, 2);
+  assert.equal(fake.sent[1][1].role, "assistant");
+  // 再送のぶんも足し合わせる（入力は再送のたびに再課金される）
+  assert.equal(result.inputTokens, 500);
+  assert.equal(result.outputTokens, 40);
+  assert.equal(result.webSearchRequests, 3);
+  assert.equal(emitted.at(-1), result.text, "最後の通知は全文");
+});
+
+test("pause_turn: 再送の上限に達したら打ち切り、途中までを truncated 付きで返す", async () => {
+  const fake = fakeStarter([{ text: "…", stopReason: "pause_turn", inputTokens: 10, outputTokens: 1 }]);
+
+  const result = await runChatStreamTurns(fake.start, [{ role: "user", content: "質問" }], () => {});
+
+  assert.equal(fake.callCount(), CHAT_PAUSE_TURN_MAX_RETRIES + 1, "無限ループにしない");
+  assert.equal(result.resumedTurns, CHAT_PAUSE_TURN_MAX_RETRIES);
+  assert.equal(result.truncated, true);
+  assert.equal(result.text, "…".repeat(CHAT_PAUSE_TURN_MAX_RETRIES + 1));
 });

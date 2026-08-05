@@ -1,5 +1,23 @@
 # DONE
 
+- [x] 2026-08-04 相談チャットに Web 検索（web_search / web_fetch）を入れた
+      [plan](docs/plans/archive/writing-chat-web-search.md)
+      これまで `tools` を渡していなかったので、相談チャットはモデルの内部知識だけで答えていた。
+      Anthropic 側で実行されるサーバーツール `web_search_20260209` / `web_fetch_20260209` を
+      `compositionChat.ts` の `CHAT_TOOLS` として渡す（`web_fetch` は会話に出ている URL しか
+      取りに行けないので `web_search` とセット）。検索は 1 質問あたり 3 回まで（`web_fetch` は 2 回）。
+      サーバーツールは Anthropic 側でループし、上限に達すると `stop_reason: "pause_turn"` で止まる。
+      そのままだと返答が途中で切れたまま保存されるので、`runChatStreamTurns()` がアシスタントの
+      ターンを `messages` に積んで再送し（上限 `CHAT_PAUSE_TURN_MAX_RETRIES = 3` 回）、本文・
+      トークン・検索回数をターンをまたいで足し合わせる。上限まで再送しても止まらない場合は
+      そこまでの本文を `truncated` の印付きで返し、ログに残す。
+      検索方針はシステムプロンプトに 2 行足した。文法・語法・自然さは自分の知識で答えさせ、
+      用例の実在確認・時事・固有名詞のときだけ検索させる（毎回検索されると待ち時間も課金も無駄）。
+      出典は答えの末尾に Markdown リンクで書かせる方式にしたので、画面側の変更は無し。
+      課金は `composition_chat_messages.web_search_requests` に回数を残し、
+      `estimateWebSearchCostUsd()`（$10 / 1,000 回）ぶんを `cost_usd` に足す。
+      トークンとは別建ての課金なので、これを足さないと /admin/usage の合計が実額とずれる。
+
 - [x] 2026-08-03 相談チャットに「全ページを含める」スイッチを付けた
       [plan](docs/plans/archive/writing-chat-all-pages.md)
       これまで質問には選択中のページの本文しか添えていなかったので、章ごとにページを分けて書くと
