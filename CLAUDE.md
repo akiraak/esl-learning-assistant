@@ -43,3 +43,17 @@ node vibeboard/dist/cli.js --root .
    - 親タスクを `DONE.md` に移動する
    - 対応するプランファイルは `docs/plans/archive/` に移動する
 <!-- vibeboard:end -->
+
+## デプロイ
+
+本番（g3plus サーバ、https://esl.chobi.me/）へのデプロイを依頼されたら、
+**まず [`../g3plus-ops/CLAUDE.md`](../g3plus-ops/CLAUDE.md) の「デプロイ共通規約」を読む**。
+このリポジトリ側にはデプロイ設定（`docker-compose.yml` / `Dockerfile` / `.env`）を置いていない。
+
+- このサービス個別の手順書: [`../g3plus-ops/docs/workflows/esl-learning-assistant.md`](../g3plus-ops/docs/workflows/esl-learning-assistant.md)
+  （通常フローは **DB バックアップ → サーバで `git pull` → build → `up -d` → ログ確認**）
+- サーバはこのリポジトリの GitHub `main` から `git pull` するので、**デプロイ前に push しておく**
+- デプロイ設定の正本は開発機の `/home/ubuntu/g3plus-ops/esl-learning-assistant/`。
+  変更したら scp で転送する（サーバ上の同名ディレクトリを直接編集しない）
+- `db.sqlite` には作文（`compositions` 系）＝再生成できないユーザーデータが入る。
+  更新前のバックアップは `cp` ではなく手順書の `.backup` を使う（WAL の取りこぼしを防ぐため）
