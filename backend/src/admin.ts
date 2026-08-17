@@ -210,6 +210,53 @@ const PAGE_STYLE = `
   .markdown-block code { background: #1B2632; padding: 0 4px; border-radius: 3px; }
   pre { background: #0E141B; border: 1px solid #1F2A35; padding: 12px; border-radius: 8px; overflow-x: auto; }
   .nav-links { margin-top: 16px; }
+  /* 音声再生。表の行に <audio controls> を小さく埋めるとシークバーを掴めないため、
+     行には再生ボタンだけを置き、実際の再生は画面下部固定のドックプレイヤーで行う。 */
+  .play-btn {
+    font: inherit; font-size: 12.5px; font-weight: 600; padding: 6px 13px; border-radius: 6px;
+    cursor: pointer; white-space: nowrap;
+    border: 1px solid #2A3644; background: #16202B; color: #E6EDF3;
+  }
+  .play-btn:hover { border-color: #38BDF8; color: #fff; }
+  .play-btn.playing { border-color: #38BDF8; background: rgba(56,189,248,0.16); color: #fff; }
+  .audio-dock {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+    background: #111820; border-top: 1px solid #1F2A35; box-shadow: 0 -6px 20px rgba(0,0,0,0.45);
+    padding: 10px 20px 12px; display: flex; flex-direction: column; gap: 6px;
+  }
+  .audio-dock[hidden] { display: none; }
+  /* 最終行がドックに隠れないよう、表示中だけ本文の下端を空ける */
+  body.has-audio-dock main { padding-bottom: 150px; }
+  .dock-row { display: flex; align-items: center; gap: 12px; }
+  .dock-play {
+    flex: none; width: 44px; height: 44px; border-radius: 50%; border: none;
+    background: #1F6FEB; color: #fff; font-size: 15px; line-height: 1; cursor: pointer;
+  }
+  .dock-play:hover { background: #388BFD; }
+  .dock-btn {
+    font: inherit; font-size: 12.5px; font-weight: 600; height: 34px; padding: 0 12px;
+    border-radius: 6px; border: 1px solid #2A3644; background: #16202B; color: #E6EDF3; cursor: pointer;
+  }
+  .dock-btn:hover { border-color: #38BDF8; color: #fff; }
+  .dock-title { flex: 1; min-width: 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dock-time { font-size: 12px; color: #8B98A5; font-variant-numeric: tabular-nums; min-width: 48px; text-align: center; }
+  .dock-seek {
+    flex: 1; min-width: 0; height: 28px; cursor: pointer;
+    -webkit-appearance: none; appearance: none; background: transparent;
+  }
+  .dock-seek:disabled { cursor: default; opacity: 0.5; }
+  /* 再生済みの区間を塗る。WebKit は擬似要素に progress が無いので --dock-progress（JSが更新）で塗り分ける */
+  .dock-seek::-webkit-slider-runnable-track {
+    height: 8px; border-radius: 4px;
+    background: linear-gradient(to right, #38BDF8 var(--dock-progress, 0%), #24313F var(--dock-progress, 0%));
+  }
+  .dock-seek::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none; width: 18px; height: 18px; margin-top: -5px;
+    border-radius: 50%; background: #38BDF8; border: none;
+  }
+  .dock-seek::-moz-range-track { height: 8px; border-radius: 4px; background: #24313F; }
+  .dock-seek::-moz-range-progress { height: 8px; border-radius: 4px; background: #38BDF8; }
+  .dock-seek::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; background: #38BDF8; border: none; }
   /* スマホ（作文を読む用途が主）。サイドバーは上部の横スクロールナビに切り替える。
      テーブルは .card の overflow-x で横スクロールするため本文は横に溢れない。 */
   @media (max-width: 720px) {
@@ -226,6 +273,12 @@ const PAGE_STYLE = `
     .sidebar nav a.active { border-left-color: transparent; border-bottom-color: #38BDF8; }
     .sidebar .foot { display: none; }
     main { padding: 18px 16px 40px; }
+    .audio-dock { padding: 8px 12px 10px; }
+    .dock-row { flex-wrap: wrap; gap: 8px; }
+    .dock-play { width: 40px; height: 40px; }
+    /* 幅が足りないので対象名は 2 行目へ送る（order で他ボタンの後ろに回す） */
+    .dock-title { order: 3; flex-basis: 100%; font-size: 12px; }
+    body.has-audio-dock main { padding-bottom: 180px; }
   }
 `;
 
@@ -308,6 +361,186 @@ function sidebar(active?: NavSection): string {
   `;
 }
 
+// 画面下部固定の音声プレイヤー。全ページに出すが、最初に再生ボタンが押されるまでは hidden。
+// <audio> は 1 つだけ持ち、再生のたびに src を差し替える（従来の preload="none" と同じく、
+// 押すまでは音声を取りに行かない）。
+const AUDIO_DOCK_HTML = `
+  <div class="audio-dock" id="audio-dock" hidden>
+    <audio id="dock-audio" preload="none"></audio>
+    <div class="dock-row">
+      <button type="button" class="dock-play" id="dock-toggle" aria-label="再生／一時停止">▶</button>
+      <button type="button" class="dock-btn" data-dock-seek="-5">−5秒</button>
+      <button type="button" class="dock-btn" data-dock-seek="5">+5秒</button>
+      <span class="dock-title" id="dock-title"></span>
+      <button type="button" class="dock-btn" id="dock-rate">1.0x</button>
+      <button type="button" class="dock-btn" id="dock-close" aria-label="プレイヤーを閉じる">✕</button>
+    </div>
+    <div class="dock-row">
+      <span class="dock-time" id="dock-current">0:00</span>
+      <input type="range" class="dock-seek" id="dock-seek" min="0" max="0" step="0.01" value="0" disabled aria-label="再生位置">
+      <span class="dock-time" id="dock-duration">--:--</span>
+    </div>
+  </div>
+`;
+
+// テンプレートリテラル内に置くのでバッククォートと ${ は使わない（文字列連結で書く）。
+const AUDIO_DOCK_SCRIPT = `
+  (function () {
+    var dock = document.getElementById('audio-dock');
+    var audio = document.getElementById('dock-audio');
+    var toggle = document.getElementById('dock-toggle');
+    var seek = document.getElementById('dock-seek');
+    var currentLabel = document.getElementById('dock-current');
+    var durationLabel = document.getElementById('dock-duration');
+    var titleLabel = document.getElementById('dock-title');
+    var rateButton = document.getElementById('dock-rate');
+    var closeButton = document.getElementById('dock-close');
+    var RATES = [1, 1.25, 1.5, 0.75];
+    var rateIndex = 0;
+    var scrubbing = false;
+    var activeButton = null;
+
+    function formatTime(sec) {
+      if (!isFinite(sec) || sec < 0) return '--:--';
+      var whole = Math.floor(sec);
+      return Math.floor(whole / 60) + ':' + String(whole % 60).padStart(2, '0');
+    }
+
+    function paintSeek() {
+      var max = Number(seek.max);
+      var ratio = max > 0 ? Number(seek.value) / max : 0;
+      seek.style.setProperty('--dock-progress', (ratio * 100).toFixed(2) + '%');
+    }
+
+    function setActiveButton(button) {
+      if (activeButton && activeButton !== button) activeButton.classList.remove('playing');
+      activeButton = button || null;
+      if (activeButton) activeButton.classList.add('playing');
+    }
+
+    function syncToggleIcon() {
+      toggle.textContent = audio.paused ? '▶' : '❚❚';
+    }
+
+    function start(src, title, button) {
+      if (audio.getAttribute('src') !== src) {
+        audio.setAttribute('src', src);
+        seek.value = '0';
+        seek.max = '0';
+        seek.disabled = true;
+        currentLabel.textContent = '0:00';
+        durationLabel.textContent = '--:--';
+        paintSeek();
+      }
+      titleLabel.textContent = title || '';
+      dock.hidden = false;
+      document.body.classList.add('has-audio-dock');
+      setActiveButton(button);
+      audio.play().catch(function () {});
+    }
+
+    document.addEventListener('click', function (event) {
+      var target = event.target;
+      var button = target && target.closest ? target.closest('.play-btn') : null;
+      if (!button) return;
+      event.preventDefault();
+      // 再生中の行をもう一度押したら一時停止（頭出しには戻さない）
+      if (button === activeButton && !audio.paused) {
+        audio.pause();
+        return;
+      }
+      start(button.getAttribute('data-audio-src'), button.getAttribute('data-audio-title'), button);
+    });
+
+    toggle.addEventListener('click', function () {
+      if (!audio.getAttribute('src')) return;
+      if (audio.paused) audio.play().catch(function () {}); else audio.pause();
+    });
+
+    Array.prototype.forEach.call(document.querySelectorAll('[data-dock-seek]'), function (button) {
+      button.addEventListener('click', function () {
+        if (!audio.getAttribute('src')) return;
+        skip(Number(button.getAttribute('data-dock-seek')));
+      });
+    });
+
+    function skip(delta) {
+      var max = isFinite(audio.duration) ? audio.duration : audio.currentTime + delta;
+      audio.currentTime = Math.min(Math.max(0, audio.currentTime + delta), max);
+    }
+
+    rateButton.addEventListener('click', function () {
+      rateIndex = (rateIndex + 1) % RATES.length;
+      audio.playbackRate = RATES[rateIndex];
+      rateButton.textContent = RATES[rateIndex].toFixed(2).replace(/0$/, '') + 'x';
+    });
+
+    closeButton.addEventListener('click', function () {
+      audio.pause();
+      // src を外して load() し直さないと、閉じたあともダウンロードが続くことがある
+      audio.removeAttribute('src');
+      audio.load();
+      dock.hidden = true;
+      document.body.classList.remove('has-audio-dock');
+      setActiveButton(null);
+      syncToggleIcon();
+    });
+
+    audio.addEventListener('loadedmetadata', function () {
+      if (!isFinite(audio.duration)) return;
+      seek.max = String(audio.duration);
+      seek.disabled = false;
+      durationLabel.textContent = formatTime(audio.duration);
+      paintSeek();
+    });
+    audio.addEventListener('timeupdate', function () {
+      if (scrubbing) return;
+      seek.value = String(audio.currentTime);
+      currentLabel.textContent = formatTime(audio.currentTime);
+      paintSeek();
+    });
+    audio.addEventListener('play', syncToggleIcon);
+    audio.addEventListener('pause', syncToggleIcon);
+    audio.addEventListener('ended', syncToggleIcon);
+
+    // ドラッグ中は表示だけ動かし、離した（change）時点で実際にシークする
+    seek.addEventListener('input', function () {
+      scrubbing = true;
+      currentLabel.textContent = formatTime(Number(seek.value));
+      paintSeek();
+    });
+    seek.addEventListener('change', function () {
+      audio.currentTime = Number(seek.value);
+      scrubbing = false;
+    });
+
+    document.addEventListener('keydown', function (event) {
+      if (dock.hidden) return;
+      var target = event.target;
+      if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
+      if (event.key === ' ' || event.key === 'Spacebar') {
+        event.preventDefault();
+        toggle.click();
+      } else if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        skip(-5);
+      } else if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        skip(5);
+      }
+    });
+  })();
+`;
+
+/// 音声は行ごとの <audio controls> ではなく、ページ下部の共通プレイヤーで再生する。
+/// 行にはこのボタンだけを置き、音源とラベルを data 属性で渡す。
+function audioPlayButton(src: string, label: string): string {
+  return (
+    `<button type="button" class="play-btn"` +
+    ` data-audio-src="${escapeHtml(src)}" data-audio-title="${escapeHtml(label)}">▶ 再生</button>`
+  );
+}
+
 function renderPage(title: string, extraStyle: string, body: string, active?: NavSection): string {
   return `
     <!DOCTYPE html>
@@ -327,6 +560,8 @@ function renderPage(title: string, extraStyle: string, body: string, active?: Na
         ${sidebar(active)}
         <main>${body}</main>
       </div>
+      ${AUDIO_DOCK_HTML}
+      <script>${AUDIO_DOCK_SCRIPT}</script>
     </body>
     </html>
   `;
@@ -1696,7 +1931,7 @@ adminRouter.get("/words/:id", (req, res) => {
 
   const readingAudio = getWordReadingAudioRow(row.word);
   const readingAudioCell = readingAudio
-    ? `<audio controls preload="none" src="/admin/tts/${readingAudio.id}/audio" style="width:220px;height:32px;vertical-align:middle;"></audio>` +
+    ? audioPlayButton(`/admin/tts/${readingAudio.id}/audio`, `${row.word} の読み上げ`) +
       ` <span class="faint">(${escapeHtml(readingAudio.voice)} / ${escapeHtml(readingAudio.model)})</span>`
     : "<span class=\"faint\">(未生成 — アプリで発音を再生すると作成されます)</span>";
 
@@ -1900,7 +2135,7 @@ adminRouter.get("/tts", (_req, res) => {
           <td class="mono dim">${(row.byte_size / 1024).toFixed(0)} KB</td>
           <td class="mono dim">${formatTtsDuration(row.byte_size)}</td>
           <td class="mono">${cost}</td>
-          <td><audio controls preload="none" src="/admin/tts/${row.id}/audio" style="width:220px;height:32px;"></audio></td>
+          <td>${audioPlayButton(`/admin/tts/${row.id}/audio`, `#${row.id} ${preview}`)}</td>
           <td>
             <form method="post" action="/admin/tts/${row.id}/delete"
                   onsubmit="return confirm('このTTS音声を削除します。よろしいですか？（同じテキストが再生されれば再合成されます）')">
@@ -2452,7 +2687,7 @@ adminRouter.get("/transcriptions", (_req, res) => {
   const tableRows = logs
     .map((log) => {
       const player = log.audio_filename
-        ? `<audio controls preload="none" src="/admin/transcriptions/${log.id}/audio" style="width:220px;height:32px;"></audio>`
+        ? audioPlayButton(`/admin/transcriptions/${log.id}/audio`, log.title || `文字起こし #${log.id}`)
         : `<span class="faint">(なし)</span>`;
       return `
         <tr class="log-row">
@@ -2838,7 +3073,7 @@ function quizAudioCell(audioText: string | null): string {
   const textHash = crypto.createHash("sha256").update(`${QUIZ_TTS_MODEL}|${audioText}`).digest("hex");
   const row = getTtsAudioByHash(textHash);
   if (!row) return `<span class="faint">音声未合成</span>`;
-  return `<audio controls preload="none" src="/admin/tts/${row.id}/audio" style="width:220px;height:32px;"></audio>`;
+  return audioPlayButton(`/admin/tts/${row.id}/audio`, truncate(audioText, 60));
 }
 
 adminRouter.get("/quiz-questions/item", (req, res) => {
@@ -3066,7 +3301,7 @@ adminRouter.get("/content-files", (req, res) => {
         active.key === "images"
           ? `<a href="${inlineUrl}" target="_blank"><img src="${inlineUrl}" alt="${escapeHtml(file.name)}" style="max-width:96px;max-height:64px;border-radius:4px;display:block;" loading="lazy"></a>`
           : AUDIO_FILE_EXTENSIONS.has(path.extname(file.name).toLowerCase())
-            ? `<audio controls preload="none" src="${inlineUrl}" style="width:220px;height:32px;"></audio>`
+            ? audioPlayButton(inlineUrl, title ? `${title}（${file.name}）` : file.name)
             : `<span class="faint">—</span>`;
       return `
         <tr class="log-row">
